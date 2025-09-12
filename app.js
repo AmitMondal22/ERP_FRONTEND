@@ -5,6 +5,7 @@ const citysrouter= require('./router/citysAndCountries')
 const vendorrouter= require('./router/vendorRoutes')
 const unit= require('./router/unitRouter');
 const projectRoutes= require('./router/projectRoutes')
+const projectSitesRoutes= require('./router/projectSitesRoutes')
 const app= express()
 const cors = require('cors');
 
@@ -24,6 +25,7 @@ app.use('/',citysrouter)
 app.use('/',vendorrouter)
 app.use('/',unit)
 app.use('/',projectRoutes)
+app.use('/',projectSitesRoutes)
 
 
 module.exports = app;

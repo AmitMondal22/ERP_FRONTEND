@@ -53,14 +53,13 @@ async function selectOneData(table, select = "*", condition = null, orderBy = nu
 
 
 
-async function selectLastData(table, select = "*", condition = null, orderBy = "id") {
+async function selectLastData(table, select = "*", condition = null, orderBy = null) {
   let conn;
   try {
     let query = `SELECT ${select} FROM ${table}`;
-
     if (condition) query += ` WHERE ${condition}`;
-    query += ` ORDER BY ${orderBy} DESC LIMIT 1`;
-
+    if (orderBy) query += ` ORDER BY ${orderBy} DESC`;
+    query +=`LIMIT 1`;
     conn = await connect();
     const [rows] = await conn.execute(query);
     return rows[0] || null;
