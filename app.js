@@ -7,9 +7,6 @@ const unit= require('./router/unitRouter')
 const app= express()
 const cors = require('cors');
 
-
-
-
 app.use(cors({
   origin: '*', // Consider restricting this in production
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
