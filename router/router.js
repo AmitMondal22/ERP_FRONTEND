@@ -14,6 +14,7 @@ router.get('/hello',authcheck,(req,res)=>{ res.send('hello every one  iam hungry
 
 router.post("/api/login",  validate(userValidation.loginSchema),   userController.login);
 router.post("/api/create",validate(userValidation.createUserSchema),userController.create);
+router.post("/api/create/:user_type",userController.getAllUser);
 
 
 

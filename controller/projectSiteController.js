@@ -6,12 +6,11 @@ class projectSiteController{
 
     createProjectSite = async (req,res) => {
         try {
-            const { project_site_name,address, city_id, site_in_charge_id, project_id, from_date, to_date} = req.body;
+            const { project_site_name,address, city_id, project_id, from_date, to_date} = req.body;
             const insertValues = {
                 project_site_name,
                 address,
                 city_id,
-                site_in_charge_id,
                 project_id,
                 from_date,
                 to_date,
@@ -67,7 +66,7 @@ class projectSiteController{
     updateProjectsSite = async (req, res) => {
         try {
             const { id } = req.params;
-            const { project_site_name,address, city_id, site_in_charge_id, project_id, from_date, to_date } = req.body;
+            const { project_site_name,address, city_id,  project_id, from_date, to_date } = req.body;
 
             const updated_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
@@ -75,7 +74,6 @@ class projectSiteController{
             if (project_site_name !== undefined) setValues.project_site_name = project_site_name;
             if (address !== undefined) setValues.address = address;
             if (city_id !== undefined) setValues.city_id = city_id;
-            if (site_in_charge_id !== undefined) setValues.site_in_charge_id = site_in_charge_id;
             if (project_id !== undefined) setValues.project_id = project_id;
             if (from_date !== undefined) setValues.from_date = from_date;
             if (to_date !== undefined) setValues.to_date = to_date;
