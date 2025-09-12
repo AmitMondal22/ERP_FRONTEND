@@ -154,24 +154,24 @@ async function deleteInsertRestore(originalTable, backupTable, condition) {
 }
 
 // ---------- UPDATE ----------
-// async function updateData(table, setValues, condition) {
-//   let conn;
-//   try {
-//     const keys = Object.keys(setValues);
-//     const setClause = keys.map((key) => `\`${key}\` = ?`).join(", ");
-//     const query = `UPDATE ${table} SET ${setClause} WHERE ${condition}`;
-//     const values = Object.values(setValues);
+async function updateData(table, setValues, condition) {
+  let conn;
+  try {
+    const keys = Object.keys(setValues);
+    const setClause = keys.map((key) => `\`${key}\` = ?`).join(", ");
+    const query = `UPDATE ${table} SET ${setClause} WHERE ${condition}`;
+    const values = Object.values(setValues);
 
-//     conn = await connect();
-//     const [result] = await conn.execute(query, values);
-//     return result.affectedRows;
-//   } catch (err) {
-//     console.error(err);
-//     throw err;
-//   } finally {
-//     if (conn) await conn.end();
-//   }
-// }
+    conn = await connect();
+    const [result] = await conn.execute(query, values);
+    return result.affectedRows;
+  } catch (err) {
+    console.error(err);
+    throw err;
+  } finally {
+    if (conn) await conn.end();
+  }
+}
 
 
 async function updateData(table, setValues, id) {
