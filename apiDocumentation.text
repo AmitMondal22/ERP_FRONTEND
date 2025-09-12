@@ -1,0 +1,268 @@
+📑 Inventory Management System – API Documentation
+🔑 Authentication
+POST /api/auth/register
+
+Description: Register a new user (Super Admin, Site Incharge, Project Incharge)
+
+Body:
+{
+  "username": "John Doe",
+  "email": "john@example.com",
+  "password": "password123",
+  "mobile": "9876543210",
+  "userType": "Super Admin",
+  "address": "Somewhere"
+}
+
+POST /api/auth/login
+
+Body:
+
+{
+  "email": "john@example.com",
+  "password": "password123"
+}
+
+
+Response: Returns JWT token + user details
+
+
+📂 Master Data
+Project Site
+
+GET /api/project-sites → List all project sites
+
+POST /api/project-sites → Create project site
+
+PUT /api/project-sites/:id → Update project site
+
+DELETE /api/project-sites/:id → Delete project site
+
+Fields:
+projectName, location, address, siteInCharge, fromDate, toDate
+
+Unit
+
+GET /api/units
+
+POST /api/units
+
+PUT /api/units/:id
+
+DELETE /api/units/:id
+
+Fields:
+unitName, quantity
+
+Product Type
+
+GET /api/product-types
+
+POST /api/product-types
+
+PUT /api/product-types/:id
+
+DELETE /api/product-types/:id
+
+Options: Raw Material, Equipment, Safety Equipment, Consumable, Spare
+
+Product
+
+GET /api/products
+
+POST /api/products
+
+PUT /api/products/:id
+
+DELETE /api/products/:id
+
+Fields:
+productType, productName, productUnit, manufacturerName
+
+Vendor
+
+GET /api/vendors
+
+POST /api/vendors
+
+PUT /api/vendors/:id
+
+DELETE /api/vendors/:id
+
+Fields:
+vendorName, address, email, contactPersons[], mobile, gstNumber
+
+Application User
+
+GET /api/users
+
+POST /api/users
+
+PUT /api/users/:id
+
+DELETE /api/users/:id
+
+Fields:
+username, email, userType, mobile, password, address, permission (Active/Deactive)
+
+Application Permission
+
+GET /api/permissions
+
+POST /api/permissions/:userId
+
+PUT /api/permissions/:id
+
+Fields:
+screens[] = [Bom, Stock, Master, etc.]
+
+Project Site Assign to User
+
+POST /api/user-sites
+
+GET /api/user-sites/:userId
+
+PUT /api/user-sites/:id
+
+Fields:
+userId, siteIds[]
+
+Team
+
+GET /api/teams
+
+POST /api/teams
+
+PUT /api/teams/:id
+
+DELETE /api/teams/:id
+
+Fields:
+projectInCharge, siteInCharge, site, users[], date, equipmentStock
+
+📦 Stock
+Raw Material Stock
+
+GET /api/raw-material-stock
+
+POST /api/raw-material-stock
+
+PUT /api/raw-material-stock/:id
+
+DELETE /api/raw-material-stock/:id
+
+Fields:
+productType, product, vendor, qty, poNumber, poDate, invoiceNumber, invoiceDate, deliveryDate, mtcFile
+
+Equipment Stock
+
+GET /api/equipments
+
+POST /api/equipments
+
+PUT /api/equipments/:id
+
+DELETE /api/equipments/:id
+
+Fields:
+product, ownershipStatus, year, makingYear, capacity, vendor, qty, poNumber, poDate, invoiceNumber, invoiceDate, deliveryDate, mtcFile
+
+Damaged Product Claim
+
+GET /api/damaged-claims
+
+POST /api/damaged-claims
+
+PUT /api/damaged-claims/:id
+
+DELETE /api/damaged-claims/:id
+
+Fields:
+productType, product, damageDate, reason, replacementDate, site, vendor, subjectContent (Email/WhatsApp)
+
+👷 Employee Management
+Employee
+
+GET /api/employees
+
+POST /api/employees
+
+PUT /api/employees/:id
+
+DELETE /api/employees/:id
+
+Fields:
+name, email, employeeId, address, mobile, doj, department, designation, salaryStructureId, status
+
+Salary Structure
+
+GET /api/salary-structures
+
+POST /api/salary-structures
+
+PUT /api/salary-structures/:id
+
+DELETE /api/salary-structures/:id
+
+Fields:
+basic, hra, da, allowances, bonuses, gross, deductions, net
+
+Attendance
+
+GET /api/attendance
+
+POST /api/attendance
+
+PUT /api/attendance/:id
+
+DELETE /api/attendance/:id
+
+Fields:
+date, checkIn, checkOut, totalHours, status, overtime
+
+Leave Management
+
+GET /api/leaves
+
+POST /api/leaves
+
+PUT /api/leaves/:id
+
+DELETE /api/leaves/:id
+
+Fields:
+leaveType, balance, appliedDate, fromDate, toDate, status, reason, approverName
+
+Claims & Reimbursements
+
+GET /api/claims
+
+POST /api/claims
+
+PUT /api/claims/:id
+
+DELETE /api/claims/:id
+
+Fields:
+claimType, claimDate, amount, submittedDate, attachments, status, paidDate
+
+Payslip Generator
+
+GET /api/payslips
+
+POST /api/payslips
+
+PUT /api/payslips/:id
+
+DELETE /api/payslips/:id
+
+Fields:
+employeeName, employeeId, month, gross, deductions, net, paymentDate, bankAccount, uan, taxInfo
+
+⚙️ General Notes
+
+All POST & PUT APIs require JWT Authentication
+
+File uploads (MTC, receipts, payslips) → use multipart/form-data
+
+Pagination & Filters can be applied with GET APIs (e.g., /api/products?type=RawMaterial&page=1)
