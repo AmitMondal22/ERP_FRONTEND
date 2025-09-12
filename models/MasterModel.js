@@ -74,23 +74,46 @@ async function selectLastData(table, select = "*", condition = null, orderBy = "
 
 
 // ---------- INSERT ----------
-async function insertData(table, columns, values) {
+// async function insertData(table, columns, values) {
+//   let conn;
+//   try {
+//     const placeholders = values.map(() => "?").join(",");
+
+//     const query = `INSERT INTO ${table} (${columns}) VALUES (${placeholders})`;
+
+//     conn = await connect();
+//     const [result] = await conn.execute(query, values);
+//     return result.insertId;
+//   } catch (err) {
+//     console.error(err);
+//     throw err;
+//   } finally {
+//     if (conn) await conn.end();
+//   }
+// }
+
+
+async function insertData(table, data) {
+  const columns = Object.keys(data).join(", ");
+  const values = Object.values(data);
+  const placeholders = values.map(() => "?").join(",");
+
+  const query = `INSERT INTO ${table} (${columns}) VALUES (${placeholders})`;
+
   let conn;
   try {
-    const placeholders = values.map(() => "?").join(",");
-
-    const query = `INSERT INTO ${table} (${columns}) VALUES (${placeholders})`;
-
     conn = await connect();
     const [result] = await conn.execute(query, values);
     return result.insertId;
   } catch (err) {
-    console.error(err);
+    console.error("Insert error:", err);
     throw err;
   } finally {
     if (conn) await conn.end();
   }
-}
+};
+/**/ 
+
 
 async function batchInsertData(table, columns, rows) {
   let conn;
@@ -173,18 +196,17 @@ async function updateData(table, setValues, condition) {
   }
 }
 
-
-async function updateData(table, setValues, id) {
+async function updateData(table, setValues, condition) {
   let conn;
   try {
     const keys = Object.keys(setValues);
+
     const setClause = keys.map((key) => `\`${key}\` = ?`).join(", ");
+
+    const query = `UPDATE ${table} SET ${setClause} WHERE ${condition}`;
+
     const values = Object.values(setValues);
 
-    const query = `UPDATE ${table} SET ${setClause} WHERE unit_id = ?`;
-    values.push(id); // Add id for WHERE clause
-    console.log('[query]',query)
-    console.log('[values]',values)
     conn = await connect();
     const [result] = await conn.execute(query, values);
     return result.affectedRows;
@@ -197,7 +219,34 @@ async function updateData(table, setValues, id) {
 }
 
 
+// async function updateData(table, setValues, id) {
+//   let conn;
+//   try {
+//     const keys = Object.keys(setValues);
+//     const setClause = keys.map((key) => `\`${key}\` = ?`).join(", ");
+//     const values = Object.values(setValues);
+
+//     const query = `UPDATE ${table} SET ${setClause} WHERE unit_id = ?`;
+//     values.push(id); // Add id for WHERE clause
+//     console.log('[query]',query)
+//     console.log('[values]',values)
+//     conn = await connect();
+//     const [result] = await conn.execute(query, values);
+//     return result.affectedRows;
+//   } catch (err) {
+//     console.error(err);
+//     throw err;
+//   } finally {
+//     if (conn) await conn.end();
+//   }
+// }
+
+
+
+
 // ---------- COUNT ----------
+
+
 async function countRows(table, condition = "") {
   let conn;
   try {
@@ -214,6 +263,12 @@ async function countRows(table, condition = "") {
     if (conn) await conn.end();
   }
 }
+
+
+
+
+
+
 
 // ---------- RANGE SELECT ----------
 async function selectDataInRanges(select, table, start, end, condition = "") {

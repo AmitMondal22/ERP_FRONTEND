@@ -3,7 +3,8 @@ const express = require('express');
 const router= require('./router/router')
 const citysrouter= require('./router/citysAndCountries')
 const vendorrouter= require('./router/vendorRoutes')
-const unit= require('./router/unitRouter')
+const unit= require('./router/unitRouter');
+const projectRoutes= require('./router/projectRoutes')
 const app= express()
 const cors = require('cors');
 
@@ -22,6 +23,7 @@ app.use('/',router)
 app.use('/',citysrouter)
 app.use('/',vendorrouter)
 app.use('/',unit)
+app.use('/',projectRoutes)
 
 
 module.exports = app;
