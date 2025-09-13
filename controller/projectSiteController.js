@@ -1,6 +1,10 @@
 
 
 const { insertData,selectData ,selectOneData, selectLastData, deleteData} = require("../models/MasterModel");
+const dayjs = require("dayjs");
+const utc = require("dayjs/plugin/utc");
+dayjs.extend(utc);
+
 
 class projectSiteController{
 

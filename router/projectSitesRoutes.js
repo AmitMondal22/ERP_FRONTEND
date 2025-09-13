@@ -12,4 +12,3 @@ router.post("/api/updateprojectsites/:id",authcheck, ProjectSiteController.updat
 router.delete("/api/deleteprojectsites/:id", authcheck,ProjectSiteController.deleteProjectSite);
 
 module.exports = router;
- 

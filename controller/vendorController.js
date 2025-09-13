@@ -15,24 +15,43 @@ class VendorController {
   // Add Vendor
   addVendor = async (req, res) => {
     try {
-      const { name, mobile, email, city_id, address, gst_in, created_by } = req.body;
+      const { name, mobile, email, city_id, address, gst_in } = req.body;
       const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
-      const columns = "name,mobile,email,city_id,address,gst_in,created_by,created_at";
-      // const values = [name, mobile, email, city_id, address, gst_in, created_by, created_at];
-const values = [name, mobile, email, city_id, address, gst_in, created_by, created_at]
-  .map(v => v === undefined ? null : v);
+      const columns = [
+        "vendor_name",
+        "vendor_mobile",
+        "vendor_email",
+        "vendor_city_id",
+        "vendor_address",
+        "vendor_gst_in",
+        "created_by",
+        "created_at",
+      ];
 
-   
+      const values = [name, mobile, email, city_id, address, gst_in, 1, created_at]
+
+      // Assuming insertData is a helper like:
+      // insertData(tableName, columnsArray, valuesArray)
       const vendor_id = await insertData("md_vendor", columns, values);
 
       res.status(201).json({
         success: true,
         message: "Vendor created successfully",
-        data: { id: vendor_id, name, mobile, email, city_id, address, gst_in, created_by, created_at },
+        data: {
+          id: vendor_id,
+          name,
+          mobile,
+          email,
+          city_id,
+          address,
+          gst_in,
+          created_by,
+          created_at,
+        },
       });
     } catch (error) {
-      console.error(error);
+      console.error("Error in addVendor:", error);
       res.status(500).json({ success: false, message: "Unable to add vendor" });
     }
   };
