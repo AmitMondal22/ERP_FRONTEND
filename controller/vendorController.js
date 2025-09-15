@@ -29,13 +29,13 @@ class VendorController {
         "created_at",
       ];
 
-      const values = [name, mobile, email, city_id, address, gst_in, 1, created_at]
+      const values = [name, mobile, email, city_id, address, gst_in, req.user.id, created_at]
 
       // Assuming insertData is a helper like:
       // insertData(tableName, columnsArray, valuesArray)
       const vendor_id = await insertData("md_vendor", columns, values);
 
-        for await (const contact of data.contactPerson) {
+        for await (const contact of contactPerson) {
           let c_columns = [
               'contact_person_name',
               'contact_person_email',
@@ -46,7 +46,7 @@ class VendorController {
               'created_by',
               'created_at'
             ]
-          ,c_values =[contact.name, contact.email, contact.mobile, "", vendor_id, 'VN', 1, created_at]
+          ,c_values =[contact.name, contact.email, contact.mobile, "", vendor_id, 'VN', req.user.id, created_at]
           await insertData("md_contact_person", c_columns, c_values);
         }
 
@@ -62,7 +62,7 @@ class VendorController {
           city_id,
           address,
           gst_in,
-          created_by:1,
+          created_by:req.user.id,
           created_at,
         },
       });
@@ -88,7 +88,7 @@ class VendorController {
           'created_by',
           'created_at'
         ]
-      ,c_values =[name, email, mobile, "", id, 'VN', 1, created_at]
+      ,c_values =[name, email, mobile, "", id, 'VN', req.user.id, created_at]
       let contact_person = await insertData("md_contact_person", c_columns, c_values);
       res.status(201).json({
         success: true,
@@ -98,7 +98,7 @@ class VendorController {
           name,
           mobile,
           email,
-          created_by:1,
+          created_by:req.user.id,
           created_at,
         },
       });
