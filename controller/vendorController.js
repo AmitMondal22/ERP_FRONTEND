@@ -72,6 +72,42 @@ class VendorController {
     }
   };
 
+
+
+   addContactPerson = async (req, res) => {
+    try {
+      const { name, mobile, email, id } = req.body;
+      const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+      let c_columns = [
+          'contact_person_name',
+          'contact_person_email',
+          'contact_person_mobile_no',
+          'contact_person_remarks',
+          'fatch_id',
+          'type',
+          'created_by',
+          'created_at'
+        ]
+      ,c_values =[name, email, mobile, "", id, 'VN', 1, created_at]
+      let contact_person = await insertData("md_contact_person", c_columns, c_values);
+      res.status(201).json({
+        success: true,
+        message: "Vendor created successfully",
+        data: {
+          id: contact_person,
+          name,
+          mobile,
+          email,
+          created_by:1,
+          created_at,
+        },
+      });
+    } catch (error) {
+      console.error("Error in addVendor:", error);
+      res.status(500).json({ success: false, message: "Unable to add vendor" });
+    }
+  };
+
   // Get all vendors
   getAllVendors = async (req, res) => {
     try {

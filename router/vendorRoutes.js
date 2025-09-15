@@ -6,6 +6,7 @@ const authcheck= require('../middleware/auth')
 
 
 router.post("/api/createvendor", vendorController.addVendor);
+router.post("/api/create_contact_person", vendorController.addContactPerson);
 router.get("/api/getallvendor", vendorController.getAllVendors);
 router.get("/api/getvendor/:id", vendorController.getVendorById);
 router.put("/api/vendor/:id", vendorController.updateVendor);
