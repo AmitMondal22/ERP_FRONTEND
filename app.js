@@ -5,7 +5,8 @@ const assesrouter= require('./router/assesRoutes')
 const vendorrouter= require('./router/vendorRoutes')
 const unit= require('./router/unitRouter');
 const projectRoutes= require('./router/projectRoutes')
-const projectSitesRoutes= require('./router/projectSitesRoutes')
+const projectSitesRoutes= require('./router/projectSitesRoutes');
+const ProductType= require('./router/productTypeRoute')
 const app= express()
 const cors = require('cors');
 
@@ -26,6 +27,7 @@ app.use('/',vendorrouter)
 app.use('/',unit)
 app.use('/',projectRoutes)
 app.use('/',projectSitesRoutes)
+app.use('/',ProductType)
 
 
 module.exports = app;

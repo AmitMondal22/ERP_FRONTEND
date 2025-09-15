@@ -1,9 +1,8 @@
-
-
-const { insertData,selectData ,selectOneData, selectLastData, deleteData} = require("../models/MasterModel");
+const { insertData,selectData ,selectOneData, selectLastData, deleteData, updateData} = require("../models/MasterModel");
 const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 dayjs.extend(utc);
+
 
 
 class projectSiteController{
@@ -38,42 +37,84 @@ class projectSiteController{
     }
 
 
-    getAllProjectsSite = async (req, res) => {
-        try {
-            const table = "md_project_site as a, lo_cities as b, lo_states as c",
-                condition = `a.city_id=b.id AND b.state_id = c.id`,//join 3 table
-                select = "a.*,b.name, b.state_id,c.name"
-            const projectsSites = await selectData(table,select,condition,'a.project_site_name ASC');
-            res.status(200).json({ success: true, data: projectsSites });
-        } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, message: "Unable to fetch projects" });
-        }
-    };
+ getAllProjectsSite = async (req, res) => {
+  try {
+    const table =
+      "md_project_site as a, lo_cities as b, lo_states as c";
+    const condition = `a.city_id = b.id AND b.state_id = c.id`;
+    // Give unique aliases for duplicate column names
+    const select =
+      "a.*, b.name AS city_name, b.state_id, c.name AS state_name";
+
+    const rows = await selectData(
+      table,
+      select,
+      condition,
+      "a.project_site_name ASC"
+    );
+
+    // Format all date columns to a fixed string (UTC or local as you prefer)
+    const projectsSites = rows.map((row) => ({
+      ...row,
+      from_date: row.from_date
+        ? dayjs.utc(row.from_date).format("YYYY-MM-DD")
+        : null,
+      to_date: row.to_date
+        ? dayjs.utc(row.to_date).format("YYYY-MM-DD")
+        : null,
+      created_at: row.created_at
+        ? dayjs.utc(row.created_at).format("YYYY-MM-DD HH:mm:ss")
+        : null,
+    }));
+
+    res.status(200).json({ success: true, data: projectsSites });
+  } catch (error) {
+    console.error("getAllProjectsSite error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Unable to fetch projects" });
+  }
+};
 
 
-    getProjectSite = async (req, res) => {
-        try {
-            const { id } = req.params;
-            const table = "md_project_site as a, lo_cities as b, lo_states as c",
-                condition = `a.city_id=b.id AND b.state_id = c.id AND a.project_site_id = ${Number(id)}`,//join 3 table
-                select = "a.*,b.name, b.state_id,c.name"
-            const projectsSite = await selectLastData(table,select,condition,'a.project_site_name');
-            res.status(200).json({ success: true, data: projectsSite });
-        } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, message: "Unable to fetch projects" });
-        }
-    };
+
+
+async getProjectSite(req, res) {
+  try {
+    const { id } = req.params;
+
+    const table = "md_project_site as a, lo_cities as b, lo_states as c";
+    const condition = `a.city_id=b.id AND b.state_id = c.id AND a.project_site_id = ${Number(id)}`;
+    const select = "a.*, b.name as city_name, b.state_id, c.name as state_name";
+
+    const projectsSite = await selectLastData(table, select, condition, "a.project_site_name");
+
+    // Send data as-is, without converting
+    res.status(200).json({ success: true, data: projectsSite });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Unable to fetch project site" });
+  }
+}
+
+
 
 
     updateProjectsSite = async (req, res) => {
         try {
             const { id } = req.params;
-            const { project_site_name,address, city_id,  project_id, from_date, to_date } = req.body;
-
+            const { 
+                project_site_name,
+                address, 
+                city_id,  
+                project_id,  
+                from_date, 
+                to_date 
+            } = req.body;
+            
+                
             const updated_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
-
+            
             const setValues = {};
             if (project_site_name !== undefined) setValues.project_site_name = project_site_name;
             if (address !== undefined) setValues.address = address;
@@ -81,7 +122,8 @@ class projectSiteController{
             if (project_id !== undefined) setValues.project_id = project_id;
             if (from_date !== undefined) setValues.from_date = from_date;
             if (to_date !== undefined) setValues.to_date = to_date;
-
+            
+            console.log('[f date]',setValues)
 
             setValues.create_by = req.user.id;
             setValues.updated_at = updated_at;
@@ -99,6 +141,9 @@ class projectSiteController{
             res.status(500).json({ success: false, message: "Unable to update project site" });
         }
     };
+
+
+    
 
     deleteProjectSite = async (req, res) => {
         try {

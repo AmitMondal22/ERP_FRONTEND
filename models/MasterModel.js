@@ -58,7 +58,7 @@ async function selectLastData(table, select = "*", condition = null, orderBy = n
   try {
     let query = `SELECT ${select} FROM ${table}`;
     if (condition) query += ` WHERE ${condition}`;
-    if (orderBy) query += ` ORDER BY ${orderBy} DESC`;
+    if (orderBy) query += ` ORDER BY ${orderBy} DESC `;
     query +=`LIMIT 1`;
     conn = await connect();
     const [rows] = await conn.execute(query);
@@ -92,6 +92,7 @@ async function selectLastData(table, select = "*", condition = null, orderBy = n
 // }
 
 
+
 async function insertData(table, data) {
   const columns = Object.keys(data).join(", ");
   const values = Object.values(data);
@@ -111,6 +112,7 @@ async function insertData(table, data) {
     if (conn) await conn.end();
   }
 };
+
 /**/ 
 
 

@@ -5,15 +5,14 @@ const authcheck= require('../middleware/auth')
 
 
 
-router.post("/api/createunit", unitController.addUnit);
+router.post("/api/createunit",authcheck, unitController.addUnit);
 
-router.get("/api/getallunits", unitController.getUnits);
+router.get("/api/getallunits",authcheck, unitController.getUnits);
 
-router.get("/api/getunit/:id", unitController.updateUnit);
+router.post("/api/Updateunit/:id",authcheck, unitController.updateUnit);
 
+router.get("/api/getunit/:id",authcheck, unitController.getUnitById);
 
-router.post("/api/unitupdate/:id", unitController.updateUnit);
-
-router.delete("/api/deleteunit/:id", unitController.deleteUnit);
+router.delete("/api/deleteunit/:id",authcheck, unitController.deleteUnit);
 
 module.exports = router;

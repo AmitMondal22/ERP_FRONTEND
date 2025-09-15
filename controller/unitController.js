@@ -8,35 +8,69 @@ const { insertData, selectData, selectOneData, updateData, deleteData } = requir
 class unitController {
 
   // Add a new unit
-  addUnit = async (req, res) => {
-    try {
-      const { unit_name, quantity, created_by } = req.body;
+  // addUnit = async (req, res) => {
+  //   try {
+  //     const { unit_name, quantity, created_by } = req.body;
 
-      // Validate required fields
-      if (!unit_name || quantity === undefined || !created_by) {
-        return res.status(400).json({
-          success: false,
-          message: "unit_name, quantity and created_by are required",
-        });
-      }
+  //     // Validate required fields
+  //     if (!unit_name || quantity === undefined || !created_by) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "unit_name, quantity and created_by are required",
+  //       });
+  //     }
 
-      const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+  //     const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
-      const columns = "unit_name, quantity, created_by, created_at";
-      const values = [unit_name, quantity, created_by, created_at].map(v => v === undefined ? null : v);
+  //     const columns = "unit_name, quantity, created_by, created_at";
+  //     const values = [unit_name, quantity, created_by, created_at].map(v => v === undefined ? null : v);
 
-      const unit_id = await insertData("md_unit", columns, values);
+  //     const unit_id = await insertData("md_unit", columns, values);
 
-      res.status(200).json({
-        success: true,
-        message: "Unit added successfully",
-        data: { unit_id, unit_name, quantity, created_by, created_at },
+  //     res.status(200).json({
+  //       success: true,
+  //       message: "Unit added successfully",
+  //       data: { unit_id, unit_name, quantity, created_by, created_at },
+  //     });
+  //   } catch (error) {
+  //     console.error(error);
+  //     res.status(500).json({ success: false, message: "Unable to add unit" });
+  //   }
+  // };
+
+
+ addUnit = async (req, res) => {
+  try {
+    const { unit_name, quantity } = req.body;
+    if (!unit_name || quantity === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "unit_name and quantity are required",
       });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ success: false, message: "Unable to add unit" });
     }
-  };
+
+    const created_by = req.user.id; // set by auth middleware
+    const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+    const unit_id = await insertData("md_unit", {
+      unit_name,
+      quantity,
+      created_by,
+      created_at,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Unit added successfully",
+      data: { unit_id, unit_name, quantity, created_by, created_at },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Unable to add unit" });
+  }
+};
+
+
 
 
 
