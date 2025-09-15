@@ -13,66 +13,147 @@ const {
 class VendorController {
 
   // Add Vendor
-  addVendor = async (req, res) => {
-    try {
-      const { name, mobile, email, city_id, address, gst_in, contactPerson } = req.body;
-      const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+  // addVendor = async (req, res) => {
+  //   try {
+  //     const { name, mobile, email, city_id, address, gst_in, contactPerson } = req.body;
+  //     const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
-      const columns = [
-        "vendor_name",
-        "vendor_mobile",
-        "vendor_email",
-        "city_id",
-        "vendor_address",
-        "vendor_gst_in",
-        "created_by",
-        "created_at",
-      ];
+  //     const columns = {
+  //       vendor_name : name,
+  //       vendor_mobile : mobile,
+  //       vendor_email :email ,
+  //       city_id : city_id,
+  //       vendor_address :address ,
+  //       vendor_gst_in :gst_in,
+  //       created_by : contactPerson,
+  //       created_at : created_at,
+  //     };
 
-      const values = [name, mobile, email, city_id, address, gst_in, req.user.id, created_at]
+  //     const values = [name, mobile, email, city_id, address, gst_in, req.user.id, created_at]
 
-      // Assuming insertData is a helper like:
-      // insertData(tableName, columnsArray, valuesArray)
-      const vendor_id = await insertData("md_vendor", columns, values);
+  //     // Assuming insertData is a helper like:
+  //     // insertData(tableName, columnsArray, valuesArray)
+  //     const vendor_id = await insertData("md_vendor", columns, values);
 
-        for await (const contact of contactPerson) {
-          let c_columns = [
-              'contact_person_name',
-              'contact_person_email',
-              'contact_person_mobile_no',
-              'contact_person_remarks',
-              'fatch_id',
-              'type',
-              'created_by',
-              'created_at'
-            ]
-          ,c_values =[contact.name, contact.email, contact.mobile, "", vendor_id, 'VN', req.user.id, created_at]
-          await insertData("md_contact_person", c_columns, c_values);
-        }
+  //       for await (const contact of contactPerson) {
+  //         let c_columns = [
+  //             'contact_person_name',
+  //             'contact_person_email',
+  //             'contact_person_mobile_no',
+  //             'contact_person_remarks',
+  //             'fatch_id',
+  //             'type',
+  //             'created_by',
+  //             'created_at'
+  //           ]
+  //         ,c_values =[contact.name, contact.email, contact.mobile, "", vendor_id, 'VN', req.user.id, created_at]
+  //         await insertData("md_contact_person", c_columns, c_values);
+  //       }
 
 
-      res.status(201).json({
-        success: true,
-        message: "Vendor created successfully",
-        data: {
-          id: vendor_id,
-          name,
-          mobile,
-          email,
-          city_id,
-          address,
-          gst_in,
-          created_by:req.user.id,
-          created_at,
-        },
+  //     res.status(201).json({
+  //       success: true,
+  //       message: "Vendor created successfully",
+  //       data: {
+  //         id: vendor_id,
+  //         name,
+  //         mobile,
+  //         email,
+  //         city_id,
+  //         address,
+  //         gst_in,
+  //         created_by:req.user.id,
+  //         created_at,
+  //       },
+  //     });
+  //   } catch (error) {
+  //     console.error("Error in addVendor:", error);
+  //     res.status(500).json({ success: false, message: "Unable to add vendor" });
+  //   }
+  // };
+
+
+ addVendor = async (req, res) => {
+  try {
+    const {
+      name,
+      mobile,
+      email,
+      city_id,
+      address,
+      gst_in,
+      contactPerson = [], 
+    } = req.body;
+
+
+    // Basic validation
+    if (!name || !mobile || !city_id) {
+      return res.status(400).json({
+        success: false,
+        message: "name, mobile, and city_id are required",
       });
-    } catch (error) {
-      console.error("Error in addVendor:", error);
-      res.status(500).json({ success: false, message: "Unable to add vendor" });
     }
-  };
+
+    const created_by = req.user.id; // from auth middleware
+    const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+    // Insert into md_vendor
+    const vendorValues = {
+      vendor_name: name,
+      vendor_mobile: mobile,
+      vendor_email: email || null,
+      city_id,
+      vendor_address: address || null,
+      vendor_gst_in: gst_in || null,
+      created_by,
+      created_at,
+    };
+
+    const vendor_id = await insertData("md_vendor", vendorValues);
 
 
+    // Insert each contact person if provided
+    if (Array.isArray(contactPerson) && contactPerson.length > 0) {
+      for (const contact of contactPerson) {
+        const contactValues = {
+          contact_person_name: contact.name || null,
+          contact_person_email: contact.email || null,
+          contact_person_mobile_no: contact.mobile || null,
+          contact_person_remarks: contact.remarks || null,
+          fatch_id: vendor_id,
+          type: "VN",
+          created_by,
+          created_at,
+        };
+        await insertData("md_contact_person", contactValues);
+      }
+    }
+
+    // Optionally fetch the full inserted vendor record
+    const newVendor = await selectOneData(
+      "md_vendor",
+      "*",
+      `vendor_id = ${vendor_id}`
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Vendor created successfully",
+      data: {
+        ...newVendor,
+        contact_persons: contactPerson,
+      },
+    });
+  } catch (error) {
+    console.error("Add vendor error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Unable to add vendor",
+    });
+  }
+};
+
+//////
 
    addContactPerson = async (req, res) => {
     try {
@@ -181,6 +262,7 @@ class VendorController {
   };
 
 
+  
 
 
   updateContactPerson = async (req, res) => {
@@ -206,6 +288,7 @@ class VendorController {
       res.status(500).json({ success: false, message: "Contact Person Unable to update vendor" });
     }
   };
+
 
   // Delete vendor
   deleteVendor = async (req, res) => {
