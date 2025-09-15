@@ -112,7 +112,6 @@ async function insertData(table, data) {
     if (conn) await conn.end();
   }
 };
-
 /**/ 
 
 
