@@ -46,6 +46,21 @@ app.use('/',Relation)
 app.use('/',Upload)
 
 
+
+
+
+
+// ---------- Scheduler Code ----------
+function runEveryMinute() {
+  console.log("Scheduler running at: ", new Date().toLocaleString());
+}
+
+// Run every 60,000 milliseconds (1 minute 1000)
+setInterval(runEveryMinute, 60 * 100);
+
+// -------------------------------------
+
+
 module.exports = app;
 
 
