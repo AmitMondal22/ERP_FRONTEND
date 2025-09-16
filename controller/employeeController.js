@@ -134,10 +134,10 @@ class EmployeeController {
   // Get all vendors
   getAllemployee = async (req, res) => {
     try {
-        const table = "em_employees as a, lo_cities as b, lo_states as c";
+        const table = "em_employees as a, lo_cities as b, lo_states as c LEFT JOIN em_employees m ON a.manager_id = m.employee_id";
         const condition = `a.city_id = b.id AND b.state_id = c.id`;
         // Give unique aliases for duplicate column names
-        const select = "a.*, b.name AS city_name, b.state_id, c.name AS state_name";
+        const select = "a.*, b.name AS city_name, b.state_id, c.name AS state_name, m.employee_id AS manager_id,  m.first_name AS manager_first_name, m.last_name AS manager_last_name, m.email AS manager_email";
 
         const employee = await selectData(table, select, condition,"a.em_id ASC");
         if (!employee || employee.length === 0) {
