@@ -131,56 +131,22 @@ class EmployeeController {
 
 
 
-   addContactPerson = async (req, res) => {
-    try {
-      const { name, mobile, email, id } = req.body;
-      const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
-      let c_columns = [
-          'contact_person_name',
-          'contact_person_email',
-          'contact_person_mobile_no',
-          'contact_person_remarks',
-          'fatch_id',
-          'type',
-          'created_by',
-          'created_at'
-        ]
-      ,c_values =[name, email, mobile, "", id, 'VN', req.user.id, created_at]
-      let contact_person = await insertData("md_contact_person", c_columns, c_values);
-      res.status(201).json({
-        success: true,
-        message: "Vendor created successfully",
-        data: {
-          id: contact_person,
-          name,
-          mobile,
-          email,
-          created_by:req.user.id,
-          created_at,
-        },
-      });
-    } catch (error) {
-      console.error("Error in addVendor:", error);
-      res.status(500).json({ success: false, message: "Unable to add vendor" });
-    }
-  };
-
   // Get all vendors
-  getAllVendors = async (req, res) => {
+  getAllemployee = async (req, res) => {
     try {
-        const table = "md_vendor as a, lo_cities as b, lo_states as c";
+        const table = "em_employees as a, lo_cities as b, lo_states as c";
         const condition = `a.city_id = b.id AND b.state_id = c.id`;
         // Give unique aliases for duplicate column names
         const select = "a.*, b.name AS city_name, b.state_id, c.name AS state_name";
 
-        const vendors = await selectData(table, select, condition,"a.vendor_name ASC");
-        if (!vendors || vendors.length === 0) {
-          return res.status(404).json({ success: false, message: "No vendors found" });
+        const employee = await selectData(table, select, condition,"a.em_id ASC");
+        if (!employee || employee.length === 0) {
+          return res.status(404).json({ success: false, message: "No employee found" });
         }
-        res.status(200).json({ success: true, data: vendors });
+        res.status(200).json({ success: true, data: employee });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ success: false, message: "Unable to fetch vendors" });
+        res.status(500).json({ success: false, message: "Unable to fetch employee" });
     }
   };
 
