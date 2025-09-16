@@ -11,18 +11,19 @@ const {
   updateData,
   deleteData,
 } = require("../models/MasterModel");
+const randomFutureDate = require("../utils/randomFutureDate");
 
 class SiteImageController {
 
     createSiteImage = async (req, res) => {
         try {
             const {
-            image_name,
-            remarks,
-            location,
-            employee_id,
-            project_id,
-            project_site
+                image_name,
+                remarks,
+                location,
+                employee_id,
+                project_id,
+                project_site
             } = req.body;
 
             if (!image_name || !employee_id || !project_id) {
@@ -51,25 +52,46 @@ class SiteImageController {
             const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
             const data = {
-            image_url: `/uploads/site_image/${fileName}`,
-            image_name,
-            remarks: remarks || null,
-            location: location || null,
-            employee_id,
-            project_id,
-            project_site: project_site || null,
-            created_by: req.user?.id || null,
-            created_at,
-            updated_at: created_at
+                image_url: `/uploads/site_image/${fileName}`,
+                image_name,
+                remarks: remarks || null,
+                location: location || null,
+                employee_id,
+                project_id,
+                project_site: project_site || null,
+                created_by: req.user?.id || null,
+                created_at,
+                updated_at: created_at
             };
 
             const image_id = await insertData("td_site_image", data);
             if (!image_id) throw new Error("Failed to insert site image");
 
+
+
+            const xtd_upload_reminder = await selectOneData("xtd_upload_reminder",'*', `user_id = ${req.user.id}`);
+            if (!xtd_upload_reminder) {
+                let instada = {
+                    user_id:req.user.id,
+                    date_time:randomFutureDate,
+                    status:true
+                }
+                await insertData("xtd_upload_reminder", instada);
+            }else{
+                 let updateData = {
+                    date_time:randomFutureDate,
+                    status:true
+                }
+                await updateData("xtd_upload_reminder", updateData, `user_id = ${id}`);
+            }
+
+
+
+
             res.status(201).json({
-            success: true,
-            message: "Site image uploaded and saved successfully",
-            data: { image_id, ...data }
+                success: true,
+                message: "Site image uploaded and saved successfully",
+                data: { image_id, ...data }
             });
 
         } catch (error) {
