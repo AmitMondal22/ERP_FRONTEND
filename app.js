@@ -8,6 +8,7 @@ const projectRoutes= require('./router/projectRoutes')
 const projectSitesRoutes= require('./router/projectSitesRoutes');
 //const ProductType= require('./router/productTypeRoute')
 const ProductRoutes= require('./router/productRoute');
+const Employee= require('./router/employeeRoutes');
 const app= express()
 const cors = require('cors');
 
@@ -29,6 +30,7 @@ app.use('/',unit)
 app.use('/',projectRoutes)
 app.use('/',projectSitesRoutes)
 app.use('/',ProductRoutes)
+app.use('/',Employee)
 
 
 module.exports = app;
