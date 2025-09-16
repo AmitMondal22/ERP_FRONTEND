@@ -12,6 +12,7 @@ const Employee= require('./router/employeeRoutes');
 const Team= require('./router/teamRoutes');
 const Stor= require('./router/storRouter');
 const Relation= require('./router/relationRoutes');
+const Upload= require('./router/uploadsRoutes');
 const app= express()
 const cors = require('cors');
 
@@ -37,6 +38,7 @@ app.use('/',Employee)
 app.use('/',Team)
 app.use('/',Stor)
 app.use('/',Relation)
+app.use('/',Upload)
 
 
 module.exports = app;
