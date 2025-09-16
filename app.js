@@ -11,6 +11,7 @@ const ProductRoutes= require('./router/productRoute');
 const Employee= require('./router/employeeRoutes');
 const Team= require('./router/teamRoutes');
 const Stor= require('./router/storRouter');
+const Relation= require('./router/relationRoutes');
 const app= express()
 const cors = require('cors');
 
@@ -35,6 +36,7 @@ app.use('/',ProductRoutes)
 app.use('/',Employee)
 app.use('/',Team)
 app.use('/',Stor)
+app.use('/',Relation)
 
 
 module.exports = app;
