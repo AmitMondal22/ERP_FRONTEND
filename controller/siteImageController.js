@@ -1,3 +1,6 @@
+const fs = require("fs");
+const path = require("path");
+
 const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 dayjs.extend(utc);
