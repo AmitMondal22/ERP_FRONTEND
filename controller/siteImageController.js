@@ -73,13 +73,13 @@ class SiteImageController {
             if (!xtd_upload_reminder) {
                 let instada = {
                     user_id:req.user.id,
-                    date_time:randomFutureDate,
+                    date_time:randomFutureDate(),
                     status:true
                 }
                 await insertData("xtd_upload_reminder", instada);
             }else{
                  let updateData = {
-                    date_time:randomFutureDate,
+                    date_time:randomFutureDate(),
                     status:true
                 }
                 await updateData("xtd_upload_reminder", updateData, `user_id = ${id}`);
