@@ -18,6 +18,7 @@ class EmployeeController {
   generateRandomPassword = (length = 8) => {
     return crypto.randomInt(Math.pow(10, length - 1), Math.pow(10, length)).toString();
   };
+
   // Add Vendor
   addEmployee = async (req, res) => {
     try {
@@ -57,7 +58,7 @@ class EmployeeController {
       const full_name = [first_name, middle_name, last_name].filter(Boolean).join(" ");
 
       // Generate and hash password
-      const plainPassword = generateRandomPassword(8);
+      const plainPassword = this.generateRandomPassword(8);
       const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
       // Insert into users table
