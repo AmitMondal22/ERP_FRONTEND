@@ -19,7 +19,7 @@ class EmployeeController {
     return crypto.randomInt(Math.pow(10, length - 1), Math.pow(10, length)).toString();
   };
 
-  // Add Vendor
+  // Add 
   addEmployee = async (req, res) => {
     try {
       const {
@@ -131,7 +131,7 @@ class EmployeeController {
 
 
 
-  // Get all vendors
+  // Get all 
   getAllemployee = async (req, res) => {
     try {
         const table = "em_employees as a JOIN lo_cities AS b ON a.city_id = b.id JOIN lo_states AS c ON b.state_id = c.id LEFT JOIN em_employees m ON a.manager_id = m.employee_id";
@@ -168,7 +168,7 @@ class EmployeeController {
     }
   };
 
-  // Update vendor
+  // Update 
   updateEmployee = async (req, res) => {
     try {
       const { id } = req.params; // employee ID
