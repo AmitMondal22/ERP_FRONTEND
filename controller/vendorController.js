@@ -91,15 +91,7 @@ class VendorController {
 
  addVendor = async (req, res) => {
   try {
-    const {
-      name,
-      mobile,
-      email,
-      city_id,
-      address,
-      gst_in,
-      contactPerson = [],
-    } = req.body;
+    const {name,mobile,email,city_id,address,gst_in,contactPerson = [], } = req.body;
 
     // ---------- basic validation ----------
     if (!name || !mobile || !city_id) {
@@ -181,39 +173,61 @@ class VendorController {
 
 //////
 
+
    addContactPerson = async (req, res) => {
-    try {
-      const { name, mobile, email, id } = req.body;
-      const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
-      let c_columns = [
-          'contact_person_name',
-          'contact_person_email',
-          'contact_person_mobile_no',
-          'contact_person_remarks',
-          'fatch_id',
-          'type',
-          'created_by',
-          'created_at'
-        ]
-      ,c_values =[name, email, mobile, "", id, 'VN', req.user.id, created_at]
-      let contact_person = await insertData("md_contact_person", c_columns, c_values);
-      res.status(201).json({
-        success: true,
-        message: "Vendor created successfully",
-        data: {
-          id: contact_person,
-          name,
-          mobile,
-          email,
-          created_by:req.user.id,
-          created_at,
-        },
+  try {
+    const { name, mobile, email, id, type } = req.body;
+
+    // Basic validation
+    if (!name || !mobile || !id || !type) {
+      return res.status(400).json({
+        success: false,
+        message: "name, mobile, id, and type are required",
       });
-    } catch (error) {
-      console.error("Error in addVendor:", error);
-      res.status(500).json({ success: false, message: "Unable to add vendor" });
     }
-  };
+
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    /////
+
+    const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+    const c_columns = {
+      contact_person_name: name,
+      contact_person_email: email || null,
+      contact_person_mobile_no: mobile,
+      contact_person_remarks: null,
+      fatch_id: id,           // or vendor_id if you rename the column
+      type,
+      created_by: req.user.id,
+      created_at,
+    };
+
+    const newId = await insertData("md_contact_person", c_columns);
+
+    res.status(201).json({
+      success: true,
+      message: "Contact person created successfully",
+      data: {
+        id: newId,
+        name,
+        mobile,
+        email,
+        created_by: req.user.id,
+        created_at,
+      },
+    });
+  } catch (error) {
+    console.error("Error in addContactPerson:", error);
+    res.status(500).json({
+      success: false,
+      message: "Unable to add contact person",
+    });
+  }
+};
+
+
 
 
 
@@ -221,6 +235,7 @@ class VendorController {
   getAllVendors = async (req, res) => {
     try {
         const table = "md_vendor as a, lo_cities as b, lo_states as c";
+
         const condition = `a.city_id = b.id AND b.state_id = c.id`;
         // Give unique aliases for duplicate column names
         const select = "a.*, b.name AS city_name, b.state_id, c.name AS state_name";
@@ -241,7 +256,7 @@ class VendorController {
     try {
       const { vendor_id} = req.params;
       const table = "md_vendor as a, lo_cities as b, lo_states as c";
-      const condition = `a.city_id = b.id AND b.state_id = c.id AND id = ${vendor_id}`;
+      const condition = `a.city_id = b.id AND b.state_id = c.id AND a.vendor_id = ${vendor_id}`;
       // Give unique aliases for duplicate column names
       const select = "a.*, b.name AS city_name, b.state_id, c.name AS state_name";
       const vendor = await selectOneData(table, select, condition);
@@ -260,76 +275,130 @@ class VendorController {
     }
   };
 
+
   // Update vendor
-  updateVendor = async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { name, mobile, email, city_id, address, gst_in } = req.body;
-      const updated_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
-      const updateValues = {
-        vendor_name:name,
-        vendor_mobile:mobile,
-        vendor_email:email,
-        city_id,
-        vendor_address:address,
-        vendor_gst_in:gst_in,
-        updated_at,
-      };
+  
+updateVendor = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, mobile, email, city_id, address, gst_in } = req.body;
 
-      const affectedRows = await updateData("md_vendor", updateValues, `vendor_id = ${id}`);
-      if (affectedRows === 0) {
-        return res.status(404).json({ success: false, message: "Vendor not found or no changes made" });
-      }
+    const updated_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
-      
-      res.status(200).json({ success: true, message: "Vendor updated successfully", data: affectedRows });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ success: false, message: "Unable to update vendor" });
+    
+    const updateValues = { updated_at };
+
+    // Add only the fields that exist in req.body
+    if (name !== undefined)    updateValues.vendor_name = name;
+    if (mobile !== undefined)  updateValues.vendor_mobile = mobile;
+    if (email !== undefined)   updateValues.vendor_email = email;
+    if (city_id !== undefined) updateValues.city_id = city_id;
+    if (address !== undefined) updateValues.vendor_address = address;
+    if (gst_in !== undefined)  updateValues.vendor_gst_in = gst_in;
+
+    // If nothing to update besides updated_at
+    if (Object.keys(updateValues).length === 1) {
+      return res.status(400).json({ success: false, message: "No fields to update" });
     }
-  };
 
+    const affectedRows = await updateData(
+      "md_vendor",
+      updateValues,
+      `vendor_id = ${id}`
+    );
+
+    if (affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Vendor not found or no changes made",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Vendor updated successfully",
+      data: affectedRows,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Unable to update vendor" });
+  }
+};
 
   
 
 
+///////
   updateContactPerson = async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { name, mobile, email } = req.body;
-      const updated_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
-      const updateValues = {
-        contact_person_name:name,
-        contact_person_email:email,
-        contact_person_mobile_no:mobile,
-        contact_person_remarks:"",
-        updated_at
-      };
+  try {
+    const { id } = req.params;                 // contact_person_id (or whatever PK you use)
+    const { name, mobile, email, remarks } = req.body;
 
-      const affectedRows = await updateData("md_contact_person", updateValues, `vendor_id = ${id}`);
-      if (affectedRows === 0) {
-        return res.status(404).json({ success: false, message: "Contact Person not found or no changes made" });
-      }
-      res.status(200).json({ success: true, message: "Contact Person updated successfully", data: affectedRows });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ success: false, message: "Contact Person Unable to update vendor" });
+    const updated_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+    // Build the object dynamically so we only update what the client provided
+    const updateValues = { updated_at };
+
+    if (name   !== undefined) updateValues.contact_person_name       = name;
+    if (email  !== undefined) updateValues.contact_person_email      = email;
+    if (mobile !== undefined) updateValues.contact_person_mobile_no  = mobile;
+    if (remarks!== undefined) updateValues.contact_person_remarks    = remarks;
+
+    // If the request body had no updatable fields
+    if (Object.keys(updateValues).length === 1) {
+      return res.status(400).json({
+        success: false,
+        message: "No fields to update",
+      });
     }
-  };
+
+  
+    const affectedRows = await updateData(
+      "md_contact_person",
+      updateValues,
+      `contact_person_id = ${id}`
+    );
+
+    if (affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Contact person not found or no changes made",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Contact person updated successfully",
+      data: affectedRows,
+    });
+  } catch (error) {
+    console.error("Error updating contact person:", error);
+    res.status(500).json({
+      success: false,
+      message: "Unable to update contact person",
+    });
+  }
+};
+
+
 
 
   // Delete vendor
   deleteVendor = async (req, res) => {
     try {
       const { id } = req.params;
-      const deletedRows = await deleteData("md_vendor", `id = ${id}`);
+      const deletedRows = await deleteData("md_vendor", `vendor_id = ${id}`);
+
       if (deletedRows === 0) {
         return res.status(404).json({ success: false, message: "Vendor not found" });
       }
       const deletedContactPersonRows = await deleteData("md_contact_person", `fatch_id = ${id} AND type = 'VN'`);
+
       if (deletedContactPersonRows === 0) {
+
         return res.status(404).json({ success: false, message: "Contact Person not found" });
       }
+
       res.status(200).json({ success: true, message: "Vendor and Contact Person deleted successfully" });
     } catch (error) {
       console.error(error);
@@ -337,6 +406,7 @@ class VendorController {
     }
   };
 
+  
 
   deleteContactPerson = async (req, res) => {
     try {
