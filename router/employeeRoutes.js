@@ -5,7 +5,7 @@ const employeeController = require("../controller/employeeController");
 const authcheck= require('../middleware/auth')
 
 
-router.post("/api/createvendor",authcheck, employeeController.addEmployee);
+router.post("/api/add_employee",authcheck, employeeController.addEmployee);
 // router.post("/api/create_contact_person", vendorController.addContactPerson);
 // router.get("/api/getallvendor",authcheck, vendorController.getAllVendors);
 // router.get("/api/getvendor/:id",authcheck, vendorController.getVendorById);
