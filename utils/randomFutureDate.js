@@ -1,8 +1,14 @@
 const dayjs = require("dayjs");
+const utc = require("dayjs/plugin/utc");
+const timezone = require("dayjs/plugin/timezone");
 
-// Function to generate random future date 1-2 hours from now
-const randomFutureDate = () => {
-  const now = dayjs();
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+// Function to generate random future date 1-2 hours from now in IST
+const randomFutureDateIST = () => {
+  // Current time in IST
+  const now = dayjs().tz("Asia/Kolkata");
   
   // 1 hour in ms = 3600000, 2 hours in ms = 7200000
   const minMs = 1 * 60 * 60 * 1000; // 1 hour
@@ -14,4 +20,4 @@ const randomFutureDate = () => {
   return futureDate.format("YYYY-MM-DD HH:mm:ss");
 }
 
-module.exports = randomFutureDate;
+module.exports = randomFutureDateIST;
