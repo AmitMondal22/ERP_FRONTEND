@@ -9,9 +9,7 @@ router.post("/api/add_employee",authcheck, employeeController.addEmployee);
 
 router.get("/api/get_all_employee",authcheck, employeeController.getAllemployee);
 router.get("/api/get_employee/:employee_id",authcheck, employeeController.getEmployeeById);
-// router.post("/api/vendor/:id",authcheck, vendorController.updateVendor);
-// router.post("/api/contact_person/:id",authcheck, vendorController.updateContactPerson);
-// router.delete("/api/vendor/:id",authcheck, vendorController.deleteVendor);
-// router.delete("/api/contact_person/:id",authcheck, vendorController.deleteContactPerson);
+router.post("/api/update_employee/:id",authcheck, employeeController.updateEmployee);
+router.delete("/api/delete_employee/:id",authcheck, employeeController.deleteEmployee);
 
 module.exports = router;

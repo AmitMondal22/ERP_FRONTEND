@@ -170,94 +170,123 @@ class EmployeeController {
   };
 
   // Update vendor
-  updateVendor = async (req, res) => {
+  updateEmployee = async (req, res) => {
     try {
-      const { id } = req.params;
-      const { name, mobile, email, city_id, address, gst_in } = req.body;
-      const updated_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
-      const updateValues = {
-        vendor_name:name,
-        vendor_mobile:mobile,
-        vendor_email:email,
+      const { id } = req.params; // employee ID
+      const {
+        first_name,
+        middle_name,
+        last_name,
+        email,
+        phone,
+        hire_date,
+        department,
+        job_title,
+        manager_id,
+        base_salary,
+        allowance,
+        status,
+        em_id,
+        employee_dob,
+        employee_address,
         city_id,
-        vendor_address:address,
-        vendor_gst_in:gst_in,
+        employee_designation_id,
+        department_id,
+        date_of_joining,
+        role,
+      } = req.body;
+
+      const updated_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+      // Build full name if any name part is provided
+      const full_name = [first_name, middle_name, last_name].filter(Boolean).join(" ");
+
+      // Update users table if email, phone, or role is provided
+      const updateUserValues = {};
+      if (full_name) updateUserValues.name = full_name;
+      if (email) updateUserValues.email = email;
+      if (phone) updateUserValues.mobile_no = phone;
+      if (role) updateUserValues.role = role;
+      updateUserValues.updated_at = updated_at;
+
+      if (Object.keys(updateUserValues).length > 1) {
+        await updateData("users", updateUserValues, `id = (SELECT user_id FROM em_employees WHERE employee_id = ${id})`);
+      }
+
+      // Update employees table
+      const updateEmployeeValues = {
         updated_at,
       };
 
-      const affectedRows = await updateData("md_vendor", updateValues, `vendor_id = ${id}`);
+      if (first_name) updateEmployeeValues.first_name = first_name;
+      if (middle_name) updateEmployeeValues.middle_name = middle_name;
+      if (last_name) updateEmployeeValues.last_name = last_name;
+      if (email) updateEmployeeValues.email = email;
+      if (phone) updateEmployeeValues.phone = phone;
+      if (hire_date) updateEmployeeValues.hire_date = hire_date;
+      if (department) updateEmployeeValues.department = department;
+      if (job_title) updateEmployeeValues.job_title = job_title;
+      if (manager_id) updateEmployeeValues.manager_id = manager_id;
+      if (base_salary) updateEmployeeValues.base_salary = base_salary;
+      if (allowance) updateEmployeeValues.allowance = allowance;
+      if (status !== undefined) updateEmployeeValues.status = status;
+      if (em_id) updateEmployeeValues.em_id = em_id;
+      if (employee_dob) updateEmployeeValues.employee_dob = employee_dob;
+      if (employee_address) updateEmployeeValues.employee_address = employee_address;
+      if (city_id) updateEmployeeValues.city_id = city_id;
+      if (employee_designation_id) updateEmployeeValues.employee_designation_id = employee_designation_id;
+      if (department_id) updateEmployeeValues.department_id = department_id;
+      if (date_of_joining) updateEmployeeValues.date_of_joining = date_of_joining;
+
+      const affectedRows = await updateData("em_employees", updateEmployeeValues, `employee_id = ${id}`);
       if (affectedRows === 0) {
-        return res.status(404).json({ success: false, message: "Vendor not found or no changes made" });
+        return res.status(404).json({ success: false, message: "Employee not found or no changes made" });
       }
 
-      
-      res.status(200).json({ success: true, message: "Vendor updated successfully", data: affectedRows });
+      res.status(200).json({ success: true, message: "Employee updated successfully", data: affectedRows });
+
     } catch (error) {
-      console.error(error);
-      res.status(500).json({ success: false, message: "Unable to update vendor" });
+      console.error("Error in updateEmployee:", error.message);
+      res.status(500).json({
+        success: false,
+        message: "Unable to update employee",
+        error: error.message,
+      });
     }
   };
 
 
-
-
-  updateContactPerson = async (req, res) => {
+  deleteEmployee = async (req, res) => {
     try {
-      const { id } = req.params;
-      const { name, mobile, email } = req.body;
-      const updated_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
-      const updateValues = {
-        contact_person_name:name,
-        contact_person_email:email,
-        contact_person_mobile_no:mobile,
-        contact_person_remarks:"",
-        updated_at
-      };
+      const { id } = req.params; // employee_id
 
-      const affectedRows = await updateData("md_contact_person", updateValues, `vendor_id = ${id}`);
-      if (affectedRows === 0) {
-        return res.status(404).json({ success: false, message: "Contact Person not found or no changes made" });
+      // Fetch the employee record to get the associated user_id
+      const employee = await selectOneData("em_employees",'*', `employee_id = ${id}`);
+      if (!employee) {
+        return res.status(404).json({ success: false, message: "Employee not found" });
       }
-      res.status(200).json({ success: true, message: "Contact Person updated successfully", data: affectedRows });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ success: false, message: "Contact Person Unable to update vendor" });
-    }
-  };
+      const user_id = employee.user_id;
 
-  // Delete vendor
-  deleteVendor = async (req, res) => {
-    try {
-      const { id } = req.params;
-      const deletedRows = await deleteData("md_vendor", `id = ${id}`);
-      if (deletedRows === 0) {
-        return res.status(404).json({ success: false, message: "Vendor not found" });
+      // Delete employee record
+      const deletedEmployeeRows = await deleteData("em_employees", `employee_id = ${id}`);
+      if (deletedEmployeeRows === 0) {
+        return res.status(404).json({ success: false, message: "Employee not found or already deleted" });
       }
-      const deletedContactPersonRows = await deleteData("md_contact_person", `fatch_id = ${id} AND type = 'VN'`);
-      if (deletedContactPersonRows === 0) {
-        return res.status(404).json({ success: false, message: "Contact Person not found" });
+
+      // Delete associated user record
+      const deletedUserRows = await deleteData("users", `id = ${user_id}`);
+      if (deletedUserRows === 0) {
+        console.warn(`User with ID ${user_id} not found while deleting employee`);
       }
-      res.status(200).json({ success: true, message: "Vendor and Contact Person deleted successfully" });
+
+      res.status(200).json({ success: true, message: "Employee and user deleted successfully" });
     } catch (error) {
-      console.error(error);
-      res.status(500).json({ success: false, message: "Unable to delete vendor and Contact Person" });
+      console.error("Error in deleteEmployee:", error.message);
+      res.status(500).json({ success: false, message: "Unable to delete employee and user", error: error.message });
     }
   };
 
 
-  deleteContactPerson = async (req, res) => {
-    try {
-      const { id } = req.params;
-      const deletedContactPersonRows = await deleteData("md_contact_person", `contact_person_id  = ${id}`);
-      if (deletedContactPersonRows === 0) {
-        return res.status(404).json({ success: false, message: "Contact Person not found" });
-      }
-      res.status(200).json({ success: true, message: "Contact Person deleted successfully" });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ success: false, message: "Unable to delete Contact Person" });
-    }
-  };
 
 }
 
