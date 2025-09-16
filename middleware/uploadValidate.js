@@ -1,4 +1,4 @@
-const validateBase64Image = require("../utils/validateBase64Image");
+// const validateBase64Image = require("../utils/validateBase64Image");
 
 const validateImageMiddleware = (req, res, next) => {
   const { image } = req.body;
@@ -7,7 +7,7 @@ const validateImageMiddleware = (req, res, next) => {
     return res.status(400).json({ error: "Image is required." });
   }
 
-  const validation = validateBase64Image(image);
+  const validation = ''//validateBase64Image(image);
   if (!validation.valid) {
     return res.status(400).json({ error: validation.error });
   }
