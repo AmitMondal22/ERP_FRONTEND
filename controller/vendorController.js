@@ -252,28 +252,44 @@ class VendorController {
   };
 
   // Get vendor by ID
-  getVendorById = async (req, res) => {
-    try {
-      const { vendor_id} = req.params;
-      const table = "md_vendor as a, lo_cities as b, lo_states as c";
-      const condition = `a.city_id = b.id AND b.state_id = c.id AND a.vendor_id = ${vendor_id}`;
-      // Give unique aliases for duplicate column names
-      const select = "a.*, b.name AS city_name, b.state_id, c.name AS state_name";
-      const vendor = await selectOneData(table, select, condition);
-       if (!vendor) {
-        return res.status(404).json({ success: false, message: "Vendor not found" });
-      }
+ getVendorById = async (req, res) => {
+  try {
+    const { vendor_id } = req.params;
+    const table = "md_vendor as a, lo_cities as b, lo_states as c";
+    const condition = `a.city_id = b.id AND b.state_id = c.id AND a.vendor_id = ${vendor_id}`;
+    const select = "a.*, b.name AS city_name, b.state_id, c.name AS state_name";
 
-      const contact_person = await selectOneData("md_contact_person", "*", `fatch_id = ${vendor_id}`);
-      if (!contact_person) {
-        return res.status(404).json({ success: false, message: "Contact Person not found" });
-      }
-      res.status(200).json({ success: true, data: {vendor, contact_person} });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ success: false, message: "Unable to fetch vendor" });
+    // Fetch vendor
+    const vendor = await selectOneData(table, select, condition);
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: "Vendor not found" });
     }
-  };
+
+    
+    const contact_persons = await selectData(
+      "md_contact_person",
+      "*",
+      `fatch_id = ${vendor_id}`
+    );
+
+    // If none found, return empty array instead of error (optional)
+    if (!contact_persons || contact_persons.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: { vendor, contact_persons: [] },
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: { vendor, contact_persons },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Unable to fetch vendor" });
+  }
+};
+
 
 
   // Update vendor

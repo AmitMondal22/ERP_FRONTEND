@@ -13,12 +13,12 @@ router.get("/api/getallvendor",authcheck, vendorController.getAllVendors);//
 
 router.get("/api/getvendor/:vendor_id",authcheck, vendorController.getVendorById);//
 
-router.post("/api/updatevendor/:id",authcheck, vendorController.updateVendor);
+router.post("/api/updatevendor/:id",authcheck, vendorController.updateVendor);//
 
-router.post("/api/upadte_contact_person/:id",authcheck, vendorController.updateContactPerson);
+router.post("/api/update_contact_person/:id",authcheck, vendorController.updateContactPerson);
 
 
-router.delete("/api/delete_vendor/:id",authcheck, vendorController.deleteVendor);
+router.delete("/api/delete_vendor/:id",authcheck, vendorController.deleteVendor);//
 
 router.delete("/api/delete_contact_person/:id",authcheck, vendorController.deleteContactPerson);
 

@@ -3,7 +3,7 @@ const { insertData,selectData ,selectOneData,customSelectSqlQuery} = require("..
 
 
 
-class cityAndCountryController {
+class cityAndCountryController { 
 
 getAllstates = async (req, res) => {
     try {

@@ -99,6 +99,7 @@ async function insertData(table, data) {
   const placeholders = values.map(() => "?").join(",");
 
   const query = `INSERT INTO ${table} (${columns}) VALUES (${placeholders})`;
+  console.log(`INSERT INTO ${table} (${columns}) VALUES (${values})`)
 
   let conn;
   try {
