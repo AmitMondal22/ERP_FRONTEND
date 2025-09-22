@@ -169,7 +169,9 @@ class TeamController {
     };
 
 
-  // Update vendor
+
+
+  // Update Team
   updateTeam = async (req, res) => {
     try {
         const { id } = req.params; // team_id
@@ -222,6 +224,8 @@ class TeamController {
 
 
 
+
+
   deleteTeam = async (req, res) => {
     try {
         const { id } = req.params; // team_id
@@ -260,6 +264,7 @@ class TeamController {
     };
 
 
+    
 
 
 }

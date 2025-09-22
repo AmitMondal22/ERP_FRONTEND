@@ -8,7 +8,7 @@ const authcheck= require('../middleware/auth')
 router.post("/api/add_employee",authcheck, employeeController.addEmployee);
 
 
-router.get("/api/get_all_employee",authcheck, employeeController.getAllemployee);
+router.get("/api/get_all_employee",authcheck, employeeController.getAllemployee);//operator_id
 
 
 router.get("/api/get_employee/:employee_id",authcheck, employeeController.getEmployeeById);
