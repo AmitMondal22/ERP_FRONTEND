@@ -13,6 +13,7 @@ const Team= require('./router/teamRoutes');
 const Stor= require('./router/storRouter');
 const Relation= require('./router/relationRoutes');
 const Upload= require('./router/uploadsRoutes');
+const Bom= require('./router/bomRoutes');
 const app= express()
 const cors = require('cors');
 
@@ -44,6 +45,7 @@ app.use('/',Team)
 app.use('/',Stor)
 app.use('/',Relation)
 app.use('/',Upload)
+app.use('/',Bom)
 
 
 
