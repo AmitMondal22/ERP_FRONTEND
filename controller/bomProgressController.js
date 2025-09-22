@@ -95,6 +95,36 @@ class BomProgressController {
   };
 
 
+  // Get all projects
+  getAllBomProgress = async (req, res) => {
+    try {
+      const { bom_id } = req.params;
+      let confition = `bom_id = ${Number(bom_id)}`
+      const bomProgress = await selectData("md_bom_progress",'*',confition);
+      res.status(200).json({ success: true, data: bomProgress });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ success: false, message: "Unable to fetch bom progress" });
+    }
+  };
+
+
+    // Delete project by ID
+  deleteBomProgress = async (req, res) => {
+    try {
+      const { id } = req.params;
+      const condition = `bom_progress_id = ${Number(id)}`;
+      const deletedRows = await deleteData("md_bom_progress", condition);
+      if (!deletedRows) {
+        return res.status(404).json({ success: false, message: "Bom Progress not found or already deleted" });
+      }
+      res.status(200).json({ success: true, message: "Bom Progress deleted successfully" });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ success: false, message: "Unable to delete Bom Progress" });
+    }
+  };
+
 
 }
 
