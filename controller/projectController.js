@@ -52,15 +52,59 @@ class ProjectController {
   };
 
   // Get all projects
-  getAllProjects = async (req, res) => {
-    try {
-      const projects = await selectData("md_project");
-      res.status(200).json({ success: true, data: projects });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ success: false, message: "Unable to fetch projects" });
-    }
-  };
+
+ getAllProjects = async (req, res) => {
+  try {
+    // fetch all projects
+    const projects = await selectData("md_project");
+
+    // enrich projects with city, state, and user names
+    const enrichedProjects = await Promise.all(
+      projects.map(async (project) => {
+        let city = null;
+        let state = null;
+        let user = null;
+
+        if (project.city_id) {
+          city = await selectOneData(
+            "lo_cities",
+            "name",
+            `id = ${project.city_id}`
+          );
+        }
+
+        if (project.state_id) {
+          state = await selectOneData(
+            "lo_states",
+            "name",
+            `id = ${project.state_id}`
+          );
+        }
+
+        if (project.create_by) {
+          user = await selectOneData(
+            "users",
+            "name",
+            `id = ${project.create_by}`
+          );
+        }
+
+        return {
+          ...project,
+          city_name: city ? city.name : null,
+          state_name: state ? state.name : null,
+          created_by_name: user ? user.name : null,
+        };
+      })
+    );
+
+    res.json({ success: true, data: enrichedProjects });
+  } catch (err) {
+    console.error("Error in getAllProjects:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 
   // Update project by ID
   updateProject = async (req, res) => {
