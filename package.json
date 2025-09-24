@@ -11,6 +11,7 @@
   "author": "sourish",
   "license": "ISC",
   "dependencies": {
+    "amit": "^1.0.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "crypto-js": "^4.2.0",
@@ -24,8 +25,10 @@
     "mysql2": "^3.14.4",
     "nodemailer": "^7.0.6",
     "nodemon": "^3.1.10",
+    "origin": "^0.5.8",
     "passport": "^0.7.0",
-    "passport-jwt": "^4.0.1"
+    "passport-jwt": "^4.0.1",
+    "pull": "^2.1.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

@@ -158,7 +158,7 @@ class unitController {
     setValues.updated_at = updated_at;
 
     // Make sure condition is a valid string
-    const condition = `${Number(id)}`;
+    const condition = `unit_id = ${Number(id)}`;
 
     //const condition= `${id}`
 

@@ -53,6 +53,7 @@ class BomController {
     }
   };
 
+  
   // Get a single project by ID
   getBom = async (req, res) => {
     try {
