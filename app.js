@@ -58,7 +58,7 @@ function runEveryMinute() {
 }
 
 // Run every 60,000 milliseconds (1 minute 1000)
-setInterval(runEveryMinute, 60 * 100);
+// setInterval(runEveryMinute, 60 * 100);
 
 // -------------------------------------
 
