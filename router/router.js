@@ -17,5 +17,4 @@ router.post("/api/create",validate(userValidation.createUserSchema),userControll
 router.post("/api/create/:user_type",userController.getAllUser);
 
 
-
 module.exports= router;
