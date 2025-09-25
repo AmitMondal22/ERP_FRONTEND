@@ -75,9 +75,7 @@ class ProjectSiteEmployeeAssignmentController {
 
             const assignments = await selectData(table, select, null, "a.project_site_employee_assignment_id ASC");
 
-            if (!assignments || assignments.length === 0) {
-            return res.status(404).json({ success: false, message: "No project site employee assignments found" });
-            }
+          
 
             res.status(200).json({ success: true, data: assignments });
 
@@ -116,9 +114,6 @@ class ProjectSiteEmployeeAssignmentController {
             const condition = `a.project_site_employee_assignment_id = ${id}`;
             const assignment = await selectOneData(table, select, condition);
 
-            if (!assignment) {
-            return res.status(404).json({ success: false, message: "Project site employee assignment not found" });
-            }
 
             res.status(200).json({ success: true, data: assignment });
 
