@@ -70,11 +70,6 @@ class ProjectEmployeeAssignmentController {
             `;
 
             const assignments = await selectData(table, select, null, "a.project_employee_assignment_id ASC");
-
-            if (!assignments || assignments.length === 0) {
-            return res.status(404).json({ success: false, message: "No project employee assignments found" });
-            }
-
             res.status(200).json({ success: true, data: assignments });
 
         } catch (error) {
