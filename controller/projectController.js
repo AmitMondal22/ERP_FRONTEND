@@ -56,49 +56,10 @@ class ProjectController {
  getAllProjects = async (req, res) => {
   try {
     // fetch all projects
-    const projects = await selectData("md_project");
-
-    // enrich projects with city, state, and user names
-    const enrichedProjects = await Promise.all(
-      projects.map(async (project) => {
-        let city = null;
-        let state = null;
-        let user = null;
-
-        if (project.city_id) {
-          city = await selectOneData(
-            "lo_cities",
-            "name",
-            `id = ${project.city_id}`
-          );
-        }
-
-        if (project.state_id) {
-          state = await selectOneData(
-            "lo_states",
-            "name",
-            `id = ${project.state_id}`
-          );
-        }
-
-        if (project.create_by) {
-          user = await selectOneData(
-            "users",
-            "name",
-            `id = ${project.create_by}`
-          );
-        }
-
-        return {
-          ...project,
-          city_name: city ? city.name : null,
-          state_name: state ? state.name : null,
-          created_by_name: user ? user.name : null,
-        };
-      })
-    );
-
-    res.json({ success: true, data: enrichedProjects });
+    const select = 'a.*, b.name AS city_name, b.state_id, c.name AS state_name, d.name as created_by_name'
+    const table = `md_project AS a JOIN lo_cities AS b ON a.city_id = b.id JOIN lo_states AS c ON b.state_id = c.id JOIN users AS d ON a.create_by = d.id`;
+    const projects = await selectData(table,select);
+    res.json({ success: true, data: projects });
   } catch (err) {
     console.error("Error in getAllProjects:", err);
     res.status(500).json({ success: false, message: err.message });
