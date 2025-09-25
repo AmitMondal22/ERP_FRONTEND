@@ -139,9 +139,7 @@ class EmployeeController {
         const select = "a.*, b.name AS city_name, b.state_id, c.name AS state_name, m.employee_id AS manager_id,  m.first_name AS manager_first_name, m.last_name AS manager_last_name, m.email AS manager_email";
 
         const employee = await selectData(table, select, null ,"a.em_id ASC");
-        if (!employee || employee.length === 0) {
-          return res.status(404).json({ success: false, message: "No employee found" });
-        }
+        
         res.status(200).json({ success: true, data: employee });
     } catch (error) {
         console.error(error);
