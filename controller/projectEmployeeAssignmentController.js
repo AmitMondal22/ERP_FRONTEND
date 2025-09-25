@@ -7,7 +7,7 @@ const {
   selectData,
   selectOneData,
   updateData,
-  deleteData,
+  deleteData,  
 } = require("../models/MasterModel");
 
 class ProjectEmployeeAssignmentController {
@@ -51,6 +51,7 @@ class ProjectEmployeeAssignmentController {
             });
         }
     };
+    
 
     getAllProjectEmployeeAssignments = async (req, res) => {
         try {

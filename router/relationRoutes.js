@@ -26,8 +26,13 @@ router.delete("/api/delete_project_site_employee/:id",authcheck, ProjectSiteEmpl
 
 
 
-//working here   insertedDAta
-router.post("/api/create_project_employee",authcheck, ProjectEmployeeAssignmentController.createProjectEmployeeAssignment);//create site inchatrge
+
+
+
+
+//working here   insertedDAta//this one
+router.post("/api/create_project_employee",authcheck, ProjectEmployeeAssignmentController.createProjectEmployeeAssignment);//create project incharge
+
 router.get("/api/get_all_project_employee",authcheck, ProjectEmployeeAssignmentController.getAllProjectEmployeeAssignments);//project_in_charge_id	
 router.post("/api/update_project_employee/:id",authcheck, ProjectEmployeeAssignmentController.updateProjectEmployeeAssignment);
 router.get("/api/get_project_employee/:id",authcheck, ProjectEmployeeAssignmentController.getProjectEmployeeAssignmentById);
