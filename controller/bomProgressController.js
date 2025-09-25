@@ -38,8 +38,7 @@ class BomProgressController {
             {
               bom_progress_name,
               sl_number,
-              updated_at: timestamp,
-              updated_by: req.user.id,
+              updated_at: timestamp
             },
             `bom_progress_id = ${Number(bom_progress_id)}`
           );

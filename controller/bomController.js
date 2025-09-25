@@ -8,7 +8,7 @@ const { updateData, selectOneData, insertData, deleteData, selectData } = requir
 
 class BomController {
 
-  // Create
+  // CreateORupdate
   createOrUpdateBom = async (req, res) => {
     try {
       const { bom_id, bom_name } = req.body;
@@ -54,6 +54,8 @@ class BomController {
   };
 
   
+  
+
   // Get a single project by ID
   getBom = async (req, res) => {
     try {
