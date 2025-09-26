@@ -22,6 +22,7 @@ class BomProgressController {
 
       const processItem = async (item) => {
         const { bom_progress_id, bom_id, bom_progress_name, sl_number } = item;
+        
 
         if (!bom_id || !bom_progress_name || sl_number === undefined) {
           return { success: false, item, message: "Missing required fields" };

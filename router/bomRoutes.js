@@ -16,7 +16,7 @@ router.delete("/api/delete_bom/:id", authcheck,BomController.deleteBom);
 
 
  
-
+ 
 router.post("/api/bom_progress_create_update", authcheck,validate(bomProgressListSchema),BomProgressController.bulkCreateOrUpdate);
 router.get("/api/get_bom_progress/:id",authcheck, BomProgressController.getBomProgress);
 router.get("/api/get_bom_progressbybomid/:bom_id",authcheck, BomProgressController.getAllBomProgress);//all-steps inside bom
