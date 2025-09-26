@@ -84,7 +84,7 @@ class BomProgressController {
       const { id } = req.params;
       const bomProgress = await selectOneData("md_bom_progress", "*", `bom_progress_id = ${Number(id)}`);
 
-      if (!bomProgress) return res.status(404).json({ success: false, message: "BOM progress not found" });
+    
 
       res.status(200).json({ success: true, data: bomProgress });
     } catch (error) {
