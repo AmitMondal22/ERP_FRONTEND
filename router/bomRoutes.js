@@ -5,6 +5,8 @@ const BomProgressController = require("../controller/bomProgressController");
 const authcheck= require('../middleware/auth');
 const { bomProgressListSchema } = require("../validations/validateBomProgress");
 const validate = require("../middleware/validate");
+const bomItemController = require("../controller/bomItemController");
+
 
 
 
@@ -16,11 +18,33 @@ router.delete("/api/delete_bom/:id", authcheck,BomController.deleteBom);
 
 
  
- 
+
+ router.get("/api/hello",(req,res)=>{ res.send('hello')})
+
 router.post("/api/bom_progress_create_update", authcheck,validate(bomProgressListSchema),BomProgressController.bulkCreateOrUpdate);
 router.get("/api/get_bom_progress/:id",authcheck, BomProgressController.getBomProgress);
 router.get("/api/get_bom_progressbybomid/:bom_id",authcheck, BomProgressController.getAllBomProgress);//all-steps inside bom
 router.delete("/api/delete_bom_progress/:id", authcheck,BomController.deleteBom);
+
+
+
+
+
+// CREATE or UPDATE
+
+router.post("/api/createbom_item",authcheck, bomItemController.createBomItem);
+router.post("/api/update_bom_item/:id",authcheck, bomItemController.updateBomItem);
+
+// READ
+router.get("/api/get_all_bom_item", authcheck,bomItemController.getAllBomItems);
+router.get("/api/get_bom_item_by_id/:id",authcheck, bomItemController.getBomItemById);
+
+// DELETE
+router.delete("/api/delete_bom_item/:id",authcheck, bomItemController.deleteBomItem);
+
+
+
+
 
 module.exports = router;
  

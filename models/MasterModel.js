@@ -105,7 +105,9 @@ async function insertData(table, data) {
   try {
     conn = await connect();
     const [result] = await conn.execute(query, values);
+
     return result.insertId;
+    
   } catch (err) {
     console.error("Insert error:", err);
     throw err;
