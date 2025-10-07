@@ -128,7 +128,7 @@ createOrUpdateBom = async (req, res) => {
   getBom = async (req, res) => {
     try {
       const { id } = req.params;
-     
+
       const table=`md_bom b
       LEFT JOIN md_bom_progress p ON b.bom_id = p.bom_id
       LEFT JOIN md_bom_item i ON p.bom_progress_id = i.bom_progress_id AND p.bom_id = i.bom_id
