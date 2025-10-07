@@ -100,7 +100,14 @@ class BomProgressController {
     try {
       const { bom_id } = req.params;
       let confition = `bom_id = ${Number(bom_id)}`
-      const bomProgress = await selectData("md_bom_progress",'*',confition);
+
+
+      let select = `bom_progress_id,
+        bom_id,
+        bom_progress_name,
+        sl_number,
+        (SELECT COUNT(*) FROM md_bom_item WHERE bom_progress_id = md_bom_progress.bom_progress_id) AS total_bom_items`
+      const bomProgress = await selectData("md_bom_progress",select,confition);
       res.status(200).json({ success: true, data: bomProgress });
     } catch (error) {
       console.error(error);
