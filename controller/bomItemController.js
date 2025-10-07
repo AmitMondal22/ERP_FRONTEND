@@ -68,6 +68,26 @@ class BomItemController {
     }
   }
 
+
+
+  async getBomItemByProgress(req, res) {
+    try {
+      const { progress_id } = req.params;
+      const item = await selectOneData(
+        TABLE,
+        "*",
+        `bom_progress_id = ${progress_id}`
+      );
+
+     
+
+      res.json({ success: true, data: item });
+    } catch (err) {
+      console.error("Error fetching BOM Item:", err);
+      res.status(500).json({ success: false, message: "Server Error" });
+    }
+  }
+
   // UPDATE
 //  async updateBomItem(req, res) {
 //   try {

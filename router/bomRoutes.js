@@ -38,6 +38,7 @@ router.post("/api/update_bom_item/:id",authcheck, bomItemController.updateBomIte
 // READ
 router.get("/api/get_all_bom_item", authcheck,bomItemController.getAllBomItems);
 router.get("/api/get_bom_item_by_id/:id",authcheck, bomItemController.getBomItemById);
+router.get("/api/get_bom_item_by_progress/:progress_id",authcheck, bomItemController.getBomItemByProgress);
 
 // DELETE
 router.delete("/api/delete_bom_item/:id",authcheck, bomItemController.deleteBomItem);
