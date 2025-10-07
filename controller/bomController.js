@@ -5,53 +5,121 @@ dayjs.extend(utc);
 
 const { updateData, selectOneData, insertData, deleteData, selectData } = require("../models/MasterModel");
 
-
+ 
 class BomController {
-
+ 
   // CreateORupdate
-  createOrUpdateBom = async (req, res) => {
-    try {
-      const { bom_id, bom_name } = req.body;
+//   createOrUpdateBom = async (req, res) => {
+//     try {
+//       const { bom_id, bom_name } = req.body;
 
-      if (!bom_name) {
-        return res.status(400).json({ success: false, message: "BOM name is required" });
-      }
+//       if (!bom_name) {
+//         return res.status(400).json({ success: false, message: "BOM name is required" });
+//       }
 
-      const timestamp = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+//       const timestamp = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
-      if (bom_id) {
-        // UPDATE existing BOM
-        const setValues = {
-          bom_name,
-          updated_at: timestamp,
-          updated_by: req.user.id,
-        };
+//       if (bom_id) {
+//         // UPDATE existing BOM
+//         const setValues = {
+//           bom_name,
+//           updated_at: timestamp,
+//           create_by: req.user.id,
+//         };
 
-        const condition = `bom_id = ${Number(bom_id)}`;
-        const updatedRows = await updateData("md_bom", setValues, condition);
+//         const condition = `bom_id = ${Number(bom_id)}`;
+//         const updatedRows = await updateData("md_bom", setValues, condition);
 
-        if (!updatedRows) {
-          return res.status(404).json({ success: false, message: "BOM not found or nothing to update" });
-        }
-        return res.status(200).json({ success: true, message: "BOM updated", data: updatedRows });
+//         if (!updatedRows) {
+//           return res.status(404).json({ success: false, message: "BOM not found or nothing to update" });
+//         }
+//         return res.status(200).json({ success: true, message: "BOM updated", data: updatedRows });
 
-      } else {
-        // CREATE new BOM
-        const insertValues = {
-          bom_name,
-          create_by: req.user.id,
-          created_at: timestamp,
-        };
+//       } else {
+//         // CREATE new BOM
+//         const insertValues = {
+//           bom_name,
+//           create_by: req.user.id,
+//           created_at: timestamp,
+//         };
 
-        const insertedId = await insertData("md_bom", insertValues);
-        return res.status(201).json({ success: true, message: "BOM created", data: insertedId });
-      }
+//         // const insertedId = await insertData("md_bom", insertValues);
+//         // return res.status(201).json({ success: true, message: "BOM created", data: insertedId });
+//         const insertedId = await insertData("md_bom", insertValues);
+// return res.status(201).json({
+//   success: true,
+//   message: "BOM created",
+//   data: { bom_id: insertedId }
+// });
+//       }
 
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ success: false, message: "Unable to create or update BOM" });
+//     } catch (error) {
+//       console.error(error);
+//       res.status(500).json({ success: false, message: "Unable to create or update BOM" });
+//     }
+//   };
+
+
+createOrUpdateBom = async (req, res) => {
+  try {
+    const { bom_id, bom_name } = req.body;
+
+    if (!bom_name) {
+      return res.status(400).json({ success: false, message: "BOM name is required" });
     }
-  };
+
+    const timestamp = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+    if (bom_id) {
+      // ✅ UPDATE existing BOM
+      const setValues = { 
+        bom_name,
+        updated_at: timestamp,
+        // updated_by: req.user.id   // use this if you add column "updated_by"
+      };
+
+      const condition = `bom_id = ${Number(bom_id)}`;
+      const updatedRows = await updateData("md_bom", setValues, condition);
+
+      if (!updatedRows) {
+        return res.status(404).json({
+          success: false,
+          message: "BOM not found or nothing to update"
+        });
+      }
+
+      // ✅ Always return same shape
+      return res.status(200).json({
+        success: true,
+        message: "BOM updated",
+        data: { bom_id: Number(bom_id) }
+      });
+
+    } else {
+      // ✅ CREATE new BOM
+      const insertValues = {
+        bom_name,
+        create_by: req.user.id,
+        created_at: timestamp,
+      };
+
+      const insertedId = await insertData("md_bom", insertValues);
+
+      return res.status(201).json({
+        success: true,
+        message: "BOM created",
+        data: { bom_id: insertedId }
+      });
+    }
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Unable to create or update BOM"
+    });
+  }
+};
 
   
   

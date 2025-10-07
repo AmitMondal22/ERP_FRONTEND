@@ -27,7 +27,7 @@ router.get("/api/get_bom_progressbybomid/:bom_id",authcheck, BomProgressControll
 router.delete("/api/delete_bom_progress/:id", authcheck,BomController.deleteBom);
 
 
-
+     
 
 
 // CREATE or UPDATE

@@ -6,16 +6,16 @@ const {updateData,selectOneData,insertData,deleteData,selectData,} = require("..
 
 
 const TABLE = "md_bom_item";
+ 
 
-
-class BomItemController {  
-  // CREATE
+class BomItemController {   
+  // CREATE 
   async createBomItem(req, res) {
     try {
-      const { bom_id, bom_progress_id, product_id, qty } = req.body;
+      const { bom_id, bom_progress_id, product_id, qty,total_qty } = req.body;
 
       const data = {
-        bom_id,bom_progress_id,product_id,qty,
+        bom_id,bom_progress_id,product_id,qty,total_qty,
         created_by: req.user.id,
 
         created_at: dayjs.utc().format("YYYY-MM-DD HH:mm:ss"),
@@ -35,6 +35,7 @@ class BomItemController {
     }
   }
 
+  
   // READ ALL
   async getAllBomItems(req, res) {
     try {

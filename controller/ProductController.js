@@ -99,7 +99,7 @@
 
 
 const dayjs = require("dayjs");
-const { insertData, selectData, selectOneData, updateData, deleteData } = require("../models/MasterModel");
+const { insertData, selectData, selectOneData, updateData, deleteData,customSelectSqlQuery } = require("../models/MasterModel");
 
 class productController {
   // ---------------- CREATE PRODUCT ----------------
@@ -111,6 +111,8 @@ class productController {
         model_no,
         unit_id,
         manufacturer_name,
+        hsn_code,
+        qty,
         product_image = null, // default to null
       } = req.body;
 
@@ -127,9 +129,11 @@ class productController {
       const insertValues = {
         product_type_id,
         product_name,
-        model_no,
+        model_no, 
         unit_id,
         manufacturer_name,
+        hsn_code,
+        qty,
         product_image, // will be null if not provided
         created_by,
         created_at,
@@ -149,42 +153,137 @@ class productController {
     }
   };
 
-  // ---------------- GET ALL PRODUCTS ----------------
-  getAllProducts = async (req, res) => {
-    try {
-      const products = await selectData("md_product", "*", null, "product_id DESC");
 
-      res.status(200).json({
-        success: true,
-        message: "Products fetched successfully",
-        data: products,
-      });
-    } catch (error) {
-      console.error("Get all products error:", error);
-      res.status(500).json({ success: false, message: "Unable to fetch products" });
-    }
-  };
+  // ---------------- GET ALL PRODUCTS ----------------
+//   getAllProducts = async (req, res) => {
+//     try {
+//       // const products = await selectData("md_product", "*", null, "product_id DESC");
+//       const products = await customSelectSqlQuery(`
+//   SELECT 
+//     p.product_id,
+//     p.product_type_id,
+//     p.product_name,
+//     p.model_no,
+//     p.unit_id,
+//     u.unit_name,
+//     p.hsn_code,
+//     p.qty,
+//     p.manufacturer_name,
+//     p.product_image,
+//     p.created_by
+//   FROM md_product p
+//   INNER JOIN md_unit u ON p.unit_id = u.unit_id
+//   ORDER BY p.product_id DESC
+// `,true);
+
+
+//       res.status(200).json({
+//         success: true,
+//         message: "Products fetched successfully",
+//         data: products, data: products || [],
+//       });
+//     } catch (error) {
+//       console.error("Get all products error:", error);
+//       res.status(500).json({ success: false, message: "Unable to fetch products" });
+//     }
+//   };
+
+getAllProducts = async (req, res) => {
+  try {
+    const products = await customSelectSqlQuery(`
+      SELECT 
+        p.product_id,
+        p.product_type_id,
+        pt.product_type_name,      -- fetch the name
+        p.product_name,
+        p.model_no,
+        p.unit_id,
+        u.unit_name,
+        p.hsn_code,
+        p.qty,
+        p.manufacturer_name,
+        p.product_image,
+        p.created_by
+      FROM md_product p
+      INNER JOIN md_unit u ON p.unit_id = u.unit_id
+      INNER JOIN md_product_type pt ON p.product_type_id = pt.product_type_id
+      ORDER BY p.product_id DESC
+    `, true);  // fetch all rows
+
+    res.status(200).json({
+      success: true,
+      message: "Products fetched successfully",
+      data: products || [],
+    });
+  } catch (error) {
+    console.error("Get all products error:", error);
+    res.status(500).json({ success: false, message: "Unable to fetch products" });
+  }
+};
+
 
   // ---------------- GET PRODUCT BY ID ----------------
+  // getProductById = async (req, res) => {
+  //   try {
+  //     const { id } = req.params;
+  //     const product = await selectOneData("md_product", "*", `product_id = ${id}`);
+
+  //     if (!product) {
+  //       return res.status(404).json({ success: false, message: "Product not found" });
+  //     }
+
+  //     res.status(200).json({
+  //       success: true,
+  //       message: "Product fetched successfully",
+  //       data: product,
+  //     });
+  //   } catch (error) {
+  //     console.error("Get product by ID error:", error);
+  //     res.status(500).json({ success: false, message: "Unable to fetch product" });
+  //   }
+  // };
+
   getProductById = async (req, res) => {
-    try {
-      const { id } = req.params;
-      const product = await selectOneData("md_product", "*", `product_id = ${id}`);
+  try {
+    const { id } = req.params;
 
-      if (!product) {
-        return res.status(404).json({ success: false, message: "Product not found" });
-      }
+    const product = await customSelectSqlQuery(`
+      SELECT 
+        p.product_id,
+        p.product_type_id,
+        pt.product_type_name,
+        p.product_name,
+        p.model_no,
+        p.unit_id,
+        u.unit_name,
+        p.hsn_code,
+        p.qty,
+        p.manufacturer_name,
+        p.product_image,
+        p.created_by,
+        p.created_at,
+        p.updated_at
+      FROM md_product p
+      INNER JOIN md_unit u ON p.unit_id = u.unit_id
+      INNER JOIN md_product_type pt ON p.product_type_id = pt.product_type_id
+      WHERE p.product_id = ${id}
+    `, true); // fetchAll = true
 
-      res.status(200).json({
-        success: true,
-        message: "Product fetched successfully",
-        data: product,
-      });
-    } catch (error) {
-      console.error("Get product by ID error:", error);
-      res.status(500).json({ success: false, message: "Unable to fetch product" });
+    if (!product || product.length === 0) {
+      return res.status(404).json({ success: false, message: "Product not found" });
     }
-  };
+
+    res.status(200).json({
+      success: true,
+      message: "Product fetched successfully",
+      data: product[0], // single object
+    });
+
+  } catch (error) {
+    console.error("Get product by ID error:", error);
+    res.status(500).json({ success: false, message: "Unable to fetch product" });
+  }
+};
 
   // ---------------- UPDATE PRODUCT BY ID ----------------
 
@@ -231,6 +330,7 @@ class productController {
   //   }
   // };
 
+
 updateProductById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -240,6 +340,8 @@ updateProductById = async (req, res) => {
       model_no,
       unit_id,
       manufacturer_name,
+      hsn_code,
+      qty,
       product_image,
     } = req.body;
 
@@ -256,6 +358,8 @@ updateProductById = async (req, res) => {
       model_no: model_no ?? null,
       unit_id: unit_id ?? null,
       manufacturer_name: manufacturer_name ?? null,
+       hsn_code: hsn_code ?? null,
+      qty: qty ?? null,
       product_image: product_image ?? null,
       updated_at,
     };
