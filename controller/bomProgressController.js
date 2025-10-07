@@ -100,8 +100,6 @@ class BomProgressController {
     try {
       const { bom_id } = req.params;
       let confition = `bom_id = ${Number(bom_id)}`
-
-
       let select = `bom_progress_id,
         bom_id,
         bom_progress_name,

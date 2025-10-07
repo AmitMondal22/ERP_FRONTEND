@@ -207,7 +207,6 @@ createOrUpdateBom = async (req, res) => {
   // Get all projects
   getAllBom = async (req, res) => {
     try {
-
       const select= `b.bom_id,
         b.bom_name,
         b.create_by,
