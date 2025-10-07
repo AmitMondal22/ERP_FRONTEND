@@ -72,7 +72,7 @@ class TeamController {
     };
 
 
-
+ 
     // Get all
     getAllTeam = async (req, res) => {
         try {

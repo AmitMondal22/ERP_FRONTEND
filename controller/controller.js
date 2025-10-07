@@ -10,7 +10,6 @@ const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret_key"
 
 class userController {
   
-
   async login(req, res) {
     try {
       const { username, password } = req.body;
