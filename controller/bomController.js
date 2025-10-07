@@ -60,11 +60,83 @@ class BomController {
   getBom = async (req, res) => {
     try {
       const { id } = req.params;
-      const bom = await selectOneData("md_bom", "*", `bom_id = ${Number(id)}`);
 
-      if (!bom) return res.status(404).json({ success: false, message: "bom not found" });
+      const select= `b.bom_id, b.bom_name,
+        p.bom_progress_id, p.bom_progress_name, p.sl_number,
+        i.bom_item_id, i.product_id, i.qty, i.total_qty, i.created_by AS item_created_by, 
+        i.created_at AS item_created_at, i.updated_at AS item_updated_at,
+        pr.product_type_id, pr.product_name, pr.hsn_code, pr.manufacturer_name, pr.qty AS product_qty,
+        u.unit_id, u.unit_name, u.quantity AS unit_quantity,
+        pt.product_type_id AS pt_product_type_id, pt.product_type_name`
 
-      res.status(200).json({ success: true, data: bom });
+      const table=`md_bom b
+      LEFT JOIN md_bom_progress p ON b.bom_id = p.bom_id
+      LEFT JOIN md_bom_item i ON p.bom_progress_id = i.bom_progress_id AND p.bom_id = i.bom_id
+      LEFT JOIN md_product pr ON i.product_id = pr.product_id
+      LEFT JOIN md_unit u ON pr.unit_id = u.unit_id
+      LEFT JOIN md_product_type pt ON pr.product_type_id = pt.product_type_id`
+
+      const condition = `b.bom_id = ${Number(id)}`
+
+      const bom = await selectOneData(table, select, condition);
+
+
+
+      const bomData = {
+        bom_id: null,
+        bom_name: null,
+        progresses: []
+      };
+
+      const progressMap = new Map();
+      for (const row of bom) {
+        // Populate BOM data (once)
+        if (!bomData.bom_id) {
+          bomData.bom_id = row.bom_id;
+          bomData.bom_name = row.bom_name;
+        }
+        // Process progress data
+        if (row.bom_progress_id && !progressMap.has(row.bom_progress_id)) {
+          progressMap.set(row.bom_progress_id, {
+            bom_progress_id: row.bom_progress_id,
+            bom_progress_name: row.bom_progress_name,
+            sl_number: row.sl_number,
+            items: []
+          });
+        }
+        // Process item data with product, unit, and product type
+        if (row.bom_item_id) {
+          const progress = progressMap.get(row.bom_progress_id);
+          progress.items.push({
+            bom_item_id: row.bom_item_id,
+            product_id: row.product_id,
+            qty: row.qty,
+            total_qty: row.total_qty,
+            created_by: row.item_created_by,
+            created_at: row.item_created_at,
+            updated_at: row.item_updated_at,
+            product: {
+              product_id: row.product_id,
+              product_name: row.product_name,
+              hsn_code: row.hsn_code,
+              manufacturer_name: row.manufacturer_name,
+              qty: row.product_qty,
+              
+              unit_id: row.unit_id,
+              unit_name: row.unit_name,
+              quantity: row.unit_quantity,
+
+              product_type_id: row.product_type_id,
+              product_type_name: row.product_type_name
+              
+            }
+          });
+        }
+      }
+
+      bomData.progresses = Array.from(progressMap.values());
+
+      res.status(200).json({ success: true, data: bomData });
     } catch (error) {
       console.error(error);
       res.status(500).json({ success: false, message: "Unable to fetch project" });
