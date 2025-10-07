@@ -213,20 +213,10 @@ createOrUpdateBom = async (req, res) => {
         b.create_by,
         b.created_at,
         b.updated_at,
-        COUNT(p.bom_progress_id) AS total_bom_progress,
-        COUNT(i.bom_item_id) AS total_bom_items`
+        (SELECT COUNT(*) FROM md_bom_progress p WHERE p.bom_id = b.bom_id) AS total_bom_progress,
+        (SELECT COUNT(*) FROM md_bom_item i WHERE i.bom_id = b.bom_id) AS total_bom_items`
 
-      const table=`md_bom b
-        LEFT JOIN 
-            md_bom_progress p ON p.bom_id = b.bom_id
-        LEFT JOIN 
-            md_bom_item i ON i.bom_id = b.bom_id
-        GROUP BY 
-            b.bom_id, b.bom_name, b.create_by, b.created_at, b.updated_at`
-
-
-
-
+      const table=`md_bom b`
       const bom = await selectData(table,select);
       res.status(200).json({ success: true, data: bom });
     } catch (error) {
