@@ -7,7 +7,7 @@ const { updateData, selectOneData, insertData, deleteData, selectData } = requir
 
  
 class BomController {
- 
+
   // CreateORupdate
 //   createOrUpdateBom = async (req, res) => {
 //     try {
