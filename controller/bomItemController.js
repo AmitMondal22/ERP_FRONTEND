@@ -78,9 +78,6 @@ class BomItemController {
         "*",
         `bom_progress_id = ${progress_id}`
       );
-
-     
-
       res.json({ success: true, data: item });
     } catch (err) {
       console.error("Error fetching BOM Item:", err);

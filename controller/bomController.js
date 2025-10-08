@@ -212,10 +212,11 @@ createOrUpdateBom = async (req, res) => {
         b.create_by,
         b.created_at,
         b.updated_at,
+        u.name,
         (SELECT COUNT(*) FROM md_bom_progress p WHERE p.bom_id = b.bom_id) AS total_bom_progress,
         (SELECT COUNT(*) FROM md_bom_item i WHERE i.bom_id = b.bom_id) AS total_bom_items`
 
-      const table=`md_bom b`
+      const table=`md_bom b LEFT JOIN users AS u ON b.create_by = u.id`
       const bom = await selectData(table,select);
       res.status(200).json({ success: true, data: bom });
     } catch (error) {
