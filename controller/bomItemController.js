@@ -2,7 +2,7 @@ const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 dayjs.extend(utc);
 
-const {updateData,selectOneData,insertData,deleteData,selectData,} = require("../models/MasterModel");
+const {updateData,selectOneData,insertData,deleteData,selectData,customSelectSqlQuery} = require("../models/MasterModel");
 
 
 const TABLE = "md_bom_item";
@@ -51,10 +51,10 @@ class BomItemController {
   async getBomItemById(req, res) {
     try {
       const { id } = req.params;
-      const item = await selectOneData(
+      const item = await selectOneData( 
         TABLE,
         "*",
-        `bom_item_id = ${id}`
+        `bom_item_id = ${id}`    
       );
 
       if (!item) {
@@ -70,20 +70,85 @@ class BomItemController {
 
 
 
-  async getBomItemByProgress(req, res) {
-    try {
-      const { progress_id } = req.params;
-      const item = await selectOneData(
-        TABLE,
-        "*",
-        `bom_progress_id = ${progress_id}`
-      );
-      res.json({ success: true, data: item });
-    } catch (err) {
-      console.error("Error fetching BOM Item:", err);
-      res.status(500).json({ success: false, message: "Server Error" });
+
+
+  // async getBomItemByProgress(req, res) {
+  //   try {
+  //     const { progress_id } = req.params;
+  //     const item = await selectOneData(
+  //       TABLE,
+  //       "*",
+  //       `bom_progress_id = ${progress_id}`
+  //     );
+  //     res.json({ success: true, data: item });
+  //   } catch (err) {
+  //     console.error("Error fetching BOM Item:", err);
+  //     res.status(500).json({ success: false, message: "Server Error" });
+  //   }
+  // }
+ 
+
+
+
+// async getBomItemByProgress(req, res) {
+//   try {
+//     const { progress_id } = req.params;
+
+//     const sql = `
+//       SELECT 
+//         i.*, 
+//         p.product_name
+//       FROM md_bom_item AS i
+//       LEFT JOIN md_product AS p 
+//         ON i.product_id = p.product_id
+//       WHERE i.bom_progress_id = ${progress_id}
+//     `;
+
+//     const item = await customSelectSqlQuery(sql, true); // fetchAll = true
+
+//     if (!item || item.length === 0) {
+//       return res.status(404).json({ success: false, message: "No BOM items found" });
+//     }
+
+//     res.json({ success: true, data: item });
+//   } catch (err) {
+//     console.error("Error fetching BOM Item:", err);
+//     res.status(500).json({ success: false, message: "Server Error" });
+//   }
+// }
+
+async getBomItemByProgress(req, res) {
+  try {
+    const { progress_id } = req.params;
+
+    const sql = `
+      SELECT 
+        i.*, 
+        p.product_name,
+        u.unit_name
+      FROM md_bom_item AS i
+      LEFT JOIN md_product AS p 
+        ON i.product_id = p.product_id
+      LEFT JOIN md_unit AS u 
+        ON p.unit_id = u.unit_id
+      WHERE i.bom_progress_id = ${progress_id}
+    `;
+
+    const item = await customSelectSqlQuery(sql, true); // fetchAll = true
+
+    if (!item || item.length === 0) {
+      return res.status(404).json({ success: false, message: "No BOM items found" });
     }
+
+    res.json({ success: true, data: item });
+  } catch (err) {
+    console.error("Error fetching BOM Item:", err);
+    res.status(500).json({ success: false, message: "Server Error" });
   }
+}
+
+
+
 
   // UPDATE
 //  async updateBomItem(req, res) {
@@ -118,7 +183,7 @@ class BomItemController {
 
 async updateBomItem(req, res) {
   try {
-    const { id } = req.params;
+    const { id } = req.body;
     const { bom_id, bom_progress_id, product_id, qty, created_by } = req.body;
 
     // helper to replace undefined with null

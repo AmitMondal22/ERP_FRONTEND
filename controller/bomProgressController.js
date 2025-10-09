@@ -79,6 +79,7 @@ class BomProgressController {
     }
   };
 
+  
   // Get a single project by ID
   getBomProgress = async (req, res) => {
     try {
