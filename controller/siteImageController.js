@@ -104,6 +104,54 @@ class SiteImageController {
         }
     };
 
+
+
+    createSiteImage = async (req, res) => {
+        try {
+            const {
+                upload_file
+            } = req.body;
+
+            if (!upload_file || !employee_id || !project_id) {
+            return res.status(400).json({
+                success: false,
+                message: "Required fields missing: upload_file, employee_id, project_id"
+            });
+            }
+            let file_path = '/uploads/site_image'
+            // Ensure upload folder exists
+            const uploadDir = path.join(__dirname, `..${file_path}`);
+            if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+            }
+
+            // Sanitize file name
+            const safeName = upload_file.replace(/[^a-zA-Z0-9]/g, "_");
+            const { mimeType, buffer } = req.image;
+            const extension = mimeType.split("/")[1];
+            const fileName = `${safeName}_${Date.now()}.${extension}`;
+            const uploadPath = path.join(uploadDir, fileName);
+
+            // Write file
+            fs.writeFileSync(uploadPath, buffer);
+            var file_ptah = `${file_path}/${fileName}`
+
+            res.status(201).json({
+                success: true,
+                message: "Site image uploaded and saved successfully",
+                data: { file_ptah }
+            });
+
+        } catch (error) {
+            console.error("Error in createSiteImage:", error.message);
+            res.status(500).json({
+            success: false,
+            message: "Unable to create site image",
+            error: error.message
+            });
+        }
+    };
+
 }
 
 

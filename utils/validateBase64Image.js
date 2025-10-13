@@ -1,7 +1,7 @@
 // validateBase64Image.js
 const validateBase64Image = (base64String) => {
   // Check format: only jpg, jpeg, png
-  const matches = base64String.match(/^data:(image\/(jpeg|jpg|png));base64,(.+)$/);
+  const matches = base64String.match(/^data:(image\/(jpeg|jpg|png|pdf));base64,(.+)$/);
   if (!matches) {
     return { valid: false, error: "Invalid image format. Allowed: jpg, jpeg, png." };
   }
