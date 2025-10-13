@@ -6,15 +6,12 @@ const authcheck = require("../middleware/auth");
 const productController = require("../controller/ProductController");
 
 router.post("/api/product", authcheck, productController.createProduct);
-
 router.get("/api/getallproducts", authcheck, productController.getAllProducts);
-
 router.get("/api/productbyid/:id", authcheck, productController.getProductById);
 
-router.post(
-  "/api/updateproduct/:id",
-  authcheck,
-  productController.updateProductById
+router.get("/api/get_product_by_typeid",productController.getProductsByTypeId);
+
+router.post("/api/updateproduct/:id", authcheck,productController.updateProductById
 );
 
 router.delete(
