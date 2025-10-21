@@ -3,9 +3,12 @@ const router = express.Router();
 const purchaseProductController = require("../controller/purchaseProductController");
 const authcheck= require('../middleware/auth')
 const validate = require("../middleware/validate");
-const { purchaseSchema } = require("../validations/purchaseProductValadition");
+const { purchaseSchema, purchaseQuerySchema } = require("../validations/purchaseProductValadition");
 
 router.post("/api/perchase", authcheck, purchaseProductController.createPurchase);
+router.get("/api/perchase", authcheck,validate(purchaseQuerySchema), purchaseProductController.allPurchase);
+router.get("/api/perchase-product", authcheck,validate(purchaseQuerySchema), purchaseProductController.allProductPurchase);
+router.get("/api/perchase-product/:id", authcheck,validate(purchaseQuerySchema), purchaseProductController.getPurchaseById);
 
 
 module.exports = router;

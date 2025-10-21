@@ -179,4 +179,12 @@ delivery_date: Joi.string()
     }),
 });
 
-module.exports = { purchaseSchema };
+
+
+const purchaseQuerySchema = Joi.object({
+  search: Joi.string().allow('', null),
+  fromDate: Joi.date().iso().allow('', null),
+  toDate: Joi.date().iso().allow('', null)
+});
+
+module.exports = { purchaseSchema, purchaseQuerySchema };

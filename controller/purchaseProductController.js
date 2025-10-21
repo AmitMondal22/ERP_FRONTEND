@@ -1,4 +1,4 @@
-const { insertData, batchInsertData } = require("../models/MasterModel");
+const { insertData, batchInsertData,customSelectSqlQuery } = require("../models/MasterModel");
 const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 dayjs.extend(utc);
@@ -25,7 +25,7 @@ class PurchaseProductController {
     } = req.body;
 
     let connection;
-    // try {
+    try {
       // Prepare data for td_purchase
       const purchaseData = {
         project_id,
@@ -99,11 +99,309 @@ class PurchaseProductController {
         purchase_id,
         product_count: purchase_product.length,
       });
-    // } catch (error) {
-    //   console.error("Error creating bulk purchase:", error);
-    //   return res.status(500).json({ error: "Internal server error" });
-    // }
+    } catch (error) {
+      console.error("Error creating bulk purchase:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
   };
+
+ allPurchase = async (req, res) => {
+  try {
+    let { search, fromDate, toDate } = req.query;
+
+    // Escape and quote function for values (basic), replace with a proper SQL escape in your environment
+    function escapeValue(val) {
+      if (!val) return 'NULL';
+      return `'${val.replace(/'/g, "''")}'`; // basic single quote escape for SQL
+    }
+
+    let sql = `
+      SELECT
+        p.purchase_id,
+        p.project_id,
+        pr.project_name,
+        ps.project_site_name,
+        p.site_id,
+        p.status,
+        p.vendor_id,
+        v.vendor_name,
+        p.stor_id,
+        s.store_name,
+        p.purchase_order_id,
+        po.voucher_no,
+        po.reference_no_and_date,
+        p.invoice_no,
+        p.invoice_date,
+        p.delivery_date,
+        p.invoice_image,
+        p.transport_insurance,
+        p.remarks,
+        p.created_by,
+        p.update_by,
+        p.created_at,
+        p.updated_at
+      FROM td_purchase AS p
+      JOIN md_project AS pr ON p.project_id = pr.project_id
+      JOIN md_project_site AS ps ON p.site_id = ps.project_site_id
+      JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
+      LEFT JOIN md_store AS s ON p.stor_id = s.store_id
+      LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
+    `;
+
+    const whereClauses = [];
+
+    if (search) {
+      const escapedSearch = `%${search.replace(/'/g, "''")}%`;
+      whereClauses.push(`(
+        pr.project_name LIKE '${escapedSearch}' OR
+        ps.project_site_name LIKE '${escapedSearch}' OR
+        v.vendor_name LIKE '${escapedSearch}' OR
+        s.store_name LIKE '${escapedSearch}' OR
+        po.voucher_no LIKE '${escapedSearch}' OR
+        p.invoice_no LIKE '${escapedSearch}'
+      )`);
+    }
+
+    if (fromDate && toDate) {
+      whereClauses.push(`p.invoice_date BETWEEN '${fromDate}' AND '${toDate}'`);
+    }
+
+    if (whereClauses.length > 0) {
+      sql += ` WHERE ${whereClauses.join(' AND ')}`;
+    }
+
+    sql += ' ORDER BY p.purchase_id DESC';
+
+    const results = await customSelectSqlQuery(sql);
+
+    res.status(200).json({
+      status: 'success',
+      data: results,
+      total: results.length,
+    });
+  } catch (error) {
+    console.error('Error fetching purchases:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error',
+    });
+  }
+};
+
+
+allProductPurchase = async (req, res) => {
+  try {
+    let { search, fromDate, toDate } = req.query;
+
+    function escapeValue(val) {
+      if (!val) return 'NULL';
+      return `'${val.replace(/'/g, "''")}'`;
+    }
+
+    let sql = `
+      SELECT
+        p.purchase_id,
+        p.project_id,
+        pr.project_name,
+        ps.project_site_name,
+        p.site_id,
+        p.status,
+        p.vendor_id,
+        v.vendor_name,
+        p.stor_id,
+        s.store_name,
+        p.purchase_order_id,
+        po.voucher_no,
+        po.reference_no_and_date,
+        p.invoice_no,
+        p.invoice_date,
+        p.delivery_date,
+        p.invoice_image,
+        p.transport_insurance,
+        p.remarks,
+        p.created_by,
+        p.update_by,
+        p.created_at,
+        p.updated_at
+      FROM td_purchase AS p
+      JOIN md_project AS pr ON p.project_id = pr.project_id
+      JOIN md_project_site AS ps ON p.site_id = ps.project_site_id
+      JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
+      LEFT JOIN md_store AS s ON p.stor_id = s.store_id
+      LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
+    `;
+
+    const whereClauses = [];
+
+    if (search) {
+      const escapedSearch = `%${search.replace(/'/g, "''")}%`;
+      whereClauses.push(`(
+        pr.project_name LIKE '${escapedSearch}' OR
+        ps.project_site_name LIKE '${escapedSearch}' OR
+        v.vendor_name LIKE '${escapedSearch}' OR
+        s.store_name LIKE '${escapedSearch}' OR
+        po.voucher_no LIKE '${escapedSearch}' OR
+        p.invoice_no LIKE '${escapedSearch}'
+      )`);
+    }
+
+    if (fromDate && toDate) {
+      whereClauses.push(`p.invoice_date BETWEEN '${fromDate}' AND '${toDate}'`);
+    }
+
+    if (whereClauses.length > 0) {
+      sql += ` WHERE ${whereClauses.join(' AND ')}`;
+    }
+
+    sql += ' ORDER BY p.purchase_id DESC';
+
+    const purchases = await customSelectSqlQuery(sql);
+
+    // If no purchases found, respond immediately
+    if (!purchases.length) {
+      return res.status(200).json({
+        status: 'success',
+        data: [],
+        total: 0,
+      });
+    }
+
+    // Get purchase_ids from result
+    const purchaseIds = purchases.map(p => p.purchase_id);
+
+    // Build query to get purchase products for all purchase_ids
+    const purchaseProductSql = `
+      SELECT
+        purchase_product_id,
+        purchase_id,
+        product_id,
+        product_qty,
+        invoice_qty,
+        unit_rate,
+        discount_rate,
+        discount_amount,
+        sgst_rate,
+        cgst_rate,
+        igst_rate,
+        sgst_amt,
+        cgst_amt,
+        igst_amt,
+        total_amount,
+        make_date,
+        ownership_status,
+        created_by,
+        updated_by,
+        created_at,
+        updated_at
+      FROM td_purchase_product
+      WHERE purchase_id IN (${purchaseIds.join(',')})
+    `;
+
+    const purchaseProducts = await customSelectSqlQuery(purchaseProductSql);
+
+    // Nest purchaseProducts inside each purchase by purchase_id
+    const purchaseProductsByPurchaseId = purchaseProducts.reduce((acc, prod) => {
+      if (!acc[prod.purchase_id]) acc[prod.purchase_id] = [];
+      acc[prod.purchase_id].push(prod);
+      return acc;
+    }, {});
+
+    // Attach nested purchaseProducts array to corresponding purchase objects
+    const purchasesWithProducts = purchases.map(purchase => ({
+      ...purchase,
+      purchase_products: purchaseProductsByPurchaseId[purchase.purchase_id] || []
+    }));
+
+    res.status(200).json({
+      status: 'success',
+      data: purchasesWithProducts,
+      total: purchasesWithProducts.length,
+    });
+  } catch (error) {
+    console.error('Error fetching purchases:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error',
+    });
+  }
+};
+
+getPurchaseById = async (req, res) => {
+  try {
+    const { id } = req.params; // Assuming the ID is passed as a query parameter
+
+    if (!id) {
+      return res.status(400).json({ message: 'td_purchase_id is required' });
+    }
+
+    const sql = `
+      SELECT
+        p.purchase_id,
+        p.project_id,
+        p.status,
+        pr.project_name,
+        ps.project_site_name,
+        p.site_id,
+        p.vendor_id,
+        v.vendor_name,
+        p.stor_id,
+        s.store_name,
+        p.purchase_order_id,
+        po.voucher_no,
+        po.reference_no_and_date,
+        p.invoice_no,
+        p.invoice_date,
+        p.delivery_date,
+        p.invoice_image,
+        p.transport_insurance,
+        p.remarks,
+        p.created_by,
+        p.update_by,
+        p.created_at,
+        pp.purchase_product_id,
+        pp.product_id,
+        pp.product_qty,
+        pp.invoice_qty,
+        pp.unit_rate,
+        pp.discount_rate,
+        pp.discount_amount,
+        pp.sgst_rate,
+        pp.cgst_rate,
+        pp.igst_rate,
+        pp.sgst_amt,
+        pp.cgst_amt,
+        pp.igst_amt,
+        pp.total_amount,
+        p.updated_at
+      FROM td_purchase AS p
+      JOIN td_purchase_product AS pp ON p.purchase_id = pp.purchase_id
+      JOIN md_project AS pr ON p.project_id = pr.project_id
+      JOIN md_project_site AS ps ON p.site_id = ps.project_site_id
+      JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
+      LEFT JOIN md_store AS s ON p.stor_id = s.store_id
+      LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
+      WHERE p.purchase_id = '${id}'
+    `;
+
+    const result = await customSelectSqlQuery(sql);
+
+    res.status(200).json({
+      status: 'success',
+      data: result,
+    });
+  } catch (error) {
+    console.error('Error fetching purchase by ID:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error',
+    });
+  }
+};
+
+
+
+
+
 }
 
 module.exports = new PurchaseProductController();
