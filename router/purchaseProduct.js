@@ -5,7 +5,7 @@ const authcheck= require('../middleware/auth')
 const validate = require("../middleware/validate");
 const { purchaseSchema } = require("../validations/purchaseProductValadition");
 
-router.post("/api/perchase", authcheck,validate(purchaseSchema), purchaseProductController.createPurchase);
+router.post("/api/perchase", authcheck, purchaseProductController.createPurchase);
 
 
 module.exports = router;

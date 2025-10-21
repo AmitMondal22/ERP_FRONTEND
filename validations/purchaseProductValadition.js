@@ -33,16 +33,20 @@ const purchaseSchema = Joi.object({
     'string.empty': 'Invoice number is required',
     'any.required': 'Invoice number is required',
   }),
-  invoice_date: Joi.date().iso().required().messages({
-    'date.base': 'Invoice date must be a valid date',
-    'date.iso': 'Invoice date must be in ISO 8601 format',
-    'any.required': 'Invoice date is required',
-  }),
-  delivery_date: Joi.date().iso().required().messages({
-    'date.base': 'Delivery date must be a valid date',
-    'date.iso': 'Delivery date must be in ISO 8601 format',
-    'any.required': 'Delivery date is required',
-  }),
+  invoice_date: Joi.string()
+    .pattern(/^\d{4}-\d{2}-\d{2}$/)
+    .required()
+    .messages({
+        'string.pattern.base': 'Invoice date must be in YYYY-MM-DD format',
+        'any.required': 'Invoice date is required',
+    }),
+delivery_date: Joi.string()
+    .pattern(/^\d{4}-\d{2}-\d{2}$/)
+    .required()
+    .messages({
+        'string.pattern.base': 'Delivery date must be in YYYY-MM-DD format',
+        'any.required': 'Delivery date is required',
+    }),
   invoice_image: Joi.string()
     .uri({ scheme: ['http', 'https'] })
     .allow('')
@@ -124,10 +128,14 @@ const purchaseSchema = Joi.object({
           'number.positive': 'Total amount must be greater than 0',
           'any.required': 'Total amount is required',
         }),
-        make_date: Joi.date().iso().allow(null).optional().messages({
-          'date.base': 'Make date must be a valid date',
-          'date.iso': 'Make date must be in ISO 8601 format',
-        }),
+        make_date: Joi.string()
+          .pattern(/^\d{4}-\d{2}-\d{2}$/)
+          .allow(null)
+          .optional()
+          .messages({
+              'string.pattern.base': 'Make date must be in YYYY-MM-DD format',
+          }),
+
         ownership_status: Joi.string().max(50).trim().allow('').optional().messages({
           'string.base': 'Ownership status must be a string',
           'string.max': 'Ownership status must not exceed 50 characters',
@@ -152,7 +160,9 @@ const purchaseSchema = Joi.object({
 
         // Custom validation for discount consistency
         const { unit_rate, product_qty, discount_rate, discount_amount, total_amount } = value;
-        const calculatedDiscount = discount_rate ? (unit_rate * product_qty * discount_rate) / 100 : discount_amount;
+       const calculatedDiscount = discount_rate 
+          ? (unit_rate * product_qty * discount_rate) / 100 
+          : discount_amount;
         const expectedTotal = unit_rate * product_qty - calculatedDiscount + (sgst_amt + cgst_amt + igst_amt);
         if (Math.abs(total_amount - expectedTotal) > 0.01) {
           return helpers.error('any.custom', { message: 'Total amount does not match calculated amount' });
