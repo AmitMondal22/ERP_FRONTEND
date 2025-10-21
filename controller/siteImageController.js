@@ -104,18 +104,18 @@ class SiteImageController {
         }
     };
 
+    
 
-
-    createSiteImage = async (req, res) => {
+    uploadSiteImage = async (req, res) => {
         try {
             const {
                 upload_file
             } = req.body;
 
-            if (!upload_file || !employee_id || !project_id) {
+            if (!upload_file) {
             return res.status(400).json({
                 success: false,
-                message: "Required fields missing: upload_file, employee_id, project_id"
+                message: "Required fields missing: upload_file"
             });
             }
             let file_path = '/uploads/site_image'
