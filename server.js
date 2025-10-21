@@ -11,7 +11,7 @@ const isDev = process.env.NODE_ENV !== 'production';
 if (cluster.isMaster) {
   const numCPUs = WORKERS;
   
-  console.table({
+  console.table({ 
     'Master PID': process.pid,
     'Workers': numCPUs,
     'CPU Cores': os.cpus().length,

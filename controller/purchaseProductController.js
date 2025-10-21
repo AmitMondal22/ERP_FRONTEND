@@ -2,7 +2,10 @@ const { insertData, batchInsertData } = require("../models/MasterModel");
 const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 dayjs.extend(utc);
+const now = dayjs.utc().format("YYYY-MM-DD HH:mm:ss");
 
+
+const date = new Date(); 
 class PurchaseProductController {
   createPurchase = async (req, res) => {
     const {
@@ -22,7 +25,7 @@ class PurchaseProductController {
     } = req.body;
 
     let connection;
-    try {
+    // try {
       // Prepare data for td_purchase
       const purchaseData = {
         project_id,
@@ -70,8 +73,8 @@ class PurchaseProductController {
             ownership_status: product.ownership_status || null,
             created_by: product.created_by,
             updated_by: product.created_by,
-            created_at: new Date(),
-            updated_at: new Date(),
+            created_at: now,
+            updated_at: now,
           };
         })
       );
@@ -81,15 +84,16 @@ class PurchaseProductController {
 
       // Insert into td_purchase_product
       await batchInsertData("td_purchase_product", productColumns, productValues, connection);
+      
       return res.status(201).json({
         message: "Bulk purchase created successfully",
         purchase_id,
         product_count: purchase_product.length,
       });
-    } catch (error) {
-      console.error("Error creating bulk purchase:", error);
-      return res.status(500).json({ error: "Internal server error" });
-    }
+    // } catch (error) {
+    //   console.error("Error creating bulk purchase:", error);
+    //   return res.status(500).json({ error: "Internal server error" });
+    // }
   };
 }
 

@@ -9,7 +9,7 @@ router.post("/api/product", authcheck, productController.createProduct);
 router.get("/api/getallproducts", authcheck, productController.getAllProducts);
 router.get("/api/productbyid/:id", authcheck, productController.getProductById);
 
-router.get("/api/get_product_by_typeid",productController.getProductsByTypeId);
+router.post("/api/get_product_by_typeid",authcheck,productController.getProductsByTypeId);
 
 router.post("/api/updateproduct/:id", authcheck,productController.updateProductById
 );

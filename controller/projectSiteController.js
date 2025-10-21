@@ -49,7 +49,7 @@ class projectSiteController{
     const rows = await selectData(
       table,
       select,
-      condition,
+      condition, 
       "a.project_site_name ASC"
     );
 

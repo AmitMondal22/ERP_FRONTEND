@@ -15,6 +15,7 @@ const Relation= require('./router/relationRoutes');
 const Upload= require('./router/uploadsRoutes');
 const Bom= require('./router/bomRoutes');
 const purchaseProduct= require('./router/purchaseProduct');
+const productType= require('./router/productTypeRoute');
 const app= express()
 const cors = require('cors');
 
@@ -38,7 +39,7 @@ app.use('/',router)
 app.use('/',assesrouter)
 app.use('/',vendorrouter)
 app.use('/',unit)
-app.use('/',projectRoutes)
+app.use('/',projectRoutes) 
 app.use('/',projectSitesRoutes)
 app.use('/',ProductRoutes)
 app.use('/',Employee)
@@ -48,6 +49,8 @@ app.use('/',Relation)
 app.use('/',Upload)
 app.use('/',Bom)
 app.use('/',purchaseProduct)
+app.use('/',productType);
+
 
 
 

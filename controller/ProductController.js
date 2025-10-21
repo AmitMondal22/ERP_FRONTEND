@@ -377,6 +377,41 @@ updateProductById = async (req, res) => {
     res.status(500).json({ success: false, message: "Unable to update product" });
   }
 };
+
+  
+//  getProductsByTypeId = async (req, res) => {
+//   try {
+//     const { product_type_id } = req.body;
+
+//     if (!product_type_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "product_type_id is required",
+//       });
+//     }
+
+//     // Select only product_name where product_type_id matches
+//     const products = await selectData(
+//       "md_product",
+//       "product_name",
+//       "product_id",
+//       `product_type_id = ${product_type_id}`
+//     );
+
+//     return res.status(200).json({
+//       success: true,
+//       data: products,
+//     });
+//   } catch (error) {
+//     console.error("Error fetching products by type:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Internal server error",
+//     });
+//   }
+// };
+
+
  getProductsByTypeId = async (req, res) => {
   try {
     const { product_type_id } = req.body;
@@ -388,12 +423,20 @@ updateProductById = async (req, res) => {
       });
     }
 
-    // Select only product_name where product_type_id matches
+    // Fetch only product_id and product_name where product_type_id matches
+    // Corrected argument order
     const products = await selectData(
       "md_product",
-      "product_name",
+      "product_id, product_name, product_type_id,qty",
       `product_type_id = ${product_type_id}`
     );
+
+    if (!products || products.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No products found for this product_type_id",
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -409,7 +452,13 @@ updateProductById = async (req, res) => {
 };
 
 
+
+
   // ---------------- DELETE PRODUCT ----------------
+  
+ 
+  
+  
   deleteProduct = async (req, res) => {
     try {
       const { id } = req.params;

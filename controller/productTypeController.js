@@ -31,4 +31,4 @@ class ProductTypeController {
   };
 }
 
-module.exports = new ProductTypeController;
+module.exports =new ProductTypeController();

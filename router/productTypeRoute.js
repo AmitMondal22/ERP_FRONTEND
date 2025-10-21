@@ -1,13 +1,13 @@
-// const express = require("express");
-// const router = express.Router();
+const express = require("express");
+const router = express.Router();
 
-// const ProductTypeController = require("../controller/productTypeController");
-// const authcheck= require('../middleware/auth');
-
-
-
-// router.get('/api/getProductType',authcheck,ProductTypeController.getAllProductType)
+const ProductTypeController = require("../controller/productTypeController");
+const authcheck= require('../middleware/auth');
 
 
 
-// module.exports= new ProductTypeController();
+router.get('/api/getProductType',authcheck,ProductTypeController.getAllProductType)
+
+
+
+module.exports= router;

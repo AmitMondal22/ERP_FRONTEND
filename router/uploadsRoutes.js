@@ -9,6 +9,8 @@ const validateImageMiddleware = require("../middleware/uploadValidate");
 
 // helper: validate base64 image
 router.post("/api/upload_image", authcheck, validateImageMiddleware, SiteImageController.createSiteImage);
+
 router.post("/api/upload_invoice", authcheck, validateImageMiddleware, SiteImageController.createSiteImage);
 
 module.exports = router;
+//
