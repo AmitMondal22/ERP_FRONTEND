@@ -304,7 +304,7 @@ async function selectDataInRanges(select, table, start, end, condition = "") {
 }
 
 // ---------- CUSTOM QUERY ----------
-async function customSelectSqlQuery(sql, fetchAll = false) {
+async function customSelectSqlQuery(sql, fetchAll =true) {
   let conn;
   try {
     conn = await connect();

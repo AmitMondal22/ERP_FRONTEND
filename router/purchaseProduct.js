@@ -6,10 +6,11 @@ const validate = require("../middleware/validate");
 const { purchaseSchema, purchaseQuerySchema } = require("../validations/purchaseProductValadition");
 
 router.post("/api/perchase", authcheck, purchaseProductController.createPurchase);
-router.get("/api/perchase", authcheck,validate(purchaseQuerySchema), purchaseProductController.allPurchase);
+router.get('/hello',(req,res)=>{res.send("heelo from sourish")});
+router.get("/api/getpurchase", authcheck, purchaseProductController.allPurchase);
 router.get("/api/perchase-product", authcheck,validate(purchaseQuerySchema), purchaseProductController.allProductPurchase);
 router.get("/api/perchase-product/:id", authcheck,validate(purchaseQuerySchema), purchaseProductController.getPurchaseById);
 
 
 module.exports = router;
-//
+// 

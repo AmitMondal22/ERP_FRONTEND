@@ -104,54 +104,96 @@ class SiteImageController {
         }
     };
 
+
     
 
-    uploadSiteImage = async (req, res) => {
-        try {
-            const {
-                upload_file
-            } = req.body;
+// uploadSiteImage = async (req, res) => {
+//    try {
+//     // Check for uploaded file
+//     const image = req.file;
+//     if (!image) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Required field missing: upload_file",
+//       });
+//     }
 
-            if (!upload_file) {
-            return res.status(400).json({
-                success: false,
-                message: "Required fields missing: upload_file"
-            });
-            }
-            let file_path = '/uploads/site_image'
-            // Ensure upload folder exists
-            const uploadDir = path.join(__dirname, `..${file_path}`);
-            if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-            }
+//     // Define upload directory
+//     const fileDir = "/uploads/site_image";
+//     const uploadDir = path.join(__dirname, `..${fileDir}`);
 
-            // Sanitize file name
-            const safeName = upload_file.replace(/[^a-zA-Z0-9]/g, "_");
-            const { mimeType, buffer } = req.image;
-            const extension = mimeType.split("/")[1];
-            const fileName = `${safeName}_${Date.now()}.${extension}`;
-            const uploadPath = path.join(uploadDir, fileName);
+//     // Ensure upload folder exists
+//     if (!fs.existsSync(uploadDir)) {
+//       fs.mkdirSync(uploadDir, { recursive: true });
+//     }
 
-            // Write file
-            fs.writeFileSync(uploadPath, buffer);
-            var file_ptah = `${file_path}/${fileName}`
+//     // Use original filename safely
+//     const safeName = image.originalname.replace(/[^a-zA-Z0-9.]/g, "_");
+//     const fileName = `${Date.now()}_${safeName}`;
+//     const uploadPath = path.join(uploadDir, fileName);
 
-            res.status(201).json({
-                success: true,
-                message: "Site image uploaded and saved successfully",
-                data: { file_ptah }
-            });
+//     // Move file from multer temp folder to your custom folder
+//     fs.renameSync(image.path, uploadPath);
 
-        } catch (error) {
-            console.error("Error in createSiteImage:", error.message);
-            res.status(500).json({
-            success: false,
-            message: "Unable to create site image",
-            error: error.message
-            });
-        }
-    };
+//     // Build file path to store in DB
+//     const file_path = `${fileDir}/${fileName}`;
 
+//     res.status(201).json({
+//       success: true,
+//       message: "Site image uploaded and saved successfully",
+//       data: { file_path },
+//     });
+//   } catch (error) {
+//     console.error("Error in uploadSiteImage:", error.message);
+//     res.status(500).json({
+//       success: false,
+//       message: "Unable to upload site image",
+//       error: error.message,
+//     });
+//   }
+//  };
+
+
+
+uploadSiteImage = async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({
+        success: false,
+        message: "Required field missing: upload_file",
+      });
+    }
+
+    // Define directory and path
+    const fileDir = "/uploads/site_image";
+    const uploadDir = path.join(__dirname, `..${fileDir}`);
+
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
+    // File already stored in uploadDir by multer
+    const file_path = `${fileDir}/${file.filename}`;
+
+    res.status(201).json({
+      success: true,
+      message: "File uploaded successfully",
+      data: {
+        file_path,
+        file_type: file.mimetype,
+      },
+    });
+  } catch (error) {
+    console.error("Error in uploadSiteImage:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Unable to upload file",
+      error: error.message,
+    });
+  }
+};
+ 
 }
 
 

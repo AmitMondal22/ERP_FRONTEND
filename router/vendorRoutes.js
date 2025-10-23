@@ -10,7 +10,7 @@ router.post("/api/createvendor",authcheck, vendorController.addVendor);//
 router.post("/api/create_contact_person",authcheck, vendorController.addContactPerson);
 
 router.get("/api/getallvendor",authcheck, vendorController.getAllVendors);//
-
+ 
 router.get("/api/getvendor/:vendor_id",authcheck, vendorController.getVendorById);//
 
 router.post("/api/updatevendor/:id",authcheck, vendorController.updateVendor);//
