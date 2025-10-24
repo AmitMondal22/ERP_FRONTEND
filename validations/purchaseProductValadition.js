@@ -187,4 +187,48 @@ const purchaseQuerySchema = Joi.object({
   toDate: Joi.date().iso().allow('', null)
 });
 
-module.exports = { purchaseSchema, purchaseQuerySchema };
+
+
+
+
+const updatePurchaseSchema = Joi.object({
+  project_id: Joi.number().integer().required(),
+  site_id: Joi.number().integer().required(),
+  vendor_id: Joi.number().integer().required(),
+  stor_id: Joi.number().integer().allow(null, ""),
+  purchase_order_id: Joi.number().integer().allow(null, ""),
+  invoice_no: Joi.string().required(),
+  invoice_date: Joi.date().required(),
+  delivery_date: Joi.date().required(),
+  invoice_image_path: Joi.string().allow(null, ""),
+  transport_insurance: Joi.string().allow(null, ""),
+  remarks: Joi.string().allow(null, ""),
+  updated_by: Joi.number().integer().required(),
+
+  purchase_product: Joi.array()
+    .items(
+      Joi.object({
+        product_id: Joi.number().integer().required(),
+        product_qty: Joi.number().required(),
+        invoice_qty: Joi.number().required(),
+        unit_rate: Joi.number().required(),
+        discount_rate: Joi.number().allow(null, 0),
+        discount_amount: Joi.number().allow(null, 0),
+        sgst_rate: Joi.number().allow(null, 0),
+        cgst_rate: Joi.number().allow(null, 0),
+        igst_rate: Joi.number().allow(null, 0),
+        sgst_amt: Joi.number().allow(null, 0),
+        cgst_amt: Joi.number().allow(null, 0),
+        igst_amt: Joi.number().allow(null, 0),
+        total_amount: Joi.number().required(),
+        make_date: Joi.date().allow(null, ""),
+        ownership_status: Joi.string().allow(null, ""),
+        created_by: Joi.number().integer().required(),
+      })
+    )
+    .min(1)
+    .required(),
+});
+
+
+module.exports = { purchaseSchema, purchaseQuerySchema, updatePurchaseSchema };

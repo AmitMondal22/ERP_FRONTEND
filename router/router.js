@@ -10,7 +10,7 @@ const authcheck= require('../middleware/auth')
 const router= express.Router();
 
 
-router.get('/hello',authcheck,(req,res)=>{ res.send('hello every one  iam hungry')})
+
 
 router.post("/api/login",  validate(userValidation.loginSchema),   userController.login);
 router.post("/api/create",validate(userValidation.createUserSchema),userController.create);

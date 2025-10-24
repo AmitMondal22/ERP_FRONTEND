@@ -1,4 +1,4 @@
-const {insertData,batchInsertData,customSelectSqlQuery,} = require("../models/MasterModel");
+const {insertData, batchInsertData, customSelectSqlQuery, updateData} = require("../models/MasterModel");
 const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 dayjs.extend(utc);
@@ -526,267 +526,177 @@ class PurchaseProductController {
     // }
 
    const sql = `
-  SELECT
-    p.purchase_id,
-    p.project_id,
-    p.status,
-    pr.project_name,
-    ps.project_site_name,
-    p.site_id,
-    p.vendor_id,
-    v.vendor_name,
-    p.stor_id,
-    s.store_name,
-    p.purchase_order_id,
-    po.voucher_no,
-    po.reference_no_and_date,
-    p.invoice_no,
-    p.invoice_date,
-    p.delivery_date,
-    p.invoice_image,
-    p.transport_insurance,
-    p.remarks,
-    p.created_by,
-    p.update_by,
-    p.created_at,
-    pp.purchase_product_id,
-    pp.product_id,
-    pn.product_name,
-    pn.product_type_id,
-    pt.product_type_name,
-    pp.product_qty,
-    pp.invoice_qty,
-    pp.unit_rate,
-    pp.discount_rate,
-    pp.discount_amount,
-    pp.sgst_rate,
-    pp.cgst_rate,
-    pp.igst_rate,
-    pp.sgst_amt,
-    pp.cgst_amt,
-    pp.igst_amt,
-    pp.total_amount,
-    p.updated_at
-  FROM td_purchase AS p
-    JOIN td_purchase_product AS pp ON p.purchase_id = pp.purchase_id
-    JOIN md_project AS pr ON p.project_id = pr.project_id
-    JOIN md_project_site AS ps ON p.site_id = ps.project_site_id
-    JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
-    JOIN md_product AS pn ON pp.product_id = pn.product_id
-    JOIN md_product_type AS pt ON pn.product_type_id = pt.product_type_id
-    LEFT JOIN md_store AS s ON p.stor_id = s.store_id
-    LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
-    
-  WHERE p.purchase_id = ${id}
-`;
+            SELECT
+              p.purchase_id,
+              p.project_id,
+              p.status,
+              pr.project_name,
+              ps.project_site_name,
+              p.site_id,
+              p.vendor_id,
+              v.vendor_name,
+              p.stor_id,
+              s.store_name,
+              p.purchase_order_id,
+              po.voucher_no,
+              po.reference_no_and_date,
+              p.invoice_no,
+              p.invoice_date,
+              p.delivery_date,
+              p.invoice_image,
+              p.transport_insurance,
+              p.remarks,
+              p.created_by,
+              p.update_by,
+              p.created_at,
+              pp.purchase_product_id,
+              pp.product_id,
+              pn.product_name,
+              pn.product_type_id,
+              pt.product_type_name,
+              pp.product_qty,
+              pp.invoice_qty,
+              pp.unit_rate,
+              pp.discount_rate,
+              pp.discount_amount,
+              pp.sgst_rate,
+              pp.cgst_rate,
+              pp.igst_rate,
+              pp.sgst_amt,
+              pp.cgst_amt,
+              pp.igst_amt,
+              pp.total_amount,
+              p.updated_at
+            FROM td_purchase AS p
+              JOIN td_purchase_product AS pp ON p.purchase_id = pp.purchase_id
+              LEFT JOIN md_project AS pr ON p.project_id = pr.project_id
+              LEFT JOIN md_project_site AS ps ON p.site_id = ps.project_site_id
+              JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
+              JOIN md_product AS pn ON pp.product_id = pn.product_id
+              JOIN md_product_type AS pt ON pn.product_type_id = pt.product_type_id
+              LEFT JOIN md_store AS s ON p.stor_id = s.store_id
+              LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
+              
+            WHERE p.purchase_id = ${id}
+          `;
 
-const result = await customSelectSqlQuery(sql);
+  const result = await customSelectSqlQuery(sql);
 
 
-    if (result.length === 0) {
-      return res.status(404).json({
+      if (result.length === 0) {
+        return res.status(404).json({
+          status: "error",
+          message: "Purchase not found or missing linked data",
+        });
+      }
+
+      res.status(200).json({
+        status: "success",
+        data: result,
+      });
+    } catch (error) {
+      console.error("Error fetching purchase by ID:", error);
+      res.status(500).json({
         status: "error",
-        message: "Purchase not found or missing linked data",
+        message: "Internal server error",
       });
     }
-
-    res.status(200).json({
-      status: "success",
-      data: result,
-    });
-  } catch (error) {
-    console.error("Error fetching purchase by ID:", error);
-    res.status(500).json({
-      status: "error",
-      message: "Internal server error",
-    });
-  }
-};
+  };
 
 
- updatePurchase = async (req, res) => {
-  const {
-    purchase_id,
-    project_id,
-    site_id,
-    vendor_id,
-    stor_id,
-    purchase_order_id,
-    invoice_no,
-    invoice_date,
-    delivery_date,
-    invoice_image_path,
-    transport_insurance,
-    remarks,
-    updated_by,
-    purchase_product,
-  } = req.body;
+  updatePurchase = async (req, res) => {
+    const purchase_id = req.params.id;
 
-  if (!purchase_id) {
-    return res.status(400).json({
-      success: false,
-      message: "purchase_id is required",
-    });
-  }
+    const {
+      project_id,
+      site_id,
+      vendor_id,
+      stor_id,
+      purchase_order_id,
+      invoice_no,
+      invoice_date,
+      delivery_date,
+      invoice_image_path,
+      transport_insurance,
+      remarks,
+      updated_by,
+      purchase_product,
+    } = req.body;
 
-  let conn;
-  try {
-    conn = await connect();
-    await conn.beginTransaction();
+    let connection;
 
-    // ✅ Update main purchase
-    const updatePurchaseSql = `
-      UPDATE td_purchase
-      SET 
-        project_id = ?,
-        site_id = ?,
-        vendor_id = ?,
-        stor_id = ?,
-        purchase_order_id = ?,
-        invoice_no = ?,
-        invoice_date = ?,
-        delivery_date = ?,
-        invoice_image = ?,
-        transport_insurance = ?,
-        remarks = ?,
-        update_by = ?,
-        updated_at = NOW()
-      WHERE purchase_id = ?
-    `;
+    try {
+      // Update td_purchase
+      const purchaseData = {
+        project_id,
+        site_id,
+        vendor_id,
+        stor_id: stor_id ?? null,
+        purchase_order_id: purchase_order_id ?? null,
+        invoice_no,
+        invoice_date,
+        delivery_date,
+        invoice_image: invoice_image_path || null,
+        transport_insurance: transport_insurance || null,
+        remarks: remarks || null,
+        updated_by,
+        updated_at: new Date(),
+      };
 
-    const updateParams = [
-      project_id ?? null,
-      site_id ?? null,
-      vendor_id ?? null,
-      stor_id ?? null,
-      purchase_order_id ?? null,
-      invoice_no || null,
-      invoice_date || null,
-      delivery_date || null,
-      invoice_image_path || null,
-      transport_insurance || null,
-      remarks || null,
-      updated_by || null,
-      purchase_id,
-    ];
+      await updateData("td_purchase", purchaseData, `purchase_id = ${purchase_id}`);
 
-    await conn.execute(updatePurchaseSql, updateParams);
+      // Update td_purchase_product
+      // You may choose to delete old entries first if complete replacement
+      await deleteData("td_purchase_product", `purchase_id = ${purchase_id}`);
 
-    // ✅ Update or insert purchase products
-    if (purchase_product && Array.isArray(purchase_product) && purchase_product.length > 0) {
-      for (const item of purchase_product) {
-        const {
-          purchase_product_id,
-          product_id,
-          product_qty,
-          invoice_qty,
-          unit_rate,
-          discount_rate,
-          discount_amount,
-          sgst_rate,
-          cgst_rate,
-          igst_rate,
-          sgst_amt,
-          cgst_amt,
-          igst_amt,
-          total_amount,
-          make_date,
-          ownership_status,
-        } = item;
-
-        if (purchase_product_id) {
-          // 🔁 Update existing record
-          const updateProductSql = `
-            UPDATE td_purchase_product
-            SET 
-              product_id = ?, product_qty = ?, invoice_qty = ?, unit_rate = ?,
-              discount_rate = ?, discount_amount = ?, sgst_rate = ?, cgst_rate = ?, igst_rate = ?,
-              sgst_amt = ?, cgst_amt = ?, igst_amt = ?, total_amount = ?,
-              make_date = ?, ownership_status = ?, updated_by = ?, updated_at = NOW()
-            WHERE purchase_product_id = ? AND purchase_id = ?
-          `;
-
-          const updateValues = [
-            product_id ?? null,
-            product_qty ?? 0,
-            invoice_qty ?? 0,
-            unit_rate ?? 0,
-            discount_rate ?? 0,
-            discount_amount ?? 0,
-            sgst_rate ?? 0,
-            cgst_rate ?? 0,
-            igst_rate ?? 0,
-            sgst_amt ?? 0,
-            cgst_amt ?? 0,
-            igst_amt ?? 0,
-            total_amount ?? 0,
-            make_date || null,
-            ownership_status || null,
-            updated_by || null,
-            purchase_product_id,
+      const productValues = await Promise.all(
+        purchase_product.map(async (product) => {
+          return {
             purchase_id,
-          ];
+            product_id: product.product_id,
+            product_qty: product.product_qty,
+            invoice_qty: product.invoice_qty,
+            unit_rate: product.unit_rate,
+            discount_rate: product.discount_rate ?? 0,
+            discount_amount: product.discount_amount ?? 0,
+            sgst_rate: product.sgst_rate ?? 0,
+            cgst_rate: product.cgst_rate ?? 0,
+            igst_rate: product.igst_rate ?? 0,
+            sgst_amt: product.sgst_amt ?? 0,
+            cgst_amt: product.cgst_amt ?? 0,
+            igst_amt: product.igst_amt ?? 0,
+            total_amount: product.total_amount,
+            make_date: product.make_date || null,
+            ownership_status: product.ownership_status || null,
+            created_by: product.created_by || updated_by,
+            updated_by: updated_by,
+            created_at: new Date(),
+            updated_at: new Date(),
+          };
+        })
+      );
 
-          await conn.execute(updateProductSql, updateValues);
-        } else {
-          // ➕ Insert new product
-          const insertProductSql = `
-            INSERT INTO td_purchase_product (
-              purchase_id, product_id, product_qty, invoice_qty, unit_rate, 
-              discount_rate, discount_amount, sgst_rate, cgst_rate, igst_rate, 
-              sgst_amt, cgst_amt, igst_amt, total_amount, make_date, 
-              ownership_status, created_by, updated_by, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-          `;
+      // Batch insert new products
+      const productColumns = Object.keys(productValues[0]).join(", ");
+      await batchInsertData("td_purchase_product", productColumns, productValues, connection);
 
-          const insertValues = [
-            purchase_id,
-            product_id ?? null,
-            product_qty ?? 0,
-            invoice_qty ?? 0,
-            unit_rate ?? 0,
-            discount_rate ?? 0,
-            discount_amount ?? 0,
-            sgst_rate ?? 0,
-            cgst_rate ?? 0,
-            igst_rate ?? 0,
-            sgst_amt ?? 0,
-            cgst_amt ?? 0,
-            igst_amt ?? 0,
-            total_amount ?? 0,
-            make_date || null,
-            ownership_status || null,
-            updated_by || null,
-            updated_by || null,
-          ];
-
-          await conn.execute(insertProductSql, insertValues);
-        }
-      }
+      return res.status(200).json({
+        success: true,
+        message: "Purchase and products updated successfully",
+        data: {
+          purchase_id,
+          product_count: purchase_product.length,
+        },
+      });
+    } catch (error) {
+      console.error("Error updating purchase:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Internal server error",
+        error: error.message,
+      });
     }
-
-    // ✅ Commit transaction
-    await conn.commit();
-
-    res.status(200).json({
-      success: true,
-      message: "Purchase updated successfully",
-    });
-  } catch (error) {
-    if (conn) await conn.rollback();
-    console.error("❌ Error updating purchase:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error updating purchase",
-      error: error.message,
-    });
-  } finally {
-    if (conn) await conn.end();
-  }
-};
-
-
-
+  };
 
 
 }

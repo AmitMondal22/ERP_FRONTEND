@@ -314,7 +314,7 @@ async function customSelectSqlQuery(sql, fetchAll =true) {
     console.error(err);
     throw err;
   } finally {
-    if (conn) await conn.end();
+    if (conn) await conn.end(); 
   }
 }
 

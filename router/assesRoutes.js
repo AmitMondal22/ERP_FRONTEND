@@ -9,7 +9,7 @@ const productTypeController = require('../controller/productTypeController');
 const router= express.Router();
 
 
-router.get('/hello',(req,res)=>{ res.send('hello every one  iam hungry')})
+
 
 router.get("/api/states", cityAndCountryController.getAllstates);
 

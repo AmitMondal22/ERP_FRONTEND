@@ -14,9 +14,6 @@ router.post("/api/bom_create_update", authcheck, BomController.createOrUpdateBom
 router.get("/api/get_all_bom",authcheck, BomController.getAllBom);
 router.get("/api/get_bom/:id",authcheck, BomController.getBom);
 router.delete("/api/delete_bom/:id", authcheck,BomController.deleteBom);
-
-router.get("/api/hello",(req,res)=>{ res.send('hello')})
-
  
 router.post("/api/bom_progress_create_update", authcheck,validate(bomProgressListSchema),BomProgressController.bulkCreateOrUpdate);
 router.get("/api/get_bom_progress/:id",authcheck, BomProgressController.getBomProgress);
