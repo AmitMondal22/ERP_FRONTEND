@@ -3,7 +3,7 @@ const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 dayjs.extend(utc);
 const now = dayjs.utc().format("YYYY-MM-DD HH:mm:ss");
-
+const connect = require("../DBConfig/db");
 const date = new Date();
 class PurchaseProductController {
   // createPurchase = async (req, res) => {
@@ -605,58 +605,76 @@ const result = await customSelectSqlQuery(sql);
 
 
  updatePurchase = async (req, res) => {
+  const {
+    purchase_id,
+    project_id,
+    site_id,
+    vendor_id,
+    stor_id,
+    purchase_order_id,
+    invoice_no,
+    invoice_date,
+    delivery_date,
+    invoice_image_path,
+    transport_insurance,
+    remarks,
+    updated_by,
+    purchase_product,
+  } = req.body;
+
+  if (!purchase_id) {
+    return res.status(400).json({
+      success: false,
+      message: "purchase_id is required",
+    });
+  }
+
+  let conn;
   try {
-    const {
-      purchase_id,
-      project_id,
-      site_id,
-      vendor_id,
-      stor_id,
-      purchase_order_id,
-      invoice_no,
-      invoice_date,
-      delivery_date,
-      invoice_image,
-      transport_insurance,
-      remarks,
-      updated_by,
-      purchaseProducts,
-    } = req.body;
+    conn = await connect();
+    await conn.beginTransaction();
 
-    // Validate required fields
-    if (!purchase_id) {
-      return res.status(400).json({
-        success: false,
-        message: "purchase_id is required",
-      });
-    }
-
-    // ✅ Update main purchase record
+    // ✅ Update main purchase
     const updatePurchaseSql = `
       UPDATE td_purchase
       SET 
-        project_id = ${project_id || "NULL"},
-        site_id = ${site_id || "NULL"},
-        vendor_id = ${vendor_id || "NULL"},
-        stor_id = ${stor_id || "NULL"},
-        purchase_order_id = ${purchase_order_id || "NULL"},
-        invoice_no = '${invoice_no || ""}',
-        invoice_date = '${invoice_date || ""}',
-        delivery_date = '${delivery_date || ""}',
-        invoice_image = '${invoice_image || ""}',
-        transport_insurance = '${transport_insurance || ""}',
-        remarks = '${remarks || ""}',
-        update_by = '${updated_by || ""}',
+        project_id = ?,
+        site_id = ?,
+        vendor_id = ?,
+        stor_id = ?,
+        purchase_order_id = ?,
+        invoice_no = ?,
+        invoice_date = ?,
+        delivery_date = ?,
+        invoice_image = ?,
+        transport_insurance = ?,
+        remarks = ?,
+        update_by = ?,
         updated_at = NOW()
-      WHERE purchase_id = '${purchase_id}'
+      WHERE purchase_id = ?
     `;
 
-    await customSelectSqlQuery(updatePurchaseSql);
+    const updateParams = [
+      project_id ?? null,
+      site_id ?? null,
+      vendor_id ?? null,
+      stor_id ?? null,
+      purchase_order_id ?? null,
+      invoice_no || null,
+      invoice_date || null,
+      delivery_date || null,
+      invoice_image_path || null,
+      transport_insurance || null,
+      remarks || null,
+      updated_by || null,
+      purchase_id,
+    ];
 
-    // ✅ If products exist, update/insert each manually (no .map)
-    if (purchaseProducts && Array.isArray(purchaseProducts) && purchaseProducts.length > 0) {
-      for (let i = 0; i < purchaseProducts.length; i++) {
-        const item = purchaseProducts[i];
+    await conn.execute(updatePurchaseSql, updateParams);
+
+    // ✅ Update or insert purchase products
+    if (purchase_product && Array.isArray(purchase_product) && purchase_product.length > 0) {
+      for (const item of purchase_product) {
         const {
           purchase_product_id,
           product_id,
@@ -674,72 +692,99 @@ const result = await customSelectSqlQuery(sql);
           total_amount,
           make_date,
           ownership_status,
-          updated_by,
         } = item;
 
         if (purchase_product_id) {
-          // 🔁 Update existing purchase product
+          // 🔁 Update existing record
           const updateProductSql = `
             UPDATE td_purchase_product
             SET 
-              product_id = ${product_id || "NULL"},
-              product_qty = ${product_qty || 0},
-              invoice_qty = ${invoice_qty || 0},
-              unit_rate = ${unit_rate || 0},
-              discount_rate = ${discount_rate || 0},
-              discount_amount = ${discount_amount || 0},
-              sgst_rate = ${sgst_rate || 0},
-              cgst_rate = ${cgst_rate || 0},
-              igst_rate = ${igst_rate || 0},
-              sgst_amt = ${sgst_amt || 0},
-              cgst_amt = ${cgst_amt || 0},
-              igst_amt = ${igst_amt || 0},
-              total_amount = ${total_amount || 0},
-              make_date = ${make_date ? `'${make_date}'` : "NULL"},
-              ownership_status = ${ownership_status ? `'${ownership_status}'` : "NULL"},
-              updated_by = '${updated_by || ""}',
-              updated_at = NOW()
-            WHERE purchase_product_id = '${purchase_product_id}'
-              AND purchase_id = '${purchase_id}'
+              product_id = ?, product_qty = ?, invoice_qty = ?, unit_rate = ?,
+              discount_rate = ?, discount_amount = ?, sgst_rate = ?, cgst_rate = ?, igst_rate = ?,
+              sgst_amt = ?, cgst_amt = ?, igst_amt = ?, total_amount = ?,
+              make_date = ?, ownership_status = ?, updated_by = ?, updated_at = NOW()
+            WHERE purchase_product_id = ? AND purchase_id = ?
           `;
-          await customSelectSqlQuery(updateProductSql);
+
+          const updateValues = [
+            product_id ?? null,
+            product_qty ?? 0,
+            invoice_qty ?? 0,
+            unit_rate ?? 0,
+            discount_rate ?? 0,
+            discount_amount ?? 0,
+            sgst_rate ?? 0,
+            cgst_rate ?? 0,
+            igst_rate ?? 0,
+            sgst_amt ?? 0,
+            cgst_amt ?? 0,
+            igst_amt ?? 0,
+            total_amount ?? 0,
+            make_date || null,
+            ownership_status || null,
+            updated_by || null,
+            purchase_product_id,
+            purchase_id,
+          ];
+
+          await conn.execute(updateProductSql, updateValues);
         } else {
-          // ➕ Insert new product if not exists
+          // ➕ Insert new product
           const insertProductSql = `
             INSERT INTO td_purchase_product (
               purchase_id, product_id, product_qty, invoice_qty, unit_rate, 
               discount_rate, discount_amount, sgst_rate, cgst_rate, igst_rate, 
               sgst_amt, cgst_amt, igst_amt, total_amount, make_date, 
               ownership_status, created_by, updated_by, created_at, updated_at
-            )
-            VALUES (
-              '${purchase_id}', ${product_id || "NULL"}, ${product_qty || 0}, ${invoice_qty || 0}, ${unit_rate || 0},
-              ${discount_rate || 0}, ${discount_amount || 0}, ${sgst_rate || 0}, ${cgst_rate || 0}, ${igst_rate || 0},
-              ${sgst_amt || 0}, ${cgst_amt || 0}, ${igst_amt || 0}, ${total_amount || 0},
-              ${make_date ? `'${make_date}'` : "NULL"},
-              ${ownership_status ? `'${ownership_status}'` : "NULL"},
-              '${updated_by || ""}', '${updated_by || ""}', NOW(), NOW()
-            )
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
           `;
-          await customSelectSqlQuery(insertProductSql);
+
+          const insertValues = [
+            purchase_id,
+            product_id ?? null,
+            product_qty ?? 0,
+            invoice_qty ?? 0,
+            unit_rate ?? 0,
+            discount_rate ?? 0,
+            discount_amount ?? 0,
+            sgst_rate ?? 0,
+            cgst_rate ?? 0,
+            igst_rate ?? 0,
+            sgst_amt ?? 0,
+            cgst_amt ?? 0,
+            igst_amt ?? 0,
+            total_amount ?? 0,
+            make_date || null,
+            ownership_status || null,
+            updated_by || null,
+            updated_by || null,
+          ];
+
+          await conn.execute(insertProductSql, insertValues);
         }
       }
     }
 
-    // ✅ Response
+    // ✅ Commit transaction
+    await conn.commit();
+
     res.status(200).json({
       success: true,
       message: "Purchase updated successfully",
     });
   } catch (error) {
-    console.error("Error updating purchase:", error);
+    if (conn) await conn.rollback();
+    console.error("❌ Error updating purchase:", error);
     res.status(500).json({
       success: false,
       message: "Error updating purchase",
       error: error.message,
     });
+  } finally {
+    if (conn) await conn.end();
   }
 };
+
 
 
 
