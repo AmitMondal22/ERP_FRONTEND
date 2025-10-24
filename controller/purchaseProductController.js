@@ -438,77 +438,312 @@ class PurchaseProductController {
     }
   };
 
+  // getPurchaseById = async (req, res) => {
+  //   try {
+  //     const { id } = req.params; 
+
+  //     if (!id) {
+  //       return res.status(400).json({ message: "td_purchase_id is required" });
+  //     }
+
+  //     const sql = `
+  //     SELECT
+  //       p.purchase_id,
+  //       p.project_id,
+  //       p.status,
+  //       pr.project_name,
+  //       ps.project_site_name,
+  //       p.site_id,
+  //       p.vendor_id,
+  //       v.vendor_name,
+  //       p.stor_id,
+  //       s.store_name,
+  //       p.purchase_order_id,
+  //       po.voucher_no,
+  //       po.reference_no_and_date,
+  //       p.invoice_no,
+  //       p.invoice_date,
+  //       p.delivery_date,
+  //       p.invoice_image,
+  //       p.transport_insurance,
+  //       p.remarks,
+  //       p.created_by,
+  //       p.update_by,
+  //       p.created_at,
+  //       pp.purchase_product_id,
+  //       pp.product_id,
+  //       pn.product_name,
+  //       pn.product_type_id,            
+  //       pt.product_type_name, 
+  //       pp.product_qty,
+  //       pp.invoice_qty,
+  //       pp.unit_rate,
+  //       pp.discount_rate,
+  //       pp.discount_amount,
+  //       pp.sgst_rate,
+  //       pp.cgst_rate,
+  //       pp.igst_rate,
+  //       pp.sgst_amt,
+  //       pp.cgst_amt,
+  //       pp.igst_amt,
+  //       pp.total_amount,
+  //       p.updated_at
+  //     FROM td_purchase AS p
+  //     JOIN td_purchase_product AS pp ON p.purchase_id = pp.purchase_id
+  //     JOIN md_project AS pr ON p.project_id = pr.project_id
+  //     JOIN md_project_site AS ps ON p.site_id = ps.project_site_id
+  //     JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
+  //     LEFT JOIN md_store AS s ON p.stor_id = s.store_id
+  //     LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
+  //     JOIN md_product AS pn ON pp.product_id = pn.product_id  
+  //     JOIN md_product_type AS pt ON pn.product_type_id = pt.product_type_id
+  //     WHERE p.purchase_id = '${id}'
+  //   `;
+
+  //     const result = await customSelectSqlQuery(sql);
+
+  //     res.status(200).json({
+  //       status: "success",
+  //       data: result,
+  //     });
+  //   } catch (error) {
+  //     console.error("Error fetching purchase by ID:", error);
+  //     res.status(500).json({
+  //       status: "error",
+  //       message: "Internal server error",
+  //     });
+  //   }
+  // };
+
+
+
   getPurchaseById = async (req, res) => {
-    try {
-      const { id } = req.params; // Assuming the ID is passed as a query parameter
+  try {
+    const { id } = req.params;
 
-      if (!id) {
-        return res.status(400).json({ message: "td_purchase_id is required" });
-      }
+    // if (!id) {
+    //   return res.status(400).json({ message: "purchase_id is required" });
+    // }
 
-      const sql = `
-      SELECT
-        p.purchase_id,
-        p.project_id,
-        p.status,
-        pr.project_name,
-        ps.project_site_name,
-        p.site_id,
-        p.vendor_id,
-        v.vendor_name,
-        p.stor_id,
-        s.store_name,
-        p.purchase_order_id,
-        po.voucher_no,
-        po.reference_no_and_date,
-        p.invoice_no,
-        p.invoice_date,
-        p.delivery_date,
-        p.invoice_image,
-        p.transport_insurance,
-        p.remarks,
-        p.created_by,
-        p.update_by,
-        p.created_at,
-        pp.purchase_product_id,
-        pp.product_id,
-        pp.product_qty,
-        pp.invoice_qty,
-        pp.unit_rate,
-        pp.discount_rate,
-        pp.discount_amount,
-        pp.sgst_rate,
-        pp.cgst_rate,
-        pp.igst_rate,
-        pp.sgst_amt,
-        pp.cgst_amt,
-        pp.igst_amt,
-        pp.total_amount,
-        p.updated_at
-      FROM td_purchase AS p
-      JOIN td_purchase_product AS pp ON p.purchase_id = pp.purchase_id
-      JOIN md_project AS pr ON p.project_id = pr.project_id
-      JOIN md_project_site AS ps ON p.site_id = ps.project_site_id
-      JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
-      LEFT JOIN md_store AS s ON p.stor_id = s.store_id
-      LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
-      WHERE p.purchase_id = '${id}'
-    `;
+   const sql = `
+  SELECT
+    p.purchase_id,
+    p.project_id,
+    p.status,
+    pr.project_name,
+    ps.project_site_name,
+    p.site_id,
+    p.vendor_id,
+    v.vendor_name,
+    p.stor_id,
+    s.store_name,
+    p.purchase_order_id,
+    po.voucher_no,
+    po.reference_no_and_date,
+    p.invoice_no,
+    p.invoice_date,
+    p.delivery_date,
+    p.invoice_image,
+    p.transport_insurance,
+    p.remarks,
+    p.created_by,
+    p.update_by,
+    p.created_at,
+    pp.purchase_product_id,
+    pp.product_id,
+    pn.product_name,
+    pn.product_type_id,
+    pt.product_type_name,
+    pp.product_qty,
+    pp.invoice_qty,
+    pp.unit_rate,
+    pp.discount_rate,
+    pp.discount_amount,
+    pp.sgst_rate,
+    pp.cgst_rate,
+    pp.igst_rate,
+    pp.sgst_amt,
+    pp.cgst_amt,
+    pp.igst_amt,
+    pp.total_amount,
+    p.updated_at
+  FROM td_purchase AS p
+    JOIN td_purchase_product AS pp ON p.purchase_id = pp.purchase_id
+    JOIN md_project AS pr ON p.project_id = pr.project_id
+    JOIN md_project_site AS ps ON p.site_id = ps.project_site_id
+    JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
+    JOIN md_product AS pn ON pp.product_id = pn.product_id
+    JOIN md_product_type AS pt ON pn.product_type_id = pt.product_type_id
+    LEFT JOIN md_store AS s ON p.stor_id = s.store_id
+    LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
+    
+  WHERE p.purchase_id = ${id}
+`;
 
-      const result = await customSelectSqlQuery(sql);
+const result = await customSelectSqlQuery(sql);
 
-      res.status(200).json({
-        status: "success",
-        data: result,
-      });
-    } catch (error) {
-      console.error("Error fetching purchase by ID:", error);
-      res.status(500).json({
+
+    if (result.length === 0) {
+      return res.status(404).json({
         status: "error",
-        message: "Internal server error",
+        message: "Purchase not found or missing linked data",
       });
     }
-  };
+
+    res.status(200).json({
+      status: "success",
+      data: result,
+    });
+  } catch (error) {
+    console.error("Error fetching purchase by ID:", error);
+    res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+    });
+  }
+};
+
+
+ updatePurchase = async (req, res) => {
+  try {
+    const {
+      purchase_id,
+      project_id,
+      site_id,
+      vendor_id,
+      stor_id,
+      purchase_order_id,
+      invoice_no,
+      invoice_date,
+      delivery_date,
+      invoice_image,
+      transport_insurance,
+      remarks,
+      updated_by,
+      purchaseProducts,
+    } = req.body;
+
+    // Validate required fields
+    if (!purchase_id) {
+      return res.status(400).json({
+        success: false,
+        message: "purchase_id is required",
+      });
+    }
+
+    // ✅ Update main purchase record
+    const updatePurchaseSql = `
+      UPDATE td_purchase
+      SET 
+        project_id = ${project_id || "NULL"},
+        site_id = ${site_id || "NULL"},
+        vendor_id = ${vendor_id || "NULL"},
+        stor_id = ${stor_id || "NULL"},
+        purchase_order_id = ${purchase_order_id || "NULL"},
+        invoice_no = '${invoice_no || ""}',
+        invoice_date = '${invoice_date || ""}',
+        delivery_date = '${delivery_date || ""}',
+        invoice_image = '${invoice_image || ""}',
+        transport_insurance = '${transport_insurance || ""}',
+        remarks = '${remarks || ""}',
+        update_by = '${updated_by || ""}',
+        updated_at = NOW()
+      WHERE purchase_id = '${purchase_id}'
+    `;
+
+    await customSelectSqlQuery(updatePurchaseSql);
+
+    // ✅ If products exist, update/insert each manually (no .map)
+    if (purchaseProducts && Array.isArray(purchaseProducts) && purchaseProducts.length > 0) {
+      for (let i = 0; i < purchaseProducts.length; i++) {
+        const item = purchaseProducts[i];
+        const {
+          purchase_product_id,
+          product_id,
+          product_qty,
+          invoice_qty,
+          unit_rate,
+          discount_rate,
+          discount_amount,
+          sgst_rate,
+          cgst_rate,
+          igst_rate,
+          sgst_amt,
+          cgst_amt,
+          igst_amt,
+          total_amount,
+          make_date,
+          ownership_status,
+          updated_by,
+        } = item;
+
+        if (purchase_product_id) {
+          // 🔁 Update existing purchase product
+          const updateProductSql = `
+            UPDATE td_purchase_product
+            SET 
+              product_id = ${product_id || "NULL"},
+              product_qty = ${product_qty || 0},
+              invoice_qty = ${invoice_qty || 0},
+              unit_rate = ${unit_rate || 0},
+              discount_rate = ${discount_rate || 0},
+              discount_amount = ${discount_amount || 0},
+              sgst_rate = ${sgst_rate || 0},
+              cgst_rate = ${cgst_rate || 0},
+              igst_rate = ${igst_rate || 0},
+              sgst_amt = ${sgst_amt || 0},
+              cgst_amt = ${cgst_amt || 0},
+              igst_amt = ${igst_amt || 0},
+              total_amount = ${total_amount || 0},
+              make_date = ${make_date ? `'${make_date}'` : "NULL"},
+              ownership_status = ${ownership_status ? `'${ownership_status}'` : "NULL"},
+              updated_by = '${updated_by || ""}',
+              updated_at = NOW()
+            WHERE purchase_product_id = '${purchase_product_id}'
+              AND purchase_id = '${purchase_id}'
+          `;
+          await customSelectSqlQuery(updateProductSql);
+        } else {
+          // ➕ Insert new product if not exists
+          const insertProductSql = `
+            INSERT INTO td_purchase_product (
+              purchase_id, product_id, product_qty, invoice_qty, unit_rate, 
+              discount_rate, discount_amount, sgst_rate, cgst_rate, igst_rate, 
+              sgst_amt, cgst_amt, igst_amt, total_amount, make_date, 
+              ownership_status, created_by, updated_by, created_at, updated_at
+            )
+            VALUES (
+              '${purchase_id}', ${product_id || "NULL"}, ${product_qty || 0}, ${invoice_qty || 0}, ${unit_rate || 0},
+              ${discount_rate || 0}, ${discount_amount || 0}, ${sgst_rate || 0}, ${cgst_rate || 0}, ${igst_rate || 0},
+              ${sgst_amt || 0}, ${cgst_amt || 0}, ${igst_amt || 0}, ${total_amount || 0},
+              ${make_date ? `'${make_date}'` : "NULL"},
+              ${ownership_status ? `'${ownership_status}'` : "NULL"},
+              '${updated_by || ""}', '${updated_by || ""}', NOW(), NOW()
+            )
+          `;
+          await customSelectSqlQuery(insertProductSql);
+        }
+      }
+    }
+
+    // ✅ Response
+    res.status(200).json({
+      success: true,
+      message: "Purchase updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating purchase:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error updating purchase",
+      error: error.message,
+    });
+  }
+};
+
+
+
+
 }
 
 module.exports = new PurchaseProductController();

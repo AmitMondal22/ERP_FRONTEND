@@ -8,9 +8,11 @@ const { purchaseSchema, purchaseQuerySchema } = require("../validations/purchase
 router.post("/api/perchase", authcheck, purchaseProductController.createPurchase);
 router.get('/hello',(req,res)=>{res.send("heelo from sourish")});
 router.get("/api/getpurchase", authcheck, purchaseProductController.allPurchase);
-router.get("/api/perchase-product", authcheck,validate(purchaseQuerySchema), purchaseProductController.allProductPurchase);
-router.get("/api/perchase-product/:id", authcheck,validate(purchaseQuerySchema), purchaseProductController.getPurchaseById);
 
+router.get("/api/perchase-product", authcheck,validate(purchaseQuerySchema), purchaseProductController.allProductPurchase);
+
+router.get("/api/perchase-product/:id", purchaseProductController.getPurchaseById);
+router.post("/api/update-purchase-product/:id",authcheck,purchaseProductController.updatePurchase)
 
 module.exports = router;
-// 
+//  
