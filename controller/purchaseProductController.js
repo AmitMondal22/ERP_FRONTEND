@@ -1,4 +1,4 @@
-const {insertData, batchInsertData, customSelectSqlQuery, updateData} = require("../models/MasterModel");
+const {insertData, batchInsertData, customSelectSqlQuery, updateData, deleteData} = require("../models/MasterModel");
 const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 dayjs.extend(utc);
@@ -604,6 +604,7 @@ class PurchaseProductController {
   };
 
 
+
   updatePurchase = async (req, res) => {
     const purchase_id = req.params.id;
 
@@ -639,10 +640,10 @@ class PurchaseProductController {
         invoice_image: invoice_image_path || null,
         transport_insurance: transport_insurance || null,
         remarks: remarks || null,
-        updated_by,
-        updated_at: new Date(),
+        // updated_by,
+        // updated_at: new Date(),
       };
-
+      console.log(purchaseData)
       await updateData("td_purchase", purchaseData, `purchase_id = ${purchase_id}`);
 
       // Update td_purchase_product
@@ -668,10 +669,9 @@ class PurchaseProductController {
             total_amount: product.total_amount,
             make_date: product.make_date || null,
             ownership_status: product.ownership_status || null,
-            created_by: product.created_by || updated_by,
-            updated_by: updated_by,
-            created_at: new Date(),
-            updated_at: new Date(),
+            // updated_by: updated_by,
+            // created_at: new Date(),
+            // updated_at: new Date(),
           };
         })
       );
