@@ -125,6 +125,7 @@ async getBomItemByProgress(req, res) {
       SELECT 
         i.*, 
         p.product_name,
+         p.qty AS product_qty,  
         u.unit_name
       FROM md_bom_item AS i
       LEFT JOIN md_product AS p 
