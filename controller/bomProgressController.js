@@ -115,6 +115,8 @@ class BomProgressController {
   };
 
 
+  
+
     // Delete project by ID
   deleteBomProgress = async (req, res) => {
     try {

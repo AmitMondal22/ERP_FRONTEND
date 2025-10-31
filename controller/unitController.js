@@ -41,11 +41,11 @@ class unitController {
 
  addUnit = async (req, res) => {
   try {
-    const { unit_name, quantity } = req.body;
-    if (!unit_name || quantity === undefined) {
+    const { unit_name } = req.body;//, quantity
+    if (!unit_name  === undefined) { //|| quantity
       return res.status(400).json({
         success: false,
-        message: "unit_name and quantity are required",
+        message: "unit_name  is required",
       });
     }
 
@@ -53,16 +53,15 @@ class unitController {
     const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
     const unit_id = await insertData("md_unit", {
-      unit_name,
-      quantity,
+      unit_name,   
       created_by,
       created_at,
-    });
+    });// quantity,
 
     res.status(200).json({
       success: true,
       message: "Unit added successfully",
-      data: { unit_id, unit_name, quantity, created_by, created_at },
+      data: { unit_id, unit_name, created_by, created_at },
     });
   } catch (error) {
     console.error(error);
@@ -146,7 +145,7 @@ class unitController {
     const { id } = req.params; 
     if (!id) return res.status(400).json({ success: false, message: "Unit ID is required" });
 
-    const { unit_name, quantity } = req.body;
+    const { unit_name } = req.body;
     //const updated_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
     const updated_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
@@ -154,7 +153,7 @@ class unitController {
 
     const setValues = {};
     if (unit_name !== undefined) setValues.unit_name = unit_name;
-    if (quantity !== undefined) setValues.quantity = quantity;
+    //if (quantity !== undefined) setValues.quantity = quantity;
     setValues.updated_at = updated_at;
 
     // Make sure condition is a valid string

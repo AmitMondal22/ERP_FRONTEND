@@ -16,6 +16,7 @@ const Upload= require('./router/uploadsRoutes');
 const Bom= require('./router/bomRoutes');
 const purchaseProduct= require('./router/purchaseProduct');
 const productType= require('./router/productTypeRoute');
+const progressRoutes= require('./router/progressRoutes')
 const app= express()
 const path = require("path");
 const cors = require('cors');
@@ -53,6 +54,7 @@ app.use('/',Upload)
 app.use('/',Bom)
 app.use('/',purchaseProduct)
 app.use('/',productType);
+app.use('/',progressRoutes)
 
 
 

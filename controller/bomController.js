@@ -223,7 +223,7 @@ createOrUpdateBom = async (req, res) => {
       p.sl_number,
       i.bom_item_id,
       i.product_id,
-      i.qty,
+      i.qty AS unit_quantity,
       i.total_qty,
       i.created_by AS item_created_by,
       i.created_at AS item_created_at,
@@ -235,7 +235,6 @@ createOrUpdateBom = async (req, res) => {
       pr.unit_id,
       pr.product_type_id,
       u.unit_name,
-      u.quantity AS unit_quantity,
       pt.product_type_name
     `;
 
