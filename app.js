@@ -16,7 +16,10 @@ const Upload= require('./router/uploadsRoutes');
 const Bom= require('./router/bomRoutes');
 const purchaseProduct= require('./router/purchaseProduct');
 const productType= require('./router/productTypeRoute');
-const progressRoutes= require('./router/progressRoutes')
+const progressRoutes= require('./router/progressRoutes');
+const employeeTeamRoutes= require('./router/employeeTeamRoutes');
+const employeeAttendence= require('./router/employeeAttendence');
+
 const app= express()
 const path = require("path");
 const cors = require('cors');
@@ -37,6 +40,7 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // app.use(express.json({limit: '200kb'}));
 // app.use(express.urlencoded({ extended: true }));
 app.use(express.raw({ type: 'application/octet-stream', limit: '15mb' }));
+
 // app.use(express.raw({ type: 'application/octet-stream', limit: '200kb' }));
 
 app.use('/',router)
@@ -54,7 +58,9 @@ app.use('/',Upload)
 app.use('/',Bom)
 app.use('/',purchaseProduct)
 app.use('/',productType);
-app.use('/',progressRoutes)
+app.use('/',progressRoutes);
+app.use('/',employeeTeamRoutes);
+app.use('/',employeeAttendence);
 
 
 

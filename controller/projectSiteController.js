@@ -9,13 +9,14 @@ class projectSiteController{
 
     createProjectSite = async (req,res) => {
         try {
-            const { project_site_name,address, city_id, project_id, from_date, to_date} = req.body;
+            const { project_site_name,address, city_id, project_id,is_time_extended, from_date, to_date} = req.body;
             const insertValues = {
                 project_site_name,
                 address,
                 city_id,
                 project_id,
                 from_date,
+                is_time_extended,
                 to_date,
                 create_by: req.user.id,
                 created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
@@ -35,7 +36,7 @@ class projectSiteController{
         }
         
     }
-
+ 
 
  getAllProjectsSite = async (req, res) => {
   try {
@@ -79,21 +80,86 @@ class projectSiteController{
 
 
 
+// async getProjectSite(req, res) {
+//   try {
+//     const { id } = req.params;
+
+//     //const table = "md_project_site as a, lo_cities as b, lo_states as c,md_project as d";
+//     const table=  `
+//   md_project_site AS a
+//   JOIN lo_cities AS b ON a.city_id = b.id
+//   JOIN lo_states AS c ON b.state_id = c.id
+//   JOIN md_project AS d ON a.project_id = d.project_id
+// `;
+
+//     const condition = `a.city_id=b.id 
+//                        AND b.state_id = c.id 
+//                        AND a.project_id = d.project_id 
+//                        AND a.project_site_id = ${Number(id)}`;
+                       
+//     //const select = "a.*, b.name as city_name, b.state_id, c.name as state_name,d.project_name  ";
+
+//     const select = `
+//   a.*, 
+//   b.name AS city_name, 
+//   b.state_id, 
+//   c.name AS state_name, 
+//   d.project_name
+// `;
+
+
+//     const projectsSite = await selectLastData(table, select, condition, "a.project_site_name");
+
+//     // Send data as-is, without converting
+//     res.status(200).json({ success: true, data: projectsSite });
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({ success: false, message: "Unable to fetch project site" });
+//   }
+// }
 async getProjectSite(req, res) {
   try {
     const { id } = req.params;
 
-    const table = "md_project_site as a, lo_cities as b, lo_states as c";
-    const condition = `a.city_id=b.id AND b.state_id = c.id AND a.project_site_id = ${Number(id)}`;
-    const select = "a.*, b.name as city_name, b.state_id, c.name as state_name";
+    const table = `
+      md_project_site AS a
+      JOIN lo_cities AS b ON a.city_id = b.id
+      JOIN lo_states AS c ON b.state_id = c.id
+      JOIN md_project AS d ON a.project_id = d.project_id
+    `;
 
-    const projectsSite = await selectLastData(table, select, condition, "a.project_site_name");
+    const select = `
+      a.*, 
+      b.name AS city_name, 
+      b.state_id, 
+      c.name AS state_name, 
+      d.project_name
+    `;
 
-    // Send data as-is, without converting
-    res.status(200).json({ success: true, data: projectsSite });
+    const condition = `a.project_site_id = ${Number(id)}`;
+
+    const query = `
+      SELECT ${select}
+      FROM ${table}
+      WHERE ${condition}
+      ORDER BY a.project_site_name DESC
+      LIMIT 1
+    `;
+
+    //console.log(" SQL Query:", query); // log it to confirm
+    const conn = await connect();
+    const [rows] = await conn.execute(query);
+    await conn.end();
+
+    res.status(200).json({
+      success: true,
+      data: rows.length ? rows[0] : null,
+    });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: "Unable to fetch project site" });
+    console.error(" Error in getProjectSite:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Unable to fetch project site" });
   }
 }
 
@@ -108,6 +174,7 @@ async getProjectSite(req, res) {
                 address, 
                 city_id,  
                 project_id,  
+                is_time_extended,
                 from_date, 
                 to_date 
             } = req.body;
@@ -122,6 +189,7 @@ async getProjectSite(req, res) {
             if (project_id !== undefined) setValues.project_id = project_id;
             if (from_date !== undefined) setValues.from_date = from_date;
             if (to_date !== undefined) setValues.to_date = to_date;
+            if(is_time_extended !== undefined)setValues.is_time_extended=is_time_extended;
             
             console.log('[f date]',setValues)
 

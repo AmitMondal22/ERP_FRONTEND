@@ -12,6 +12,7 @@ class productController {
         unit_id,
         manufacturer_name,
         hsn_code,
+        uom_id,
         qty,
         product_image = null, // default to null
       } = req.body;
@@ -34,6 +35,7 @@ class productController {
         manufacturer_name,
         hsn_code,
         qty,
+        uom_id,
         product_image, // will be null if not provided
         created_by,
         created_at,
@@ -97,6 +99,7 @@ getAllProducts = async (req, res) => {
         pt.product_type_name,      -- fetch the name
         p.product_name,
         p.model_no,
+        p.uom_id,
         p.unit_id,
         u.unit_name,
         p.hsn_code,
@@ -157,6 +160,7 @@ getAllProducts = async (req, res) => {
         p.unit_id,
         u.unit_name,
         p.hsn_code,
+        p. uom_id,
         p.qty,
         p.manufacturer_name,
         p.product_image,
@@ -239,6 +243,7 @@ updateProductById = async (req, res) => {
       product_name,
       model_no,
       unit_id,
+       uom_id,
       manufacturer_name,
       hsn_code,
       qty,
@@ -254,6 +259,7 @@ updateProductById = async (req, res) => {
 
     const updateValues = {
       product_type_id: product_type_id ?? null,
+       uom_id: uom_id ?? null,
       product_name: product_name ?? null,
       model_no: model_no ?? null,
       unit_id: unit_id ?? null,

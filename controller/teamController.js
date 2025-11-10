@@ -132,7 +132,7 @@ class TeamController {
         JOIN em_employees AS o ON t.operator_id = o.employee_id
         LEFT JOIN em_employees AS pic ON t.project_in_charge_id = pic.employee_id
         LEFT JOIN em_employees AS sic ON t.site_in_charge_id = sic.employee_id
-        `;
+        `; 
 
         const condition = `t.team_id = ${team_id}`;
 

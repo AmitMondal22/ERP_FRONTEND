@@ -210,6 +210,7 @@ class PurchaseProductController {
   };
 
 
+
   allPurchase = async (req, res) => {
     try {
       let { search, fromDate, toDate } = req.query;
@@ -227,7 +228,7 @@ class PurchaseProductController {
         pr.project_name,
         ps.project_site_name,
         p.site_id,
-        p.status,
+        
         p.vendor_id,
         v.vendor_name,
         p.stor_id,
@@ -311,7 +312,7 @@ class PurchaseProductController {
         pr.project_name,
         ps.project_site_name,
         p.site_id,
-        p.status,
+        
         p.vendor_id,
         v.vendor_name,
         p.stor_id,
@@ -372,7 +373,7 @@ class PurchaseProductController {
           data: [],
           total: 0,
         });
-      }
+      } 
 
       // Get purchase_ids from result
       const purchaseIds = purchases.map((p) => p.purchase_id);
@@ -438,83 +439,7 @@ class PurchaseProductController {
     }
   };
 
-  // getPurchaseById = async (req, res) => {
-  //   try {
-  //     const { id } = req.params; 
-
-  //     if (!id) {
-  //       return res.status(400).json({ message: "td_purchase_id is required" });
-  //     }
-
-  //     const sql = `
-  //     SELECT
-  //       p.purchase_id,
-  //       p.project_id,
-  //       p.status,
-  //       pr.project_name,
-  //       ps.project_site_name,
-  //       p.site_id,
-  //       p.vendor_id,
-  //       v.vendor_name,
-  //       p.stor_id,
-  //       s.store_name,
-  //       p.purchase_order_id,
-  //       po.voucher_no,
-  //       po.reference_no_and_date,
-  //       p.invoice_no,
-  //       p.invoice_date,
-  //       p.delivery_date,
-  //       p.invoice_image,
-  //       p.transport_insurance,
-  //       p.remarks,
-  //       p.created_by,
-  //       p.update_by,
-  //       p.created_at,
-  //       pp.purchase_product_id,
-  //       pp.product_id,
-  //       pn.product_name,
-  //       pn.product_type_id,            
-  //       pt.product_type_name, 
-  //       pp.product_qty,
-  //       pp.invoice_qty,
-  //       pp.unit_rate,
-  //       pp.discount_rate,
-  //       pp.discount_amount,
-  //       pp.sgst_rate,
-  //       pp.cgst_rate,
-  //       pp.igst_rate,
-  //       pp.sgst_amt,
-  //       pp.cgst_amt,
-  //       pp.igst_amt,
-  //       pp.total_amount,
-  //       p.updated_at
-  //     FROM td_purchase AS p
-  //     JOIN td_purchase_product AS pp ON p.purchase_id = pp.purchase_id
-  //     JOIN md_project AS pr ON p.project_id = pr.project_id
-  //     JOIN md_project_site AS ps ON p.site_id = ps.project_site_id
-  //     JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
-  //     LEFT JOIN md_store AS s ON p.stor_id = s.store_id
-  //     LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
-  //     JOIN md_product AS pn ON pp.product_id = pn.product_id  
-  //     JOIN md_product_type AS pt ON pn.product_type_id = pt.product_type_id
-  //     WHERE p.purchase_id = '${id}'
-  //   `;
-
-  //     const result = await customSelectSqlQuery(sql);
-
-  //     res.status(200).json({
-  //       status: "success",
-  //       data: result,
-  //     });
-  //   } catch (error) {
-  //     console.error("Error fetching purchase by ID:", error);
-  //     res.status(500).json({
-  //       status: "error",
-  //       message: "Internal server error",
-  //     });
-  //   }
-  // };
-
+  
 
 
   getPurchaseById = async (req, res) => {
@@ -528,8 +453,7 @@ class PurchaseProductController {
    const sql = `
             SELECT
               p.purchase_id,
-              p.project_id,
-              p.status,
+              p.project_id,              
               pr.project_name,
               ps.project_site_name,
               p.site_id,
@@ -620,7 +544,6 @@ class PurchaseProductController {
       invoice_image_path,
       transport_insurance,
       remarks,
-      updated_by,
       purchase_product,
     } = req.body;
 
@@ -639,7 +562,7 @@ class PurchaseProductController {
         delivery_date,
         invoice_image: invoice_image_path || null,
         transport_insurance: transport_insurance || null,
-        remarks: remarks || null,
+        remarks: remarks || null, 
         // updated_by,
         // updated_at: new Date(),
       };
