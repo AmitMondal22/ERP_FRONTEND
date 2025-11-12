@@ -19,6 +19,9 @@ const productType= require('./router/productTypeRoute');
 const progressRoutes= require('./router/progressRoutes');
 const employeeTeamRoutes= require('./router/employeeTeamRoutes');
 const employeeAttendence= require('./router/employeeAttendence');
+const  leaveRoutes= require('./router/leaveRoutes');
+const leaveRequestRoutes= require('./router/leaveRequestRoutes');
+const employeePaySlipRoutes= require('./router/employeePaySlipRoutes');
 
 const app= express()
 const path = require("path");
@@ -61,8 +64,9 @@ app.use('/',productType);
 app.use('/',progressRoutes);
 app.use('/',employeeTeamRoutes);
 app.use('/',employeeAttendence);
-
-
+app.use('/',leaveRoutes);
+app.use('/',leaveRequestRoutes);
+app.use('/',employeePaySlipRoutes);
 
 //need tomake Upload Path Public
 

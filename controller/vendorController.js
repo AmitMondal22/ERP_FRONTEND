@@ -131,6 +131,7 @@ class VendorController {
         "created_at",
       ];
 
+      
       const rows = contactPerson.map(c => ({
         contact_person_name: c.name || null,
         contact_person_email: c.email || null,
