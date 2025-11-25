@@ -56,39 +56,6 @@ class productController {
   };
 
 
-  // ---------------- GET ALL PRODUCTS ----------------
-//   getAllProducts = async (req, res) => {
-//     try {
-//       // const products = await selectData("md_product", "*", null, "product_id DESC");
-//       const products = await customSelectSqlQuery(`
-//   SELECT 
-//     p.product_id,
-//     p.product_type_id,
-//     p.product_name,
-//     p.model_no,
-//     p.unit_id,
-//     u.unit_name,
-//     p.hsn_code,
-//     p.qty,
-//     p.manufacturer_name,
-//     p.product_image,
-//     p.created_by
-//   FROM md_product p
-//   INNER JOIN md_unit u ON p.unit_id = u.unit_id
-//   ORDER BY p.product_id DESC
-// `,true);
-
-
-//       res.status(200).json({
-//         success: true,
-//         message: "Products fetched successfully",
-//         data: products, data: products || [],
-//       });
-//     } catch (error) {
-//       console.error("Get all products error:", error);
-//       res.status(500).json({ success: false, message: "Unable to fetch products" });
-//     }
-//   };
 
 getAllProducts = async (req, res) => {
   try {
@@ -126,26 +93,7 @@ getAllProducts = async (req, res) => {
 
 
   // ---------------- GET PRODUCT BY ID ----------------
-  // getProductById = async (req, res) => {
-  //   try {
-  //     const { id } = req.params;
-  //     const product = await selectOneData("md_product", "*", `product_id = ${id}`);
-
-  //     if (!product) {
-  //       return res.status(404).json({ success: false, message: "Product not found" });
-  //     }
-
-  //     res.status(200).json({
-  //       success: true,
-  //       message: "Product fetched successfully",
-  //       data: product,
-  //     });
-  //   } catch (error) {
-  //     console.error("Get product by ID error:", error);
-  //     res.status(500).json({ success: false, message: "Unable to fetch product" });
-  //   }
-  // };
-
+ 
   getProductById = async (req, res) => {
   try {
     const { id } = req.params;

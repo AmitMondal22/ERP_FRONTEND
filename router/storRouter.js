@@ -15,4 +15,4 @@ router.get("/api/get_stor/:id",authcheck, storController.getStoreById);
 
 router.delete("/api/delete_stor/:id",authcheck, storController.deleteStore);
 
-module.exports = router;
+module.exports = router;  

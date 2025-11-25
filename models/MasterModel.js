@@ -156,6 +156,7 @@ async function deleteData(table, condition) {
   }
 }
 
+
 async function deleteInsertRestore(originalTable, backupTable, condition) {
   let conn;
   try {

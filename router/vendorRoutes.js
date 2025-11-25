@@ -22,4 +22,6 @@ router.delete("/api/delete_vendor/:id",authcheck, vendorController.deleteVendor)
 
 router.delete("/api/delete_contact_person/:id",authcheck, vendorController.deleteContactPerson);
 
+router.post("/api/get-purchase-material-from-vendor/:id",authcheck,vendorController.getPurchaseByVendorAndDate)
+
 module.exports = router;

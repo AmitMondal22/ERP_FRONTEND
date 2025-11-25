@@ -9,6 +9,7 @@ const {
   updateData,
   deleteData,
   batchInsertData,
+  customSelectSqlQuery
 } = require("../models/MasterModel");
 
 class VendorController {
@@ -254,6 +255,7 @@ class VendorController {
 
   // Get vendor by ID
  getVendorById = async (req, res) => {
+  
   try {
     const { vendor_id } = req.params;
     const table = "md_vendor as a, lo_cities as b, lo_states as c";
@@ -438,6 +440,109 @@ updateVendor = async (req, res) => {
       res.status(500).json({ success: false, message: "Unable to delete Contact Person" });
     }
   };
+
+
+
+  getPurchaseByVendorAndDate = async (req, res) => {
+  try {
+    const { id: vendor_id } = req.params;  
+    const { fromDate, toDate } = req.body; 
+
+    if (!vendor_id || !fromDate || !toDate) {
+      return res.status(400).json({
+        success: false,
+        message: "vendor_id, fromDate and toDate are required",
+      });
+    }
+
+    // --- MAIN SQL ---
+    const sql = `
+      SELECT
+        p.purchase_id,
+        p.invoice_no,
+        DATE(p.invoice_date) AS invoice_date,
+        DATE(p.delivery_date) AS delivery_date,
+        p.invoice_image,
+        p.transport_insurance,
+        p.remarks,
+
+        p.project_id,
+        pr.project_name,
+        p.site_id,
+        ps.project_site_name,
+
+        p.vendor_id,
+        v.vendor_name,
+
+        p.stor_id,
+        s.store_name,
+
+        p.purchase_order_id,
+        po.voucher_no,
+        po.reference_no_and_date,
+
+        pp.purchase_product_id,
+        pp.product_id,
+        pn.product_name,
+        pn.product_type_id,
+        pt.product_type_name,
+
+        pp.product_qty,
+        pp.invoice_qty,
+        pp.unit_rate,
+        pp.discount_rate,
+        pp.discount_amount,
+        pp.sgst_rate,
+        pp.cgst_rate,
+        pp.igst_rate,
+        pp.sgst_amt,
+        pp.cgst_amt,
+        pp.igst_amt,
+        pp.total_amount,
+        pp.make_date,
+        pp.ownership_status,
+
+        DATE(pp.created_at) AS purchase_date,
+        pp.created_at,
+        pp.updated_at
+
+      FROM td_purchase_product AS pp
+      JOIN td_purchase AS p ON pp.purchase_id = p.purchase_id
+      JOIN md_product AS pn ON pp.product_id = pn.product_id
+      JOIN md_product_type AS pt ON pn.product_type_id = pt.product_type_id
+
+      LEFT JOIN md_project AS pr ON p.project_id = pr.project_id
+      LEFT JOIN md_project_site AS ps ON p.site_id = ps.project_site_id
+
+      JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
+      LEFT JOIN md_store AS s ON p.stor_id = s.store_id
+      LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
+
+      WHERE 
+        p.vendor_id = ${vendor_id}
+        AND DATE(pp.created_at) BETWEEN '${fromDate}' AND '${toDate}'
+
+      ORDER BY pp.created_at DESC
+    `;
+
+    const results = await customSelectSqlQuery(sql);
+
+    return res.status(200).json({
+      success: true,
+      total: results.length,
+      data: results,
+    });
+
+  } catch (error) {
+    console.error("Error fetching vendor purchase history:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
 
 }
 

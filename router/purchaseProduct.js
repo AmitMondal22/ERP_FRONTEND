@@ -13,6 +13,8 @@ router.get("/api/perchase-product", authcheck,validate(purchaseQuerySchema), pur
 
 router.get("/api/perchase-product/:id", purchaseProductController.getPurchaseById);
 
+router.post("/api/get-purchased-product-details/:id",purchaseProductController.getPurchaseByProductAndDate)
+
 router.post("/api/update-purchase-product/:id",authcheck,purchaseProductController.updatePurchase)
 
 module.exports = router;

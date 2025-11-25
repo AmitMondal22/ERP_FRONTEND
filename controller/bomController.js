@@ -3,62 +3,10 @@ const utc = require("dayjs/plugin/utc");
 dayjs.extend(utc);
 
 
-const { updateData, selectOneData, insertData, deleteData, selectData } = require("../models/MasterModel");
+const { updateData, selectOneData, insertData, deleteData, selectData,customSelectSqlQuery } = require("../models/MasterModel");
 
  
 class BomController {
-
-  // CreateORupdate
-//   createOrUpdateBom = async (req, res) => {
-//     try {
-//       const { bom_id, bom_name } = req.body;
-
-//       if (!bom_name) {
-//         return res.status(400).json({ success: false, message: "BOM name is required" });
-//       }
-
-//       const timestamp = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
-
-//       if (bom_id) {
-//         // UPDATE existing BOM
-//         const setValues = {
-//           bom_name,
-//           updated_at: timestamp,
-//           create_by: req.user.id,
-//         };
-
-//         const condition = `bom_id = ${Number(bom_id)}`;
-//         const updatedRows = await updateData("md_bom", setValues, condition);
-
-//         if (!updatedRows) {
-//           return res.status(404).json({ success: false, message: "BOM not found or nothing to update" });
-//         }
-//         return res.status(200).json({ success: true, message: "BOM updated", data: updatedRows });
-
-//       } else {
-//         // CREATE new BOM
-//         const insertValues = {
-//           bom_name,
-//           create_by: req.user.id,
-//           created_at: timestamp,
-//         };
-
-//         // const insertedId = await insertData("md_bom", insertValues);
-//         // return res.status(201).json({ success: true, message: "BOM created", data: insertedId });
-//         const insertedId = await insertData("md_bom", insertValues);
-// return res.status(201).json({
-//   success: true,
-//   message: "BOM created",
-//   data: { bom_id: insertedId }
-// });
-//       }
-
-//     } catch (error) {
-//       console.error(error);
-//       res.status(500).json({ success: false, message: "Unable to create or update BOM" });
-//     }
-//   };
-
 
 createOrUpdateBom = async (req, res) => {
   try {
@@ -71,7 +19,7 @@ createOrUpdateBom = async (req, res) => {
     const timestamp = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
     if (bom_id) {
-      // ✅ UPDATE existing BOM
+      // UPDATE existing BOM
       const setValues = { 
         bom_name,
         updated_at: timestamp,
@@ -88,7 +36,7 @@ createOrUpdateBom = async (req, res) => {
         });
       }
 
-      // ✅ Always return same shape
+      // Always return same shape
       return res.status(200).json({
         success: true,
         message: "BOM updated",
@@ -96,7 +44,7 @@ createOrUpdateBom = async (req, res) => {
       });
 
     } else {
-      // ✅ CREATE new BOM
+      //  CREATE new BOM
       const insertValues = {
         bom_name,
         create_by: req.user.id,
@@ -121,6 +69,7 @@ createOrUpdateBom = async (req, res) => {
   }
 };
 
+
   
   
 
@@ -139,9 +88,6 @@ createOrUpdateBom = async (req, res) => {
   //     const condition = `b.bom_id = ${Number(id)}`
 
   //     const bom = await selectData(table, select, condition);
-
-
-
   //     const bomData = {
   //       bom_id: null,
   //       bom_name: null,
@@ -181,28 +127,27 @@ createOrUpdateBom = async (req, res) => {
   //             hsn_code: row.hsn_code,
   //             manufacturer_name: row.manufacturer_name,
   //             qty: row.product_qty,
-              
   //             unit_id: row.unit_id,
   //             unit_name: row.unit_name,
   //             quantity: row.unit_quantity,
-
   //             product_type_id: row.product_type_id,
-  //             product_type_name: row.product_type_name
-              
+  //             product_type_name: row.product_type_name          
   //           }
   //         });
   //       }
   //     }
-
   //     bomData.progresses = Array.from(progressMap.values());
-
   //     res.status(200).json({ success: true, data: bomData });
-
   //   } catch (error) {
   //     console.error(error);
   //     res.status(500).json({ success: false, message: "Unable to fetch project" });
   //   }
   // };
+
+
+
+
+
 
   getBom = async (req, res) => {
   try {
@@ -301,6 +246,7 @@ createOrUpdateBom = async (req, res) => {
 };
 
 
+
   // Get all projects
   getAllBom = async (req, res) => {
     try {
@@ -339,6 +285,106 @@ createOrUpdateBom = async (req, res) => {
       res.status(500).json({ success: false, message: "Unable to delete Bom" });
     }
   };
+
+
+
+
+  getAllBomFullDetails = async (req, res) => {
+  try {
+    const sql = `
+      SELECT 
+        b.bom_id,
+        b.bom_name,
+
+        p.bom_progress_id,
+        p.bom_progress_name,
+
+        i.bom_item_id,
+        i.product_id,
+        i.qty,
+        i.total_qty,
+
+        pr.product_name,
+        pr.product_type_id
+      FROM md_bom b
+      LEFT JOIN md_bom_progress p ON b.bom_id = p.bom_id
+      LEFT JOIN md_bom_item i ON p.bom_progress_id = i.bom_progress_id 
+                               AND p.bom_id = i.bom_id
+      LEFT JOIN md_product pr ON i.product_id = pr.product_id
+      ORDER BY b.bom_id, p.bom_progress_id, i.bom_item_id
+    `;
+
+    const rows = await customSelectSqlQuery(sql);
+
+    const bomMap = new Map();
+
+    for (const row of rows) {
+
+      // 1️ Add BOM
+      if (!bomMap.has(row.bom_id)) {
+        bomMap.set(row.bom_id, {
+          bom_id: row.bom_id,
+          bom_name: row.bom_name,
+          progresses: new Map()
+        });
+      }
+
+      const bomObj = bomMap.get(row.bom_id);
+
+      // 2️ Add Progress
+      if (row.bom_progress_id && !bomObj.progresses.has(row.bom_progress_id)) {
+        bomObj.progresses.set(row.bom_progress_id, {
+          bom_progress_id: row.bom_progress_id,
+          bom_progress_name: row.bom_progress_name,
+          items: []
+        });
+      }
+
+      // 3️ Add Items
+      if (row.bom_item_id) {
+        const progressObj = bomObj.progresses.get(row.bom_progress_id);
+
+        progressObj.items.push({
+          bom_item_id: row.bom_item_id,
+          product_id: row.product_id,
+          qty: row.qty,
+          total_qty: row.total_qty,
+          product: {
+            product_id: row.product_id,
+            product_name: row.product_name,
+            product_type_id: row.product_type_id
+          }
+        });
+      }
+    }
+
+    // Convert map → array
+    const finalResponse = [];
+
+    for (const bom of bomMap.values()) {
+      bom.progresses = Array.from(bom.progresses.values());
+      finalResponse.push(bom);
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: finalResponse
+    });
+
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch BOM data"
+    });
+  }
+};
+
+
+
+
+
+
 }
 
 module.exports = new BomController();

@@ -1,0 +1,27 @@
+const express = require("express");
+const router = express.Router();
+const ProjectEstimationController = require("../controller/ProjectEstimationController");
+const authcheck= require('../middleware/auth');
+
+// CREATE or UPDATE (same function)
+router.post("/api/create-or-update-projectestimation",authcheck,ProjectEstimationController.createOrUpdateProjectEstimation);
+
+// GET ALL
+router.get("/api/getallestimation",authcheck,ProjectEstimationController.getAllProjectEstimations);
+
+
+// GET ONE using composite key
+router.get("/:project_id/:site_id/:bom_id",authcheck, ProjectEstimationController.getProjectEstimation);
+
+
+// DELETE using composite key
+router.delete("/:project_id/:site_id/:bom_id",authcheck,ProjectEstimationController.deleteProjectEstimation);
+
+// FULL BOM DETAILS (aggregated)
+router.get("/api/getallbomdetails",authcheck,ProjectEstimationController.getAllBomFullDetails);
+
+//fetchAll datas from bomdetailsbyprojectsiteid
+
+router.post("/api/getallbomdetailsbyprojectsiteid",authcheck,ProjectEstimationController.getBomFullDetailsByProjectAndSite)
+
+module.exports = router;
