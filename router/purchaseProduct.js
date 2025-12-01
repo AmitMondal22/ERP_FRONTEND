@@ -17,4 +17,4 @@ router.post("/api/get-purchased-product-details/:id",purchaseProductController.g
 
 router.post("/api/update-purchase-product/:id",authcheck,purchaseProductController.updatePurchase)
 
-module.exports = router;
+module.exports = router;//

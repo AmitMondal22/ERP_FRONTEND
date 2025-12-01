@@ -625,7 +625,7 @@ class PurchaseProductController {
       });
     }
   };
-
+//
 
  getPurchaseByProductAndDate = async (req, res) => {
   try {

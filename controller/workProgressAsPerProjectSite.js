@@ -16,141 +16,289 @@ class WorkProgressAsPerProjectSiteController {
   // ------------------------------------------------------------
   // CREATE
   // ------------------------------------------------------------
-  createWorkProgress = async (req, res) => {
-    try {
-      const body = req.body;
 
-      const data = {
-        project_id: body.project_id,
-        project_site_id: body.project_site_id,  // UPDATED
-        bom_id: body.bom_id,
-        remarks: body.remarks || null,
-        total_progress: body.total_progress || 0,
-        rep_task: body.rep_task || null,
-        date: body.date || dayjs().format("YYYY-MM-DD"),
-        created_by: body.created_by || null,
-        created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
-        updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
-      };
 
-      const insertId = await insertData("tx_work_progress_as_per_project_site", data);
+createWorkProgress = async (req, res) => {
+  try {
+    // Extract values from body
+const{
+  project_id,
+  project_site_id,
+  bom_id,bom_progress_id,remarks,total_progress,rep_task,packet_qty,total_qty_of_material_used,date,created_by} = req.body;
 
-      res.status(201).json({
-        success: true,
-        message: "Work progress added",
-        id: insertId
+    // Validate required fields
+    if (!project_id || !project_site_id || !bom_id) {
+      return res.status(400).json({
+        success: false,
+        message: "project_id, project_site_id and bom_id are required"
       });
-
-    } catch (err) {
-      console.error("CREATE ERROR:", err);
-      res.status(500).json({ success: false, message: "Unable to create work progress" });
     }
-  };
+
+    // Prepare data for insert
+    const data = {
+      project_id: project_id || null,
+      project_site_id: project_site_id || null,
+      bom_id: bom_id || null,
+      bom_progress_id:bom_progress_id ||null,
+      remarks: remarks || null,
+      total_progress: total_progress || 0,
+      rep_task: rep_task || null,
+      packet_qty: packet_qty || 0,
+      total_qty_of_material_used: total_qty_of_material_used || 0,
+
+      date: date || dayjs().format("YYYY-MM-DD"),
+      created_by: created_by || null,
+      created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
+      updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
+    };
+
+    // Convert undefined → null (safety)
+    Object.keys(data).forEach(key => {
+      if (data[key] === undefined) data[key] = null;
+    });
+
+    const insertId = await insertData("tx_work_progress_as_per_project_site", data);
+
+    return res.status(201).json({
+      success: true,
+      message: "Work progress added successfully",
+      id: insertId
+    });
+
+  } catch (err) {
+    console.error("CREATE ERROR:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to create work progress"
+    });
+  }
+};
+
+
 
 
   // ------------------------------------------------------------
   // READ (GROUPED)
   // ------------------------------------------------------------
-  getWorkProgressByProjectAndSite = async (req, res) => {
-    try {
-      const { project_id, project_site_id } = req.body;  // UPDATED
 
-      if (!project_id || !project_site_id) {
-        return res.status(400).json({
-          success: false,
-          message: "project_id and project_site_id are required"
-        });
-      }
 
-      const sql = `
-        SELECT 
-          w.*, 
-          p.project_name, 
-          s.project_site_name, 
-          b.bom_name
+
+
+getWorkProgressByProjectAndSite = async (req, res) => {
+  try {
+    const { project_id, project_site_id } = req.body;
+
+    if (!project_id || !project_site_id) {
+      return res.status(400).json({
+        success: false,
+        message: "project_id and project_site_id are required"
+      });
+    }
+
+    // const sql = `
+    //   SELECT DISTINCT
+    //     -- Work Progress main table
+    //     w.work_progress_site_id,
+    //     w.project_id,
+    //     w.project_site_id,
+    //     w.bom_id,
+    //     w.bom_progress_id,
+    //     w.remarks,
+    //     w.total_progress,
+    //     w.rep_task,
+    //     w.packet_qty,
+    //     w.total_qty_of_material_used,
+    //     w.date,
+    //     w.created_at,
+    //     w.updated_at,
+    //     w.created_by,
+
+    //     -- Employee
+    //     CONCAT(e.first_name, ' ', e.last_name) AS created_by_name,
+
+    //     -- Project / Site / BOM
+    //     p.project_name,
+    //     s.project_site_name,
+    //     b.bom_name,
+
+    //     -- BOM ITEMS (md_bom_item)
+    //     bi.bom_item_id,
+    //     bi.bom_progress_id,
+    //     bi.product_id AS bom_product_id,
+    //     bi.qty AS bom_item_qty,
+    //     bi.total_qty AS bom_item_total_qty,
+    //     bi.created_by AS bom_item_created_by,
+    //     bi.created_at AS bom_item_created_at,
+    //     bi.updated_at AS bom_item_updated_at,
+
+    //     -- BOM Progress table (md_bom_progress)
+    //     bp.bom_progress_id AS bom_progress_id,
+    //     bp.bom_progress_name AS bom_progress_name,
+
+    //     -- PRODUCT TABLE (md_product)
+    //     pr.product_name
+
+    //   FROM tx_work_progress_as_per_project_site w
+    //   LEFT JOIN md_project p ON w.project_id = p.project_id
+    //   LEFT JOIN md_project_site s ON w.project_site_id = s.project_site_id
+    //   LEFT JOIN md_bom b ON w.bom_id = b.bom_id
+    //   LEFT JOIN em_employees e ON w.created_by = e.employee_id
+
+    //   -- Join BOM Items
+    //   LEFT JOIN md_bom_item bi ON w.bom_id = bi.bom_id
+
+    //   -- Join BOM Progress for each item
+    //   LEFT JOIN md_bom_progress bp ON bi.bom_progress_id = bp.bom_progress_id
+
+    //   -- Join Product
+    //   LEFT JOIN md_product pr ON bi.product_id = pr.product_id
+
+    //   WHERE w.project_id = ${project_id}
+    //     AND w.project_site_id = ${project_site_id}
+
+    //   ORDER BY w.bom_id, w.work_progress_site_id, bi.bom_item_id;
+    // `;
+
+
+
+    const sql = `
+        SELECT DISTINCT
+          w.work_progress_site_id,
+          w.project_id,
+          w.project_site_id,
+          w.bom_id,
+          w.bom_progress_id,        -- ADDED HERE
+          w.remarks,
+          w.total_progress,
+          w.rep_task,
+          w.packet_qty,
+          w.total_qty_of_material_used,
+          w.date,
+          w.created_at,
+          w.updated_at,
+          w.created_by,
+
+          CONCAT(e.first_name, ' ', e.last_name) AS created_by_name,
+          p.project_name,
+          s.project_site_name,
+          b.bom_name,
+
+          bi.bom_item_id,
+          bi.bom_progress_id AS bom_item_progress_id,
+          bi.product_id AS bom_product_id,
+          bi.qty AS bom_item_qty,
+          bi.total_qty AS bom_item_total_qty,
+
+          bp.bom_progress_name AS bom_progress_name,
+
+          pr.product_name
+
         FROM tx_work_progress_as_per_project_site w
         LEFT JOIN md_project p ON w.project_id = p.project_id
         LEFT JOIN md_project_site s ON w.project_site_id = s.project_site_id
         LEFT JOIN md_bom b ON w.bom_id = b.bom_id
-        WHERE w.project_id = ${project_id} 
+        LEFT JOIN em_employees e ON w.created_by = e.employee_id
+
+        LEFT JOIN md_bom_item bi ON w.bom_id = bi.bom_id
+        LEFT JOIN md_bom_progress bp ON w.bom_progress_id = bp.bom_progress_id   -- UPDATED JOIN
+        LEFT JOIN md_product pr ON bi.product_id = pr.product_id
+
+        WHERE w.project_id = ${project_id}
         AND w.project_site_id = ${project_site_id}
-        ORDER BY w.bom_id, w.work_progress_site_id
+
+        ORDER BY w.bom_id, w.work_progress_site_id, bi.bom_item_id;
       `;
 
-      const rows = await customSelectSqlQuery(sql);
+    const rows = await customSelectSqlQuery(sql);
 
-      const grouped = {};
+    return res.status(200).json({
+      success: true,
+      data: rows
+    });
 
-      rows.forEach(r => {
-        if (!grouped[r.bom_id]) {
-          grouped[r.bom_id] = {
-            bom_id: r.bom_id,
-            bom_name: r.bom_name,
-            rep_task: r.rep_task,
-            project_id: r.project_id,
-            project_name: r.project_name,
-            project_site_id: r.project_site_id,  // UPDATED
-            project_site_name: r.project_site_name,
-            work_entries: []
-          };
-        }
+  } catch (err) {
+    console.error("FETCH ERROR:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch work progress"
+    });
+  }
+};
 
-        grouped[r.bom_id].work_entries.push({
-          work_progress_site_id: r.work_progress_site_id,
-          remarks: r.remarks,
-          total_progress: r.total_progress,
-          rep_task: r.rep_task,
-          date: r.date,
-          created_at: r.created_at,
-          updated_at: r.updated_at,
-          created_by: r.created_by
-        });
-      });
 
-      res.status(200).json({
-        success: true,
-        data: Object.values(grouped)
-      });
 
-    } catch (err) {
-      console.error("FETCH ERROR:", err);
-      res.status(500).json({ success: false, message: "Unable to fetch work progress" });
-    }
-  };
+
 
 
   // ------------------------------------------------------------
   // UPDATE
   // ------------------------------------------------------------
   updateWorkProgress = async (req, res) => {
-    try {
-      const { work_progress_site_id, ...fields } = req.body;
+  try {
+    const {
+      work_progress_site_id,
+      project_id,
+      project_site_id,
+      bom_id,
+      bom_progress_id,
+      remarks,
+      total_progress,
+      rep_task,
+      packet_qty,
+      total_qty_of_material_used,
+      date,
+      created_by
+    } = req.body;
 
-      if (!work_progress_site_id) {
-        return res.status(400).json({
-          success: false,
-          message: "work_progress_site_id is required"
-        });
-      }
-
-      const updateObj = {
-        ...fields,
-        updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
-      };
-
-      await updateData(
-        "tx_work_progress_as_per_project_site",
-        updateObj,
-        `work_progress_site_id = ${work_progress_site_id}`
-      );
-
-      res.status(200).json({ success: true, message: "Work progress updated" });
-
-    } catch (err) {
-      console.error("UPDATE ERROR:", err);
-      res.status(500).json({ success: false, message: "Unable to update work progress" });
+    if (!work_progress_site_id) {
+      return res.status(400).json({
+        success: false,
+        message: "work_progress_site_id is required"
+      });
     }
-  };
+
+    const updateObj = {
+      project_id: project_id || null,
+      project_site_id: project_site_id || null,
+      bom_id: bom_id || null,
+      bom_progress_id: bom_progress_id || null,
+      remarks: remarks || null,
+      total_progress: total_progress || 0,
+      rep_task: rep_task || null,
+      packet_qty: packet_qty || 0,
+      total_qty_of_material_used: total_qty_of_material_used || 0,
+      date: date || null,
+      created_by: created_by || null,
+      updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
+    };
+
+    // Convert undefined → null just in case
+    Object.keys(updateObj).forEach(key => {
+      if (updateObj[key] === undefined) updateObj[key] = null;
+    });
+
+    await updateData(
+      "tx_work_progress_as_per_project_site",
+      updateObj,
+      `work_progress_site_id = ${work_progress_site_id}`
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Work progress updated"
+    });
+
+  } catch (err) {
+    console.error("UPDATE ERROR:", err);
+    res.status(500).json({
+      success: false,
+      message: "Unable to update work progress"
+    });
+  }
+};
+
+
+
 
 
   // ------------------------------------------------------------
