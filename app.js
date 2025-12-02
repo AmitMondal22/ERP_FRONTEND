@@ -25,6 +25,7 @@ const employeePaySlipRoutes= require('./router/employeePaySlipRoutes');
 const currentStockRoutes=require('./router/currentStockRoutes');
 const ProjectEstimationRoutes=require('./router/projectEstimationRoutes')
 const WorkProgressAsPerProjectSiteRoutes= require('./router/workProgressAsPerProjectSiteRoutes')
+const ProjectBillingRoutes= require('./router/projectBillingRoutes')
 
 const app= express()
 const path = require("path");
@@ -71,6 +72,7 @@ app.use('/',leaveRoutes);
 app.use('/',leaveRequestRoutes);
 app.use('/',employeePaySlipRoutes);
 app.use('/',currentStockRoutes);
+app.use('/',ProjectBillingRoutes);
 app.use('/',ProjectEstimationRoutes);
 app.use('/',WorkProgressAsPerProjectSiteRoutes);
 

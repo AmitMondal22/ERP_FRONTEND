@@ -7,7 +7,7 @@ const projectController = require("../controller/projectController");
 router.post("/api/createproject", authcheck,ProjectController.createProject);
 router.get("/api/getallproject",authcheck, ProjectController.getAllProjects);
 
-//router.post("/api/getallprojectbyId/:id", ProjectController.getProject);
+router.get("/api/getprojectbyid/:id", ProjectController.getProject);
 
 router.post("/api/updateproject/:id",authcheck, ProjectController.updateProject);
 router.delete("/api/deleteproject/:id", authcheck,ProjectController.deleteProject);

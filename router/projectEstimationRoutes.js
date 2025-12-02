@@ -9,13 +9,12 @@ router.post("/api/create-or-update-projectestimation",authcheck,ProjectEstimatio
 // GET ALL
 router.get("/api/getallestimation",authcheck,ProjectEstimationController.getAllProjectEstimations);
 
+// // GET ONE using composite key
+// router.get("/:project_id/:site_id/:bom_id",authcheck, ProjectEstimationController.getProjectEstimation);
 
-// GET ONE using composite key
-router.get("/:project_id/:site_id/:bom_id",authcheck, ProjectEstimationController.getProjectEstimation);
+// // DELETE using composite key
+// router.delete("/:project_id/:site_id/:bom_id",authcheck,ProjectEstimationController.deleteProjectEstimation);
 
-
-// DELETE using composite key
-router.delete("/:project_id/:site_id/:bom_id",authcheck,ProjectEstimationController.deleteProjectEstimation);
 
 // FULL BOM DETAILS (aggregated)
 router.get("/api/getallbomdetails",authcheck,ProjectEstimationController.getAllBomFullDetails);

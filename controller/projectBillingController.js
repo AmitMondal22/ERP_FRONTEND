@@ -1,0 +1,226 @@
+const dayjs = require("dayjs");
+const utc = require("dayjs/plugin/utc");
+dayjs.extend(utc);
+
+const {
+  insertData,
+  updateData,
+  deleteData,
+  selectData,
+  selectOneData,
+} = require("../models/MasterModel");
+
+const table = "md_project_billing";
+class projectBillingController {
+  // -------------------------------------------------------------
+  // 1️⃣ CREATE BILLING ITEM
+  // -------------------------------------------------------------
+  createBillingItem = async (req, res) => {
+    try {
+      const {
+        project_id,
+        description_of_work,
+        unit,
+        quantity,
+        rate,
+        amount,
+        remarks,
+      } = req.body;
+
+      if (!project_id || !description_of_work) {
+        return res.status(400).json({
+          success: false,
+          message: "project_id & description_of_work are required",
+        });
+      }
+
+      const insertObj = {
+        project_id,
+        description_of_work,
+        unit,
+        quantity,
+        rate,
+        amount,
+        remarks,
+        created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
+      };
+
+      const billing_id = await insertData(table, insertObj);
+
+      return res.status(201).json({
+        success: true,
+        message: "Billing item created successfully",
+        billing_id,
+      });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
+        success: false,
+        message: "Error creating billing item",
+      });
+    }
+  };
+
+  // -------------------------------------------------------------
+  // 2️⃣ GET ALL BILLING ITEMS FOR A PROJECT
+  // -------------------------------------------------------------
+
+  getBillingItemsByProjectId = async (req, res) => {
+    try {
+      const { id } = req.params;
+      console.log(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+      // Convert to number
+      const pid = Number(id);
+
+      // Validate
+      if (!pid || isNaN(pid)) {
+        return res.status(400).json({
+          success: false,
+          message: "Valid project_id is required",
+        });
+      }
+
+      // Fetch ALL billing items for this project
+      const rows = await selectData(
+        "md_project_billing",
+        "*",
+        `project_id = ${pid}`,
+        "billing_id DESC"
+      );
+
+      return res.status(200).json({
+        success: true,
+        data: rows,
+      });
+    } catch (err) {
+      console.error("❌ Billing Fetch Error:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Error fetching billing items",
+      });
+    }
+  };
+
+  // -------------------------------------------------------------
+  // 3️⃣ GET A SINGLE BILLING ITEM BY ID
+  // -------------------------------------------------------------
+
+  getBillingItemById = async (req, res) => {
+    try {
+      const { billing_id } = req.body;
+
+      const row = await selectOneData(table, "*", `billing_id = ${billing_id}`);
+
+      if (!row) {
+        return res.status(404).json({
+          success: false,
+          message: "Billing item not found",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: row,
+      });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
+        success: false,
+        message: "Error fetching billing item",
+      });
+    }
+  };
+
+  // -------------------------------------------------------------
+  // 4️⃣ UPDATE BILLING ITEM
+  // -------------------------------------------------------------
+
+  updateBillingItem = async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      // ✅ FIX — extract fields from req.body
+      const {
+        project_id,
+        description_of_work,
+        unit,
+        quantity,
+        rate,
+        amount,
+        remarks,
+      } = req.body;
+
+      if (!project_id) {
+        return res.status(400).json({
+          success: false,
+          message: "project_id is required",
+        });
+      }
+
+      const setObj = {
+        project_id,
+        description_of_work,
+        unit,
+        quantity,
+        rate,
+        amount,
+        remarks,
+        updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
+      };
+
+      const affected = await updateData(table, setObj, `billing_id = ${id}`);
+
+      if (affected === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Billing item not found",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Billing item updated successfully",
+      });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
+        success: false,
+        message: "Error updating billing item",
+      });
+    }
+  };
+
+  // -------------------------------------------------------------
+  // 5️⃣ DELETE BILLING ITEM
+  // -------------------------------------------------------------
+  deleteBillingItem = async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const affected = await deleteData(
+        "md_project_billing",
+        `billing_id = ${id}`
+      );
+
+      if (affected === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Billing item not found",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Billing item deleted successfully",
+      });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
+        success: false,
+        message: "Error deleting billing item",
+      });
+    }
+  };
+}
+
+module.exports = new projectBillingController();
