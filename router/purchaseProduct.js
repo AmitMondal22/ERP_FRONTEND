@@ -15,6 +15,11 @@ router.get("/api/perchase-product/:id", purchaseProductController.getPurchaseByI
 
 router.post("/api/get-purchased-product-details/:id",purchaseProductController.getPurchaseByProductAndDate)
 
-router.post("/api/update-purchase-product/:id",authcheck,purchaseProductController.updatePurchase)
+router.post("/api/update-purchase-product/:id",authcheck,purchaseProductController.updatePurchase);
 
-module.exports = router;//
+router.get("/api/getallthepurchasedata",authcheck,purchaseProductController.getAllThePurchaseData);
+
+router.delete("/api/purchase/:id", authcheck, purchaseProductController.deletePurchase);
+
+
+module.exports = router;

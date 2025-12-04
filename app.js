@@ -19,13 +19,15 @@ const productType= require('./router/productTypeRoute');
 const progressRoutes= require('./router/progressRoutes');
 const employeeTeamRoutes= require('./router/employeeTeamRoutes');
 const employeeAttendence= require('./router/employeeAttendence');
-const  leaveRoutes= require('./router/leaveRoutes');
+const leaveRoutes= require('./router/leaveRoutes');
 const leaveRequestRoutes= require('./router/leaveRequestRoutes');
 const employeePaySlipRoutes= require('./router/employeePaySlipRoutes');
 const currentStockRoutes=require('./router/currentStockRoutes');
 const ProjectEstimationRoutes=require('./router/projectEstimationRoutes')
 const WorkProgressAsPerProjectSiteRoutes= require('./router/workProgressAsPerProjectSiteRoutes')
 const ProjectBillingRoutes= require('./router/projectBillingRoutes')
+const ReturnPurchaseRoutes= require('./router/returnPurchaseRoutes')
+const purchaseOrderRoutes= require('./router/purchaseOrderRoutes')
 
 const app= express()
 const path = require("path");
@@ -75,6 +77,9 @@ app.use('/',currentStockRoutes);
 app.use('/',ProjectBillingRoutes);
 app.use('/',ProjectEstimationRoutes);
 app.use('/',WorkProgressAsPerProjectSiteRoutes);
+app.use('/',ReturnPurchaseRoutes);
+app.use('/',purchaseOrderRoutes);
+
 
 //need tomake Upload Path Public
 
