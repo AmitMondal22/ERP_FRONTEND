@@ -65,7 +65,7 @@ getAllProducts = async (req, res) => {
         p.product_type_id,
         pt.product_type_name,      -- fetch the name
         p.product_name,
-        p.model_no,
+        p.model_no, 
         p.uom_id,
         p.unit_id,
         u.unit_name,

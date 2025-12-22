@@ -1,4 +1,9 @@
-const {insertData, batchInsertData, customSelectSqlQuery, updateData, deleteData} = require("../models/MasterModel");
+const {
+   insertData,
+   batchInsertData,
+   customSelectSqlQuery,
+   updateData, 
+   deleteData,selectOneData,selectData} = require("../models/MasterModel");
 const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 dayjs.extend(utc);
@@ -7,12 +12,162 @@ const connect = require("../DBConfig/db");
 const date = new Date();
 
 
-
-
 class PurchaseProductController {
 
-  createPurchase = async (req, res) => {
-    const {
+  // createPurchase = async (req, res) => {
+  //   const {
+  //     project_id,
+  //     site_id,
+  //     vendor_id,
+  //     stor_id,
+  //     purchase_order_id,
+  //     invoice_no,
+  //     invoice_date,
+  //     delivery_date,
+  //     due_date,
+  //     invoice_image_path,
+  //     transport_insurance,
+  //     remarks,
+  //     created_by,
+  //     purchase_product,
+  //   } = req.body;
+
+  //   let connection;
+  //   try {
+  //     // Prepare data for td_purchase
+  //     const purchaseData = {
+  //       project_id,
+  //       site_id,
+  //       vendor_id,
+  //       stor_id: stor_id , 
+  //       purchase_order_id: purchase_order_id ,
+  //       invoice_no,
+  //       invoice_date,
+  //       delivery_date,
+  //       due_date,
+  //       invoice_image: invoice_image_path || null,  // Now receives the path
+  //       transport_insurance: transport_insurance || null,
+  //       remarks: remarks || null,
+  //       created_by,
+  //       created_at: new Date(),
+  //       updated_at: new Date(),
+  //     };
+
+  //     // Insert into td_purchase
+  //     const purchase_id = await insertData(
+  //       "td_purchase",
+  //       purchaseData,
+  //       connection
+  //     );
+
+  //     // Prepare data for td_purchase_product using async map
+  //     const productValues = await Promise.all(
+  //       purchase_product.map(async (product) => {
+  //         return {
+  //           purchase_id,
+  //           product_id: product.product_id,
+  //           product_qty: product.product_qty,
+  //           invoice_qty: product.invoice_qty,
+  //           unit_rate: product.unit_rate,
+  //            return_id: product.return_id || null,
+  //           discount_rate: product.discount_rate ?? 0,
+  //           discount_amount: product.discount_amount ?? 0,
+  //           sgst_rate: product.sgst_rate ?? 0,
+  //           cgst_rate: product.cgst_rate ?? 0,
+  //           igst_rate: product.igst_rate ?? 0,
+  //           sgst_amt: product.sgst_amt ?? 0,
+  //           cgst_amt: product.cgst_amt ?? 0,
+  //           igst_amt: product.igst_amt ?? 0,
+  //           total_amount: product.total_amount,
+  //           make_date: product.make_date || null,
+  //           ownership_status: product.ownership_status || null,
+  //           created_by: product.created_by,
+
+  //           updated_by: product.created_by,
+  //           created_at: new Date(),  //  FIX: Changed from 'now' to new Date()
+  //           updated_at: new Date(),  //  FIX: Changed from 'now' to new Date()
+  //         };
+  //       })
+  //     );
+
+  //     // Define columns for batch insert
+  //     const productColumns = Object.keys(productValues[0]).join(", ");
+
+  //     // Insert into td_purchase_product
+  //     await batchInsertData(
+  //       "td_purchase_product",
+  //       productColumns,
+  //       productValues,
+  //       connection
+  //     );
+
+  //     //  FIX: Add 'success: true' to match frontend expectations
+  //     return res.status(201).json({
+  //       success: true, 
+  //       message: "Bulk purchase created successfully",
+  //       data: {         
+  //         purchase_id,
+  //         product_count: purchase_product.length,
+  //       }
+  //     });
+  //   } catch (error) {
+  //     console.error("Error creating bulk purchase:", error);
+  //     //  FIX: Also update error response for consistency
+  //     return res.status(500).json({ 
+  //       success: false,  //ADD THIS
+  //       message: "Internal server error",
+  //       error: error.message 
+  //     });
+  //   }
+  // };
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+//////////////////////////////////////////
+
+createPurchase = async (req, res) => {
+  const {
+    project_id,
+    site_id,
+    vendor_id,
+    stor_id,
+    purchase_order_id,
+    invoice_no,
+    invoice_date,
+    delivery_date,
+    due_date,
+    invoice_image_path,
+    transport_insurance,
+    remarks,
+    created_by,
+    purchase_product,
+  } = req.body;
+
+  let connection;
+
+  try {
+    /* ---------- BASIC VALIDATION ---------- */
+    if (
+      !project_id ||
+      !site_id ||
+      !vendor_id ||
+      !invoice_no ||
+      !Array.isArray(purchase_product) ||
+      !purchase_product.length
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Required fields missing",
+      });
+    }
+
+    connection = await connect();
+    await connection.beginTransaction();
+
+    /* ---------- td_purchase ---------- */
+    const purchase_id = await insertData("td_purchase", {
       project_id,
       site_id,
       vendor_id,
@@ -22,106 +177,94 @@ class PurchaseProductController {
       invoice_date,
       delivery_date,
       due_date,
-      invoice_image_path,
-      transport_insurance,
-      remarks,
+      invoice_image: invoice_image_path || null,
+      transport_insurance: transport_insurance || null,
+      remarks: remarks || null,
       created_by,
-      purchase_product,
-    } = req.body;
+      update_by: created_by,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
 
-    let connection;
-    try {
-      // Prepare data for td_purchase
-      const purchaseData = {
-        project_id,
-        site_id,
-        vendor_id,
-        stor_id: stor_id , 
-        purchase_order_id: purchase_order_id ,
-        invoice_no,
-        invoice_date,
-        delivery_date,
-        due_date,
-        invoice_image: invoice_image_path || null,  // Now receives the path
-        transport_insurance: transport_insurance || null,
-        remarks: remarks || null,
-        created_by,
-        created_at: new Date(),
-        updated_at: new Date(),
-      };
+    /* ---------- td_purchase_product ---------- */
+    const productRows = purchase_product.map(p => ({
+      purchase_id,
+      product_id: p.product_id,
+      product_qty: p.product_qty,
+      invoice_qty: p.invoice_qty,
+      unit_rate: p.unit_rate,
+      discount_rate: p.discount_rate || 0,
+      discount_amount: p.discount_amount || 0,
+      sgst_rate: p.sgst_rate || 0,
+      cgst_rate: p.cgst_rate || 0,
+      igst_rate: p.igst_rate || 0,
+      sgst_amt: p.sgst_amt || 0,
+      cgst_amt: p.cgst_amt || 0,
+      igst_amt: p.igst_amt || 0,
+      total_amount: p.total_amount,
+      return_id: p.return_id || null,
+      make_date: p.make_date || null,
+      ownership_status: p.ownership_status || null,
+      created_by,
+      updated_by: created_by,
+      created_at: new Date(),
+      updated_at: new Date(),
+    }));
 
-      // Insert into td_purchase
-      const purchase_id = await insertData(
-        "td_purchase",
-        purchaseData,
-        connection
+    await batchInsertData(
+      "td_purchase_product",
+      Object.keys(productRows[0]).join(", "),
+      productRows
+    );
+
+    /* ---------- tx_current_stock (UPSERT) ---------- */
+    for (const p of purchase_product) {
+      await connection.execute(
+        `INSERT INTO tx_current_stock
+         (project_id, site_id, product_id, store_id, invoice_qty, created_by, updated_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+         ON DUPLICATE KEY UPDATE
+           invoice_qty = invoice_qty + VALUES(invoice_qty),
+           updated_by = VALUES(updated_by),
+           updated_at = NOW()`,
+        [
+          project_id,
+          site_id,
+          p.product_id,
+          stor_id,
+          p.invoice_qty,
+          created_by,
+          created_by,
+        ]
       );
-
-      // Prepare data for td_purchase_product using async map
-      const productValues = await Promise.all(
-        purchase_product.map(async (product) => {
-          return {
-            purchase_id,
-            product_id: product.product_id,
-            product_qty: product.product_qty,
-            invoice_qty: product.invoice_qty,
-            unit_rate: product.unit_rate,
-             return_id: product.return_id || null,
-            discount_rate: product.discount_rate ?? 0,
-            discount_amount: product.discount_amount ?? 0,
-            sgst_rate: product.sgst_rate ?? 0,
-            cgst_rate: product.cgst_rate ?? 0,
-            igst_rate: product.igst_rate ?? 0,
-            sgst_amt: product.sgst_amt ?? 0,
-            cgst_amt: product.cgst_amt ?? 0,
-            igst_amt: product.igst_amt ?? 0,
-            total_amount: product.total_amount,
-            make_date: product.make_date || null,
-            ownership_status: product.ownership_status || null,
-            created_by: product.created_by,
-
-            updated_by: product.created_by,
-            created_at: new Date(),  //  FIX: Changed from 'now' to new Date()
-            updated_at: new Date(),  //  FIX: Changed from 'now' to new Date()
-          };
-        })
-      );
-
-      // Define columns for batch insert
-      const productColumns = Object.keys(productValues[0]).join(", ");
-
-      // Insert into td_purchase_product
-      await batchInsertData(
-        "td_purchase_product",
-        productColumns,
-        productValues,
-        connection
-      );
-
-      //  FIX: Add 'success: true' to match frontend expectations
-      return res.status(201).json({
-        success: true, 
-        message: "Bulk purchase created successfully",
-        data: {         
-          purchase_id,
-          product_count: purchase_product.length,
-        }
-      });
-    } catch (error) {
-      console.error("Error creating bulk purchase:", error);
-      //  FIX: Also update error response for consistency
-      return res.status(500).json({ 
-        success: false,  //ADD THIS
-        message: "Internal server error",
-        error: error.message 
-      });
     }
-  };
+
+    await connection.commit();
+
+    return res.status(201).json({
+      success: true,
+      message: "Purchase created and stock updated successfully",
+      data: { purchase_id },
+    });
+
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error("createPurchase error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal Error",
+      error: error.message,
+    });
+  } finally {
+    if (connection) await connection.end();
+  }
+};
 
 
 
 
-
+/////////////////
 
 
   allPurchase = async (req, res) => {
@@ -147,8 +290,8 @@ class PurchaseProductController {
         p.stor_id,
         s.store_name,
         p.purchase_order_id,
-        po.voucher_no,
-        po.reference_no_and_date,
+       po.po_no,
+      
         p.invoice_no,
         p.invoice_date,
         p.delivery_date,
@@ -176,7 +319,7 @@ class PurchaseProductController {
         ps.project_site_name LIKE '${escapedSearch}' OR
         v.vendor_name LIKE '${escapedSearch}' OR
         s.store_name LIKE '${escapedSearch}' OR
-        po.voucher_no LIKE '${escapedSearch}' OR
+        po.po_no LIKE '${escapedSearch}' OR
         p.invoice_no LIKE '${escapedSearch}'
       )`);
       }
@@ -209,6 +352,7 @@ class PurchaseProductController {
     }
   };
 
+//////////////////////////////////////////////////////////////////
   allProductPurchase = async (req, res) => {
     try {
       let { search, fromDate, toDate } = req.query;
@@ -231,8 +375,7 @@ class PurchaseProductController {
         p.stor_id,
         s.store_name,
         p.purchase_order_id,
-        po.voucher_no,
-        po.reference_no_and_date,
+        po.po_no,
         p.invoice_no,
         p.invoice_date,
         p.delivery_date,
@@ -260,7 +403,7 @@ class PurchaseProductController {
         ps.project_site_name LIKE '${escapedSearch}' OR
         v.vendor_name LIKE '${escapedSearch}' OR
         s.store_name LIKE '${escapedSearch}' OR
-        po.voucher_no LIKE '${escapedSearch}' OR
+        po.po_no LIKE '${escapedSearch}' OR
         p.invoice_no LIKE '${escapedSearch}'
       )`);
       }
@@ -462,8 +605,7 @@ getPurchaseById = async (req, res) => {
         p.stor_id,
         s.store_name,
         p.purchase_order_id,
-        po.voucher_no,
-        po.reference_no_and_date,
+        po.po_no,       
         p.invoice_no,
         p.invoice_date,
         p.delivery_date,
@@ -531,129 +673,394 @@ getPurchaseById = async (req, res) => {
     });
   }
 };
+/////////////////
+
+  // updatePurchase = async (req, res) => {
+  //   const purchase_id = req.params.id;
+
+  //   const {
+  //     project_id,
+  //     site_id,
+  //     vendor_id,
+  //     stor_id,
+  //     purchase_order_id,
+  //     invoice_no,
+  //     invoice_date,
+  //     delivery_date,
+  //     invoice_image_path,
+  //     transport_insurance,
+  //     remarks,
+  //     purchase_product,
+  //   } = req.body;
+
+  //   let connection;
+
+  //   try {
+  //     // Update td_purchase
+  //     const purchaseData = {
+  //       project_id,
+  //       site_id,
+  //       vendor_id,
+  //       stor_id: stor_id ?? null,
+  //       purchase_order_id: purchase_order_id ?? null,
+  //       invoice_no,
+  //       invoice_date,
+  //       delivery_date,
+  //       invoice_image: invoice_image_path || null,
+  //       transport_insurance: transport_insurance || null,
+  //       remarks: remarks || null, 
+  //       // updated_by,
+  //       // updated_at: new Date(),
+  //     };
+  //     console.log(purchaseData)
+  //     await updateData("td_purchase", purchaseData, `purchase_id = ${purchase_id}`);
+
+  //     // Update td_purchase_product
+  //     // You may choose to delete old entries first if complete replacement
+  //     await deleteData("td_purchase_product", `purchase_id = ${purchase_id}`);
+
+  //     const productValues = await Promise.all(
+  //       purchase_product.map(async (product) => {
+  //         return {
+  //           purchase_id,
+  //           product_id: product.product_id,
+  //           product_qty: product.product_qty,
+  //           invoice_qty: product.invoice_qty,
+  //           unit_rate: product.unit_rate,
+  //            return_id: product.return_id || null,  
+  //           discount_rate: product.discount_rate ?? 0,
+  //           discount_amount: product.discount_amount ?? 0,
+  //           sgst_rate: product.sgst_rate ?? 0,
+  //           cgst_rate: product.cgst_rate ?? 0,
+  //           igst_rate: product.igst_rate ?? 0,
+  //           sgst_amt: product.sgst_amt ?? 0,
+  //           cgst_amt: product.cgst_amt ?? 0,
+  //           igst_amt: product.igst_amt ?? 0,
+  //           total_amount: product.total_amount,
+  //           make_date: product.make_date || null,
+  //           ownership_status: product.ownership_status || null,
+  //           // updated_by: updated_by,
+  //           // created_at: new Date(),
+  //           // updated_at: new Date(),
+  //         };
+  //       })
+  //     );
+
+  //     // Batch insert new products
+  //     const productColumns = Object.keys(productValues[0]).join(", ");
+  //     await batchInsertData("td_purchase_product", productColumns, productValues, connection);
+
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: "Purchase and products updated successfully",
+  //       data: {
+  //         purchase_id,
+  //         product_count: purchase_product.length,
+  //       },
+  //     });
+  //   } catch (error) {
+  //     console.error("Error updating purchase:", error);
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Internal server error",
+  //       error: error.message,
+  //     });
+  //   }
+  // };
+//////////
 
 
-  updatePurchase = async (req, res) => {
-    const purchase_id = req.params.id;
+updatePurchase = async (req, res) => {
+  const purchase_id = Number(req.params.id);
 
-    const {
-      project_id,
-      site_id,
-      vendor_id,
-      stor_id,
-      purchase_order_id,
-      invoice_no,
-      invoice_date,
-      delivery_date,
-      invoice_image_path,
-      transport_insurance,
-      remarks,
-      purchase_product,
-    } = req.body;
+  const {
+    project_id,
+    site_id,
+    vendor_id,
+    stor_id,
+    purchase_order_id,
+    invoice_no,
+    invoice_date,
+    delivery_date,
+    invoice_image_path,
+    transport_insurance,
+    remarks,
+    purchase_product,
+  } = req.body;
 
-    let connection;
+  /* ---------------- USER FROM AUTH MIDDLEWARE ---------------- */
+  const userId = req.user?.id;   // 🔐 MUST come from middleware
 
-    try {
-      // Update td_purchase
-      const purchaseData = {
-        project_id,
-        site_id,
-        vendor_id,
-        stor_id: stor_id ?? null,
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized user",
+    });
+  }
+
+  if (!purchase_id || !Array.isArray(purchase_product)) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid input data",
+    });
+  }
+
+  try {
+    /* ---------------- SAFE VALUES ---------------- */
+    const safeProjectId = project_id ?? null;
+    const safeSiteId = site_id ?? null;
+    const safeStoreId = stor_id ?? null;
+
+    /* ------------------------------------------------
+       1️⃣ GET OLD PURCHASE PRODUCTS
+    ------------------------------------------------ */
+    const oldProducts = await selectData(
+      "td_purchase_product",
+      "product_id, invoice_qty",
+      `purchase_id = ${purchase_id}`
+    );
+
+    /* ------------------------------------------------
+       2️⃣ REVERSE OLD STOCK
+    ------------------------------------------------ */
+    for (const old of oldProducts) {
+      await customSelectSqlQuery(`
+        UPDATE tx_current_stock
+        SET invoice_qty = invoice_qty - ${old.invoice_qty ?? 0},
+            updated_by = ${userId},
+            updated_at = NOW()
+        WHERE project_id = ${safeProjectId}
+          AND site_id = ${safeSiteId}
+          AND product_id = ${old.product_id}
+          AND store_id = ${safeStoreId}
+      `);
+    }
+
+    /* ------------------------------------------------
+       3️⃣ UPDATE td_purchase
+    ------------------------------------------------ */
+    await updateData(
+      "td_purchase",
+      {
+        project_id: safeProjectId,
+        site_id: safeSiteId,
+        vendor_id: vendor_id ?? null,
+        stor_id: safeStoreId,
         purchase_order_id: purchase_order_id ?? null,
         invoice_no,
         invoice_date,
         delivery_date,
-        invoice_image: invoice_image_path || null,
-        transport_insurance: transport_insurance || null,
-        remarks: remarks || null, 
-        // updated_by,
-        // updated_at: new Date(),
-      };
-      console.log(purchaseData)
-      await updateData("td_purchase", purchaseData, `purchase_id = ${purchase_id}`);
+        invoice_image: invoice_image_path ?? null,
+        transport_insurance: transport_insurance ?? null,
+        remarks: remarks ?? null,
+        update_by: userId,
+        updated_at: new Date(),
+      },
+      `purchase_id = ${purchase_id}`
+    );
 
-      // Update td_purchase_product
-      // You may choose to delete old entries first if complete replacement
-      await deleteData("td_purchase_product", `purchase_id = ${purchase_id}`);
+    /* ------------------------------------------------
+       4️⃣ DELETE OLD PRODUCTS
+    ------------------------------------------------ */
+    await deleteData("td_purchase_product", `purchase_id = ${purchase_id}`);
 
-      const productValues = await Promise.all(
-        purchase_product.map(async (product) => {
-          return {
-            purchase_id,
-            product_id: product.product_id,
-            product_qty: product.product_qty,
-            invoice_qty: product.invoice_qty,
-            unit_rate: product.unit_rate,
-             return_id: product.return_id || null,  // ⭐ ADDED RETURN_ID
-            discount_rate: product.discount_rate ?? 0,
-            discount_amount: product.discount_amount ?? 0,
-            sgst_rate: product.sgst_rate ?? 0,
-            cgst_rate: product.cgst_rate ?? 0,
-            igst_rate: product.igst_rate ?? 0,
-            sgst_amt: product.sgst_amt ?? 0,
-            cgst_amt: product.cgst_amt ?? 0,
-            igst_amt: product.igst_amt ?? 0,
-            total_amount: product.total_amount,
-            make_date: product.make_date || null,
-            ownership_status: product.ownership_status || null,
-            // updated_by: updated_by,
-            // created_at: new Date(),
-            // updated_at: new Date(),
-          };
-        })
-      );
+    /* ------------------------------------------------
+       5️⃣ INSERT NEW PRODUCTS
+    ------------------------------------------------ */
+    const productRows = purchase_product.map(p => ({
+      purchase_id,
+      product_id: p.product_id,
+      product_qty: p.product_qty,
+      invoice_qty: p.invoice_qty,
+      unit_rate: p.unit_rate,
+      return_id: p.return_id ?? null,
+      discount_rate: p.discount_rate ?? 0,
+      discount_amount: p.discount_amount ?? 0,
+      sgst_rate: p.sgst_rate ?? 0,
+      cgst_rate: p.cgst_rate ?? 0,
+      igst_rate: p.igst_rate ?? 0,
+      sgst_amt: p.sgst_amt ?? 0,
+      cgst_amt: p.cgst_amt ?? 0,
+      igst_amt: p.igst_amt ?? 0,
+      total_amount: p.total_amount,
+      make_date: p.make_date ?? null,
+      ownership_status: p.ownership_status ?? null,
+      created_by: userId,
+      updated_by: userId,
+      created_at: new Date(),
+      updated_at: new Date(),
+    }));
 
-      // Batch insert new products
-      const productColumns = Object.keys(productValues[0]).join(", ");
-      await batchInsertData("td_purchase_product", productColumns, productValues, connection);
+    const productColumns = Object.keys(productRows[0]).join(", ");
+    await batchInsertData("td_purchase_product", productColumns, productRows);
 
-      return res.status(200).json({
-        success: true,
-        message: "Purchase and products updated successfully",
-        data: {
-          purchase_id,
-          product_count: purchase_product.length,
-        },
-      });
-    } catch (error) {
-      console.error("Error updating purchase:", error);
-      return res.status(500).json({
-        success: false,
-        message: "Internal server error",
-        error: error.message,
-      });
+    /* ------------------------------------------------
+       6️⃣ APPLY NEW STOCK
+    ------------------------------------------------ */
+    for (const p of purchase_product) {
+      await customSelectSqlQuery(`
+        INSERT INTO tx_current_stock
+          (project_id, site_id, product_id, store_id, invoice_qty, created_by, updated_by, created_at, updated_at)
+        VALUES
+          (${safeProjectId}, ${safeSiteId}, ${p.product_id}, ${safeStoreId},
+           ${p.invoice_qty ?? 0}, ${userId}, ${userId}, NOW(), NOW())
+        ON DUPLICATE KEY UPDATE
+          invoice_qty = invoice_qty + ${p.invoice_qty ?? 0},
+          updated_by = ${userId},
+          updated_at = NOW()
+      `);
     }
-  };
-//
 
- getPurchaseByProductAndDate = async (req, res) => {
+    return res.status(200).json({
+      success: true,
+      message: "Purchase updated and stock adjusted successfully",
+      data: {
+        purchase_id,
+        product_count: purchase_product.length,
+      },
+    });
+
+  } catch (error) {
+    console.error("Error updating purchase:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
+
+
+///////////
+
+//////////////
+
+// getPurchaseByProductAndDate = async (req, res) => {
+//   try {
+//     const { id: product_id } = req.params;
+//     const { fromDate, toDate } = req.body;
+
+//     if (!product_id || !fromDate || !toDate) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "product_id, fromDate and toDate are required",
+//       });
+//     }
+
+//     const sql = `
+//   SELECT
+//     p.purchase_id,
+//     p.invoice_no,
+//     DATE(p.invoice_date) AS invoice_date,
+//     DATE(p.delivery_date) AS delivery_date,
+//     p.invoice_image,
+//     p.transport_insurance,
+//     p.remarks,
+
+//     p.project_id,
+//     pr.project_name,
+
+//     p.site_id,
+//     ps.project_site_name,
+
+//     p.vendor_id,
+//     v.vendor_name,
+
+//     p.stor_id,
+//     s.store_name,
+
+//     p.purchase_order_id,
+//     po.po_no,
+//     po.total_amount,
+
+//     pop.purchase_order_product_id,
+//     pop.product_id,
+//     prod.product_name,
+//     prod.product_type_id,
+
+//     pop.quantity,
+//     pop.unit_price,
+
+//     DATE(pop.created_at) AS purchase_date,
+//     pop.created_at,
+//     pop.updated_at
+
+//   FROM td_purchase p
+
+//   INNER JOIN td_purchase_order po
+//     ON p.purchase_order_id = po.purchase_order_id
+
+//   INNER JOIN td_purchase_order_product pop
+//     ON po.purchase_order_id = pop.purchase_order_id
+
+//   INNER JOIN md_product prod
+//     ON pop.product_id = prod.product_id
+
+//   LEFT JOIN md_project pr
+//     ON p.project_id = pr.project_id
+
+//   LEFT JOIN md_project_site ps
+//     ON p.site_id = ps.project_site_id
+
+//   LEFT JOIN md_vendor v
+//     ON p.vendor_id = v.vendor_id
+
+//   LEFT JOIN md_store s
+//     ON p.stor_id = s.store_id
+
+//   WHERE
+//     pop.product_id = ${Number(product_id)}
+//     AND DATE(pop.created_at)
+//       BETWEEN '${fromDate}' AND '${toDate}'
+
+//   ORDER BY pop.created_at DESC
+// `;
+
+
+//     const results = await customSelectSqlQuery(sql);
+
+//     return res.status(200).json({
+//       success: true,
+//       total: results.length,
+//       data: results,
+//     });
+
+//   } catch (error) {
+//     console.error("Error fetching product purchase history:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Internal server error",
+//       error: error.message,
+//     });
+//   }
+// };
+///////////
+getPurchaseByProductAndDate = async (req, res) => {
   try {
-    const { id: product_id } = req.params;   
-    const { fromDate, toDate } = req.body;   
+    const { id: product_id } = req.params;
+    const { fromDate, toDate } = req.body;
 
-    console.log(product_id, fromDate, toDate);
-
-    if (!fromDate || !toDate || !product_id) {
+    if (!product_id || !fromDate || !toDate) {
       return res.status(400).json({
         success: false,
-        message: "fromDate, toDate and product_id are required",
+        message: "product_id, fromDate and toDate are required",
       });
     }
 
-    // FINAL SQL — NO PLACEHOLDERS — VALUES INSERTED DIRECTLY
     const sql = `
       SELECT
         p.purchase_id,
         p.invoice_no,
-        p.invoice_date,
-        p.delivery_date,
+        DATE(p.invoice_date) AS invoice_date,
+        DATE(p.delivery_date) AS delivery_date,
         p.invoice_image,
         p.transport_insurance,
         p.remarks,
 
         p.project_id,
         pr.project_name,
+
         p.site_id,
         ps.project_site_name,
 
@@ -664,14 +1071,13 @@ getPurchaseById = async (req, res) => {
         s.store_name,
 
         p.purchase_order_id,
-        po.voucher_no,
-        po.reference_no_and_date,
+        po.po_no,
+        po.total_amount AS po_total_amount,
 
         pp.purchase_product_id,
         pp.product_id,
-        pn.product_name,
-        pn.product_type_id,
-        pt.product_type_name,
+        prod.product_name,
+        prod.product_type_id,
 
         pp.product_qty,
         pp.invoice_qty,
@@ -692,19 +1098,33 @@ getPurchaseById = async (req, res) => {
         pp.created_at,
         pp.updated_at
 
-      FROM td_purchase_product AS pp
-      JOIN td_purchase AS p ON pp.purchase_id = p.purchase_id
-      JOIN md_product AS pn ON pp.product_id = pn.product_id
-      JOIN md_product_type AS pt ON pn.product_type_id = pt.product_type_id
-      LEFT JOIN md_project AS pr ON p.project_id = pr.project_id
-      LEFT JOIN md_project_site AS ps ON p.site_id = ps.project_site_id
-      JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
-      LEFT JOIN md_store AS s ON p.stor_id = s.store_id
-      LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
+      FROM td_purchase_product pp
 
-      WHERE 
-        pp.product_id = ${product_id}
-        AND DATE(pp.created_at) BETWEEN '${fromDate}' AND '${toDate}'
+      INNER JOIN td_purchase p
+        ON pp.purchase_id = p.purchase_id
+
+      INNER JOIN md_product prod
+        ON pp.product_id = prod.product_id
+
+      LEFT JOIN md_project pr
+        ON p.project_id = pr.project_id
+
+      LEFT JOIN md_project_site ps
+        ON p.site_id = ps.project_site_id
+
+      LEFT JOIN md_vendor v
+        ON p.vendor_id = v.vendor_id
+
+      LEFT JOIN md_store s
+        ON p.stor_id = s.store_id
+
+      LEFT JOIN td_purchase_order po
+        ON p.purchase_order_id = po.purchase_order_id
+
+      WHERE
+        pp.product_id = ${Number(product_id)}
+        AND DATE(pp.created_at)
+          BETWEEN '${fromDate}' AND '${toDate}'
 
       ORDER BY pp.created_at DESC
     `;
@@ -729,6 +1149,9 @@ getPurchaseById = async (req, res) => {
 
 
 
+//////
+
+
 getAllThePurchaseData = async (req, res) => {
   try {
     const sql = `
@@ -743,8 +1166,8 @@ getAllThePurchaseData = async (req, res) => {
         p.stor_id,
         s.store_name,
         p.purchase_order_id,
-        po.voucher_no,
-        po.reference_no_and_date,
+        po.po_no,
+       
         p.invoice_no,
         p.invoice_date,
         p.delivery_date,

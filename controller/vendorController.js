@@ -442,11 +442,10 @@ updateVendor = async (req, res) => {
   };
 
 
-
-  getPurchaseByVendorAndDate = async (req, res) => {
+getPurchaseByVendorAndDate = async (req, res) => {
   try {
-    const { id: vendor_id } = req.params;  
-    const { fromDate, toDate } = req.body; 
+    const { id: vendor_id } = req.params;
+    const { fromDate, toDate } = req.body;
 
     if (!vendor_id || !fromDate || !toDate) {
       return res.status(400).json({
@@ -455,7 +454,6 @@ updateVendor = async (req, res) => {
       });
     }
 
-    // --- MAIN SQL ---
     const sql = `
       SELECT
         p.purchase_id,
@@ -468,6 +466,7 @@ updateVendor = async (req, res) => {
 
         p.project_id,
         pr.project_name,
+
         p.site_id,
         ps.project_site_name,
 
@@ -478,51 +477,50 @@ updateVendor = async (req, res) => {
         s.store_name,
 
         p.purchase_order_id,
-        po.voucher_no,
-        po.reference_no_and_date,
+        po.po_no,
+        po.total_amount,
 
-        pp.purchase_product_id,
-        pp.product_id,
-        pn.product_name,
-        pn.product_type_id,
-        pt.product_type_name,
+        pop.purchase_order_product_id,
+        pop.product_id,
+        prod.product_name,
+        prod.product_type_id,
 
-        pp.product_qty,
-        pp.invoice_qty,
-        pp.unit_rate,
-        pp.discount_rate,
-        pp.discount_amount,
-        pp.sgst_rate,
-        pp.cgst_rate,
-        pp.igst_rate,
-        pp.sgst_amt,
-        pp.cgst_amt,
-        pp.igst_amt,
-        pp.total_amount,
-        pp.make_date,
-        pp.ownership_status,
+        pop.quantity,
+        pop.unit_price,
 
-        DATE(pp.created_at) AS purchase_date,
-        pp.created_at,
-        pp.updated_at
+        DATE(pop.created_at) AS purchase_date,
+        pop.created_at,
+        pop.updated_at
 
-      FROM td_purchase_product AS pp
-      JOIN td_purchase AS p ON pp.purchase_id = p.purchase_id
-      JOIN md_product AS pn ON pp.product_id = pn.product_id
-      JOIN md_product_type AS pt ON pn.product_type_id = pt.product_type_id
+      FROM td_purchase p
 
-      LEFT JOIN md_project AS pr ON p.project_id = pr.project_id
-      LEFT JOIN md_project_site AS ps ON p.site_id = ps.project_site_id
+      LEFT JOIN td_purchase_order po
+        ON p.purchase_order_id = po.purchase_order_id
 
-      JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
-      LEFT JOIN md_store AS s ON p.stor_id = s.store_id
-      LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
+      LEFT JOIN td_purchase_order_product pop
+        ON po.purchase_order_id = pop.purchase_order_id
 
-      WHERE 
-        p.vendor_id = ${vendor_id}
-        AND DATE(pp.created_at) BETWEEN '${fromDate}' AND '${toDate}'
+      LEFT JOIN md_product prod
+        ON pop.product_id = prod.product_id
 
-      ORDER BY pp.created_at DESC
+      LEFT JOIN md_project pr
+        ON p.project_id = pr.project_id
+
+      LEFT JOIN md_project_site ps
+        ON p.site_id = ps.project_site_id
+
+      LEFT JOIN md_vendor v
+        ON p.vendor_id = v.vendor_id
+
+      LEFT JOIN md_store s
+        ON p.stor_id = s.store_id
+
+      WHERE
+        p.vendor_id = ${Number(vendor_id)}
+        AND DATE(p.invoice_date)
+          BETWEEN '${fromDate}' AND '${toDate}'
+
+      ORDER BY p.invoice_date DESC
     `;
 
     const results = await customSelectSqlQuery(sql);
@@ -542,6 +540,7 @@ updateVendor = async (req, res) => {
     });
   }
 };
+
 
 
 }

@@ -130,87 +130,78 @@ class ProjectController {
         message: "project_id, site_id, fromDate and toDate are required",
       });
     }
+const sql = `
+  SELECT
+    p.purchase_id,
+    p.invoice_no,
+    DATE(p.invoice_date) AS invoice_date,
+    DATE(p.delivery_date) AS delivery_date,
+    p.invoice_image,
+    p.transport_insurance,
+    p.remarks,
 
-    const sql = `
-      SELECT
-        p.purchase_id,
-        p.invoice_no,
-        DATE(p.invoice_date) AS invoice_date,
-        DATE(p.delivery_date) AS delivery_date,
-        p.invoice_image,
-        p.transport_insurance,
-        p.remarks,
+    p.project_id,
+    pr.project_name,
+    p.site_id,
+    ps.project_site_name,
 
-        p.project_id,
-        pr.project_name,
-        p.site_id,
-        ps.project_site_name,
+    p.vendor_id,
+    v.vendor_name,
 
-        p.vendor_id,
-        v.vendor_name,
+    p.stor_id,
+    s.store_name,
 
-        p.stor_id,
-        s.store_name,
+    p.purchase_order_id,
+    po.po_no,
+    po.total_amount,          -- ✅ ADDED HERE
 
-        p.purchase_order_id,
-        po.voucher_no,
-        po.reference_no_and_date,
+    pop.purchase_order_product_id,
+    pop.product_id,
+    prod.product_name,
+    prod.product_type_id,
 
-        pp.purchase_product_id,
-        pp.product_id,
-        pn.product_name,
-        pn.product_type_id,
-        pt.product_type_name,
+    pop.quantity,
+    pop.unit_price,
 
-        pp.product_qty,
-        pp.invoice_qty,
-        pp.unit_rate,
-        pp.discount_rate,
-        pp.discount_amount,
-        pp.sgst_rate,
-        pp.cgst_rate,
-        pp.igst_rate,
-        pp.sgst_amt,
-        pp.cgst_amt,
-        pp.igst_amt,
-        pp.total_amount,
-        pp.make_date,
-        pp.ownership_status,
+    DATE(pop.created_at) AS purchase_date,
+    pop.created_at,
+    pop.updated_at
 
-        DATE(pp.created_at) AS purchase_date,
-        pp.created_at,
-        pp.updated_at
+  FROM td_purchase p
+  LEFT JOIN td_purchase_order po
+    ON p.purchase_order_id = po.purchase_order_id
 
-      FROM td_purchase_product AS pp
-      JOIN td_purchase AS p 
-        ON pp.purchase_id = p.purchase_id
-      JOIN md_product AS pn 
-        ON pp.product_id = pn.product_id
-      JOIN md_product_type AS pt 
-        ON pn.product_type_id = pt.product_type_id
+  LEFT JOIN td_purchase_order_product pop
+    ON po.purchase_order_id = pop.purchase_order_id
 
-      LEFT JOIN md_project AS pr 
-        ON p.project_id = pr.project_id
-      LEFT JOIN md_project_site AS ps 
-        ON p.site_id = ps.project_site_id
+  LEFT JOIN md_product prod
+    ON pop.product_id = prod.product_id
 
-      JOIN md_vendor AS v 
-        ON p.vendor_id = v.vendor_id
-      LEFT JOIN md_store AS s 
-        ON p.stor_id = s.store_id
-      LEFT JOIN td_purchase_order AS po 
-        ON p.purchase_order_id = po.purchase_order_id
+  LEFT JOIN md_project pr
+    ON p.project_id = pr.project_id
 
-      WHERE 
-        p.project_id = ${project_id}
-        AND p.site_id = ${site_id}
-        AND DATE(pp.created_at) BETWEEN '${fromDate}' AND '${toDate}'
+  LEFT JOIN md_project_site ps
+    ON p.site_id = ps.project_site_id
 
-      ORDER BY pp.created_at DESC
-    `;
+  LEFT JOIN md_vendor v
+    ON p.vendor_id = v.vendor_id
+
+  LEFT JOIN md_store s
+    ON p.stor_id = s.store_id
+
+  WHERE
+    p.project_id = ${Number(project_id)}
+    AND p.site_id = ${Number(site_id)}
+    AND DATE(p.invoice_date)
+      BETWEEN '${fromDate}' AND '${toDate}'
+
+  ORDER BY p.invoice_date DESC
+`;
 
 
-    const results = await customSelectSqlQuery(sql);
+
+    const params = [project_id, site_id, fromDate, toDate];
+    const results = await customSelectSqlQuery(sql, params);
 
     return res.status(200).json({
       success: true,
@@ -227,6 +218,7 @@ class ProjectController {
     });
   }
 };
+
 
 
 }

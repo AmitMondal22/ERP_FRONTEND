@@ -1,4 +1,8 @@
 const connect = require("../DBConfig/db");
+const dayjs = require("dayjs");
+const utc = require("dayjs/plugin/utc");
+dayjs.extend(utc);
+
 
 // ---------- SELECT DATA ----------
 async function selectData(table, select = "*", condition = null, orderBy = null) {
@@ -284,6 +288,7 @@ async function selectDataInRanges(select, table, start, end, condition = "") {
   }
 }
 
+
 // ---------- CUSTOM QUERY ----------
 async function customSelectSqlQuery(sql, fetchAll =true) {
   let conn;
@@ -299,6 +304,64 @@ async function customSelectSqlQuery(sql, fetchAll =true) {
   }
 }
 
+
+// ---------- OPTIMIZED STOCK UPDATE (Single Query, No Loops) ----------
+async function updateStockQuantities(productUpdates, projectId, siteId) {
+  let conn;
+  try {
+    if (!productUpdates || productUpdates.length === 0) {
+      return 0;
+    }
+
+    const now = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+    // Build CASE WHEN safely
+    const caseWhen = productUpdates
+      .map(
+        item =>
+          `WHEN product_id = ${item.product_id} 
+           AND invoice_qty >= ${item.quantity_of_product}
+           THEN invoice_qty - ${item.quantity_of_product}`
+      )
+      .join(' ');
+
+    const productIds = productUpdates
+      .map(item => item.product_id)
+      .join(',');
+
+    const query = `
+      UPDATE tx_current_stock
+      SET
+        invoice_qty = CASE
+          ${caseWhen}
+          ELSE invoice_qty
+        END,
+        updated_at = '${now}'
+      WHERE project_id = ${projectId}
+        AND site_id = ${siteId}
+        AND product_id IN (${productIds})
+    `;
+
+    console.log('[STOCK UPDATE]', query);
+
+    conn = await connect();
+    const [result] = await conn.execute(query);
+
+    // Optional: validation
+    if (result.affectedRows === 0) {
+      throw new Error("No matching stock found or insufficient quantity");
+    }
+
+    return result.affectedRows;
+
+  } catch (err) {
+    console.error("Stock update error:", err);
+    throw err;
+  } finally {
+    if (conn) await conn.end();
+  }
+}
+
 module.exports = {
   selectData,
   selectOneData,
@@ -306,6 +369,7 @@ module.exports = {
   insertData,
   batchInsertData,
   deleteData,
+  updateStockQuantities,
   deleteInsertRestore,
   updateData,
   countRows,

@@ -17,6 +17,8 @@ router.post("/api/create-work-progress-perprojectsite",authcheck, controller.cre
 router.post("/api/get-by-project-and-project-site",authcheck, controller.getWorkProgressByProjectAndSite);   
 
 
+router.post("/api/getallworkprogressbyprojectandsiteid",authcheck,controller.getWorkProgressfulldatafromprojectandsiteId)
+
 
 // UPDATE
 router.post("/api/update", controller.updateWorkProgress);
