@@ -48,70 +48,84 @@ class purchaseOrderController {
   // --------------------------------------------------
   // CREATE
   // --------------------------------------------------
-  // async createPurchaseOrder(req, res) {
-  //   try {
-  //     const {
-  //       vendor_id,
-  //       date,
-  //       delivery_date,
-  //       remarks,
-  //       total_amount,
-  //       created_by,
-  //       products,
-  //     } = req.body;
+ 
 
-  //     if (!vendor_id) {
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "vendor_id is required",
-  //       });
-  //     }
+//   async createPurchaseOrder(req, res) {
+//   try {
+//     const {
+//       vendor_id,
+//       project_id,
+//       project_site_id,
+//       date,
+//       delivery_date,
+//       remarks,
+//       total_amount,
+//       products = [],
+//     } = req.body;
 
-  //     const po_no = await generatePoId();
+//     if (!vendor_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "vendor_id is required",
+//       });
+//     }
+// //purchase-order/edit/6
+//    const created_by = req.user.id;
+// const updated_by = req.user.id;
 
-  //     const data = {
-  //       po_no,
-  //       vendor_id,
-  //       date,
-  //       delivery_date,
-  //       remarks,
-  //       total_amount,
-  //       created_by,
-  //       updated_by: created_by,
-  //       created_at: now,
-  //       updated_at: now,
-  //     };
 
-  //     const insertId = await insertData("td_purchase_order", data);
+//     const po_no = await generatePoId();
 
-  //     if (products && products.length > 0) {
-  //       for (let p of products) {
-  //         await insertData("td_purchase_order_product", {
-  //           purchase_order_id: insertId,
-  //           product_id: p.product_id,
-  //           quantity: p.quantity,
-  //           unit_price: p.unit_price,
-  //           created_by,
-  //           created_at: now,
-  //           updated_at: now,
-  //         });
-  //       }
-  //     }
+//     const poData = {
+//       po_no,
+//       vendor_id,
+//       project_id: project_id || null,
+//       project_site_id: project_site_id || null,
+//       date,
+//       delivery_date,
+//       remarks,
+//       total_amount,
+//       created_by,
+//       updated_by,
+//       created_at: now,
+//       updated_at: now,
+//     };
 
-  //     res.json({
-  //       success: true,
-  //       message: "Purchase order created successfully",
-  //       insertId,
-  //       po_no,
-  //     });
+//     const purchase_order_id = await insertData(
+//       "td_purchase_order",
+//       poData
+//     );
 
-  //   } catch (err) {
-  //     console.error("createPurchaseOrder Error:", err);
-  //     res.status(500).json({ success: false, message: "Internal Server Error" });
-  //   }
-  // }
+//     // Products
+//     for (const p of products) {
+//       await insertData("td_purchase_order_product", {
+//         purchase_order_id,
+//         product_id: p.product_id,
+//         quantity: p.quantity,
+//         unit_price: p.unit_price,
+//         created_by,
+//         created_at: now,
+//         updated_at: now,
+//       });
+//     }
 
-  async createPurchaseOrder(req, res) {
+//     res.json({
+//       success: true,
+//       message: "Purchase order created successfully",
+//       purchase_order_id,
+//       po_no,
+//     });
+
+//   } catch (err) {
+//     console.error("createPurchaseOrder Error:", err);
+//     res.status(500).json({
+//       success: false,
+//       message: "Internal Server Error",
+//     });
+//   }
+// }
+
+async createPurchaseOrder(req, res) {
   try {
     const {
       vendor_id,
@@ -120,7 +134,7 @@ class purchaseOrderController {
       date,
       delivery_date,
       remarks,
-      total_amount,
+      total_amount,      // ✅ COMING FROM UI
       products = [],
     } = req.body;
 
@@ -130,14 +144,30 @@ class purchaseOrderController {
         message: "vendor_id is required",
       });
     }
-//purchase-order/edit/6
-   const created_by = req.user.id;
-const updated_by = req.user.id;
 
+    if (!products.length) {
+      return res.status(400).json({
+        success: false,
+        message: "At least one product is required",
+      });
+    }
 
+    if (!total_amount) {
+      return res.status(400).json({
+        success: false,
+        message: "total_amount is required",
+      });
+    }
+
+    const created_by = req.user.id;
+    const updated_by = req.user.id;
+    const now = new Date();
+
+    // 1️⃣ Generate PO Number
     const po_no = await generatePoId();
 
-    const poData = {
+    // 2️⃣ Insert into td_purchase_order
+    const purchase_order_id = await insertData("td_purchase_order", {
       po_no,
       vendor_id,
       project_id: project_id || null,
@@ -145,36 +175,35 @@ const updated_by = req.user.id;
       date,
       delivery_date,
       remarks,
-      total_amount,
+      total_amount,   // ✅ STORED AS RECEIVED
       created_by,
       updated_by,
       created_at: now,
       updated_at: now,
-    };
+    });
 
-    const purchase_order_id = await insertData(
-      "td_purchase_order",
-      poData
-    );
-
-    // Products
+    // 3️⃣ Insert Products
     for (const p of products) {
       await insertData("td_purchase_order_product", {
         purchase_order_id,
         product_id: p.product_id,
+        gst_rate: p.gst_rate || 18,
         quantity: p.quantity,
         unit_price: p.unit_price,
+        unit_id: p.unit_id || null,
         created_by,
         created_at: now,
         updated_at: now,
       });
     }
 
+    // 4️⃣ Response
     res.json({
       success: true,
       message: "Purchase order created successfully",
       purchase_order_id,
       po_no,
+      total_amount,   // echoed back
     });
 
   } catch (err) {
@@ -185,6 +214,7 @@ const updated_by = req.user.id;
     });
   }
 }
+
 
 
 /////////////////////////////////////////////////////////
@@ -342,28 +372,60 @@ async getPurchaseOrderById(req, res) {
     // ---------------------------
     // PURCHASE ORDER
     // ---------------------------
+    // const poSql = `
+    //   SELECT 
+    //     p.purchase_order_id,
+    //     p.po_no,
+    //     p.vendor_id,
+    //     v.vendor_name,
+    //     p.project_id,
+    //     pr.project_name,
+    //     p.project_site_id,
+    //     ps.project_site_name,
+    //     p.date,
+    //     p.delivery_date,
+    //     p.remarks,
+    //     p.total_amount,
+    //     p.created_at,
+    //     p.updated_at
+    //   FROM td_purchase_order p
+    //   LEFT JOIN md_vendor v ON p.vendor_id = v.vendor_id
+    //   LEFT JOIN md_project pr ON p.project_id = pr.project_id
+    //   LEFT JOIN md_project_site ps ON p.project_site_id = ps.project_site_id
+    //   WHERE p.purchase_order_id = ${id}
+    // `;
+
     const poSql = `
-      SELECT 
-        p.purchase_order_id,
-        p.po_no,
-        p.vendor_id,
-        v.vendor_name,
-        p.project_id,
-        pr.project_name,
-        p.project_site_id,
-        ps.project_site_name,
-        p.date,
-        p.delivery_date,
-        p.remarks,
-        p.total_amount,
-        p.created_at,
-        p.updated_at
-      FROM td_purchase_order p
-      LEFT JOIN md_vendor v ON p.vendor_id = v.vendor_id
-      LEFT JOIN md_project pr ON p.project_id = pr.project_id
-      LEFT JOIN md_project_site ps ON p.project_site_id = ps.project_site_id
-      WHERE p.purchase_order_id = ${id}
-    `;
+  SELECT 
+    p.purchase_order_id,
+    p.po_no,
+    p.vendor_id,
+
+    -- Vendor details
+    v.vendor_name,
+    v.vendor_mobile,
+    v.vendor_email,
+    v.city_id,
+    v.vendor_address,
+    v.vendor_gst_in,
+
+    p.project_id,
+    pr.project_name,
+    p.project_site_id,
+    ps.project_site_name,
+    p.date,
+    p.delivery_date,
+    p.remarks,
+    p.total_amount,
+    p.created_at,
+    p.updated_at
+  FROM td_purchase_order p
+  LEFT JOIN md_vendor v ON p.vendor_id = v.vendor_id
+  LEFT JOIN md_project pr ON p.project_id = pr.project_id
+  LEFT JOIN md_project_site ps ON p.project_site_id = ps.project_site_id
+  WHERE p.purchase_order_id = ${id}
+`;
+
 
     const po = await customSelectSqlQuery(poSql, false);
 
@@ -377,20 +439,37 @@ async getPurchaseOrderById(req, res) {
     // ---------------------------
     // PRODUCTS
     // ---------------------------
+    // const productSql = `
+    //   SELECT
+    //     pp.purchase_order_product_id,
+    //     pp.product_id,
+    //     mp.product_name,
+    //     pt.product_type_id,
+    //     pt.product_type_name,
+    //     pp.quantity,
+    //     pp.unit_price
+    //   FROM td_purchase_order_product pp
+    //   LEFT JOIN md_product mp ON pp.product_id = mp.product_id
+    //   LEFT JOIN md_product_type pt ON mp.product_type_id = pt.product_type_id
+    //   WHERE pp.purchase_order_id = ${id}
+    // `;
+
+
     const productSql = `
-      SELECT
-        pp.purchase_order_product_id,
-        pp.product_id,
-        mp.product_name,
-        pt.product_type_id,
-        pt.product_type_name,
-        pp.quantity,
-        pp.unit_price
-      FROM td_purchase_order_product pp
-      LEFT JOIN md_product mp ON pp.product_id = mp.product_id
-      LEFT JOIN md_product_type pt ON mp.product_type_id = pt.product_type_id
-      WHERE pp.purchase_order_id = ${id}
-    `;
+  SELECT
+    pp.purchase_order_product_id,
+    pp.product_id,
+    mp.product_name,
+    pt.product_type_id,
+    pt.product_type_name,
+    pp.quantity,
+    pp.unit_price,
+    pp.gst_rate        -- ✅ added
+  FROM td_purchase_order_product pp
+  LEFT JOIN md_product mp ON pp.product_id = mp.product_id
+  LEFT JOIN md_product_type pt ON mp.product_type_id = pt.product_type_id
+  WHERE pp.purchase_order_id = ${id}
+`;
 
     const products = await customSelectSqlQuery(productSql);
 
