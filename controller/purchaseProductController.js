@@ -185,7 +185,7 @@ createPurchase = async (req, res) => {
       created_at: new Date(),
       updated_at: new Date(),
     });
-
+ 
     /* ---------- td_purchase_product ---------- */
     const productRows = purchase_product.map(p => ({
       purchase_id,

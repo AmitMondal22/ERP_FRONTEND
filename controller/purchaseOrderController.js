@@ -50,7 +50,8 @@ class purchaseOrderController {
   // --------------------------------------------------
  
 
-//   async createPurchaseOrder(req, res) {
+
+// async createPurchaseOrder(req, res) {
 //   try {
 //     const {
 //       vendor_id,
@@ -59,7 +60,7 @@ class purchaseOrderController {
 //       date,
 //       delivery_date,
 //       remarks,
-//       total_amount,
+//       total_amount,      // ✅ COMING FROM UI
 //       products = [],
 //     } = req.body;
 
@@ -69,14 +70,30 @@ class purchaseOrderController {
 //         message: "vendor_id is required",
 //       });
 //     }
-// //purchase-order/edit/6
-//    const created_by = req.user.id;
-// const updated_by = req.user.id;
 
+//     if (!products.length) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "At least one product is required",
+//       });
+//     }
 
+//     if (!total_amount) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "total_amount is required",
+//       });
+//     }
+
+//     const created_by = req.user.id;
+//     const updated_by = req.user.id;
+//     const now = new Date();
+
+//     // 1️⃣ Generate PO Number
 //     const po_no = await generatePoId();
 
-//     const poData = {
+//     // 2️⃣ Insert into td_purchase_order
+//     const purchase_order_id = await insertData("td_purchase_order", {
 //       po_no,
 //       vendor_id,
 //       project_id: project_id || null,
@@ -84,36 +101,35 @@ class purchaseOrderController {
 //       date,
 //       delivery_date,
 //       remarks,
-//       total_amount,
+//       total_amount,   // ✅ STORED AS RECEIVED
 //       created_by,
 //       updated_by,
 //       created_at: now,
 //       updated_at: now,
-//     };
+//     });
 
-//     const purchase_order_id = await insertData(
-//       "td_purchase_order",
-//       poData
-//     );
-
-//     // Products
+//     // 3️⃣ Insert Products
 //     for (const p of products) {
 //       await insertData("td_purchase_order_product", {
 //         purchase_order_id,
 //         product_id: p.product_id,
+//         gst_rate: p.gst_rate || 18,
 //         quantity: p.quantity,
 //         unit_price: p.unit_price,
+//         unit_id: p.unit_id || null,
 //         created_by,
 //         created_at: now,
 //         updated_at: now,
 //       });
 //     }
 
+//     // 4️⃣ Response
 //     res.json({
 //       success: true,
 //       message: "Purchase order created successfully",
 //       purchase_order_id,
 //       po_no,
+//       total_amount,   // echoed back
 //     });
 
 //   } catch (err) {
@@ -125,6 +141,8 @@ class purchaseOrderController {
 //   }
 // }
 
+
+
 async createPurchaseOrder(req, res) {
   try {
     const {
@@ -134,7 +152,7 @@ async createPurchaseOrder(req, res) {
       date,
       delivery_date,
       remarks,
-      total_amount,      // ✅ COMING FROM UI
+      total_amount,       // ✅ decimal from UI
       products = [],
     } = req.body;
 
@@ -166,7 +184,7 @@ async createPurchaseOrder(req, res) {
     // 1️⃣ Generate PO Number
     const po_no = await generatePoId();
 
-    // 2️⃣ Insert into td_purchase_order
+    // 2️⃣ Insert Purchase Order (Header)
     const purchase_order_id = await insertData("td_purchase_order", {
       po_no,
       vendor_id,
@@ -175,22 +193,33 @@ async createPurchaseOrder(req, res) {
       date,
       delivery_date,
       remarks,
-      total_amount,   // ✅ STORED AS RECEIVED
+      total_amount,        // ✅ stored as received
       created_by,
       updated_by,
       created_at: now,
       updated_at: now,
     });
 
-    // 3️⃣ Insert Products
+    // 3️⃣ Insert Purchase Order Products (NO CALCULATION)
     for (const p of products) {
       await insertData("td_purchase_order_product", {
         purchase_order_id,
         product_id: p.product_id,
-        gst_rate: p.gst_rate || 18,
+
+        sgst_rate: p.sgst_rate || 0,
+        cgst_rate: p.cgst_rate || 0,
+        igst_rate: p.igst_rate || 0,
+
+        sgst_amt: p.sgst_amt || 0,   // ✅ decimal
+        cgst_amt: p.cgst_amt || 0,   // ✅ decimal
+        igst_amt: p.igst_amt || 0,   // ✅ decimal
+
         quantity: p.quantity,
         unit_price: p.unit_price,
         unit_id: p.unit_id || null,
+
+        total_amount: p.total_amount,  // ✅ decimal
+
         created_by,
         created_at: now,
         updated_at: now,
@@ -203,7 +232,7 @@ async createPurchaseOrder(req, res) {
       message: "Purchase order created successfully",
       purchase_order_id,
       po_no,
-      total_amount,   // echoed back
+      total_amount,
     });
 
   } catch (err) {
