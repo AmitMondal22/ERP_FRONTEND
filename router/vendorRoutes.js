@@ -17,7 +17,7 @@ router.post("/api/updatevendor/:id",authcheck, vendorController.updateVendor);//
 
 router.post("/api/update_contact_person/:id",authcheck, vendorController.updateContactPerson);
 
-
+ 
 router.delete("/api/delete_vendor/:id",authcheck, vendorController.deleteVendor);//
 
 router.delete("/api/delete_contact_person/:id",authcheck, vendorController.deleteContactPerson);

@@ -9,6 +9,7 @@ const {
   updateData,
   deleteData,
   customSelectSqlQuery,
+  customSelectSqlQuery2,
   batchInsertData,
   updateStockQuantities,
 } = require("../models/MasterModel");
@@ -286,6 +287,736 @@ createWorkProgress = async (req, res) => {
     });
   }
 };
+
+////////////////////////////////////////////////
+
+
+// getMonthlyWorkReport = async (req, res) => {
+//   try {
+//     const { project_id, project_site_id, fromDate, toDate } = req.body;
+
+//     /* 1. Basic validation */
+//     if (!project_id || !fromDate || !toDate) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id, fromDate and toDate are required",
+//       });
+//     }
+
+//     if (!dayjs(fromDate).isValid() || !dayjs(toDate).isValid()) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid date format. Use YYYY-MM-DD",
+//       });
+//     }
+
+//     /* 2. Load project header info */
+//     const projectQuery = `
+//       SELECT 
+//         p.project_id,
+//         p.project_name,
+//         p.city_id,
+//         c.name AS city_name,
+//         c.state_id,
+//         s.name AS state_name,
+//         p.create_by,
+//         u.name AS created_by_name,
+//         p.created_at
+//       FROM md_project p
+//       LEFT JOIN lo_cities c ON p.city_id = c.id
+//       LEFT JOIN lo_states s ON c.state_id = s.id
+//       LEFT JOIN users u ON p.create_by = u.id
+//       WHERE p.project_id = ?
+//     `;
+
+//     const project = await customSelectSqlQuery2(projectQuery, [project_id], false);
+
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Project not found",
+//       });
+//     }
+
+//     /* 3. Load work progress rows in the given period */
+//     let workProgressQuery = `
+//       SELECT 
+//         wp.work_progress_site_id,
+//         wp.project_id,
+//         wp.project_site_id,
+//         wp.bom_id,
+//         wp.bom_progress_id,
+//         wp.work_details_id,
+//         wp.remarks,
+//         wp.total_progress,
+//         wp.rep_task,
+//         wp.packet_qty,
+//         wp.total_qty_of_material_used,
+//         wp.date,
+//         wp.created_by,
+//         wp.created_at,
+//         wp.updated_at,
+
+//         -- Project Site
+//         ps.project_site_name,
+//         ps.city_id AS site_city_id,
+//         sc.name AS site_city_name,
+//         sc.state_id AS site_state_id,
+//         ss.name AS site_state_name,
+
+//         -- BOM
+//         b.bom_name,
+
+//         -- BOM Progress
+//         bp.bom_progress_name,
+//         bp.sl_number AS progress_sl_number,
+
+//         -- Creator
+//         u.name AS creator_name,
+//         u.email AS creator_email,
+
+//         -- Month keys
+//         DATE_FORMAT(wp.date, '%M %Y') AS month_year,
+//         DATE_FORMAT(wp.date, '%Y-%m') AS year_month_sort
+        
+//       FROM tx_work_progress_as_per_project_site wp
+//       LEFT JOIN md_project_site ps ON wp.project_site_id = ps.project_site_id
+//       LEFT JOIN lo_cities sc ON ps.city_id = sc.id
+//       LEFT JOIN lo_states ss ON sc.state_id = ss.id
+//       LEFT JOIN md_bom b ON wp.bom_id = b.bom_id
+//       LEFT JOIN md_bom_progress bp ON wp.bom_progress_id = bp.bom_progress_id
+//       LEFT JOIN users u ON wp.created_by = u.id
+//       WHERE wp.project_id = ?
+//         AND wp.date BETWEEN ? AND ?
+//     `;
+
+//     const workParams = [project_id, fromDate, toDate];
+
+//     if (project_site_id) {
+//       workProgressQuery += ` AND wp.project_site_id = ?`;
+//       workParams.push(project_site_id);
+//     }
+
+//     workProgressQuery += ` ORDER BY wp.date DESC, wp.work_progress_site_id DESC`;
+
+//     const workRows = await customSelectSqlQuery2(workProgressQuery, workParams);
+
+//     if (!workRows || workRows.length === 0) {
+//       return res.status(200).json({
+//         success: true,
+//         message: "No work progress found for the given criteria",
+//         report_info: {
+//           project,
+//           from_date: fromDate,
+//           to_date: toDate,
+//           total_records: 0,
+//         },
+//         monthly_data: [],
+//         overall_summary: {
+//           total_months: 0,
+//           total_work_entries: 0,
+//           total_progress: 0,
+//           total_packets: 0,
+//           total_materials_used: 0,
+//           total_products_consumed: 0,
+//           unique_sites: 0,
+//           unique_boms: 0,
+//         },
+//       });
+//     }
+
+//     /* 4. Load all consumed products - FIXED QUERY */
+//     const workIds = workRows.map((wp) => wp.work_progress_site_id);
+//     const idList = workIds.join(",");
+
+//     // ✅ REMOVED md_manufacturer JOIN - assuming manufacturer info is in md_product
+//     const consumedQuery = `
+//       SELECT 
+//         ep.expenses_of_project_site_id,
+//         ep.product_id,
+//         ep.work_progress_site_id,
+//         ep.quantity_of_product,
+//         ep.created_at,
+
+//         p.product_name,
+//         p.model_no,
+//         p.hsn_code,
+//         p.manufacturer_name,
+
+//         pt.product_type_name,
+//         u.unit_name
+        
+//       FROM tx_expenses_of_product_as_per_project_site ep
+//       LEFT JOIN md_product p ON ep.product_id = p.product_id
+//       LEFT JOIN md_product_type pt ON p.product_type_id = pt.product_type_id
+//       LEFT JOIN md_unit u ON p.unit_id = u.unit_id
+//       WHERE ep.work_progress_site_id IN (${idList})
+//       ORDER BY ep.work_progress_site_id, ep.product_id
+//     `;
+
+//     const consumedRows = await customSelectSqlQuery2(consumedQuery, []);
+
+//     /* 5. Build a map: work_progress_site_id -> list of products */
+//     const productsByWorkId = {};
+//     for (const row of consumedRows) {
+//       const key = row.work_progress_site_id;
+//       if (!productsByWorkId[key]) productsByWorkId[key] = [];
+
+//       productsByWorkId[key].push({
+//         expenses_id: row.expenses_of_project_site_id,
+//         product_id: row.product_id,
+//         product_name: row.product_name,
+//         model_no: row.model_no,
+//         hsn_code: row.hsn_code,
+//         product_type: row.product_type_name,
+//         manufacturer: row.manufacturer_name, // ✅ Now from md_product
+//         unit: row.unit_name,
+//         quantity_consumed: parseFloat(row.quantity_of_product),
+//         consumed_at: row.created_at,
+//       });
+//     }
+
+//     /* 6. Group work rows by month and attach products */
+//     const monthBuckets = {};
+
+//     for (const wp of workRows) {
+//       const monthKey = wp.year_month_sort;
+
+//       if (!monthBuckets[monthKey]) {
+//         monthBuckets[monthKey] = {
+//           month_year: wp.month_year,
+//           year_month: wp.year_month_sort,
+//           work_progress_entries: [],
+//           summary: {
+//             total_entries: 0,
+//             total_progress: 0,
+//             total_packets: 0,
+//             total_materials_used: 0,
+//             total_products_consumed: 0,
+//           },
+//         };
+//       }
+
+//       const entry = {
+//         work_progress_site_id: wp.work_progress_site_id,
+//         date: wp.date,
+//         project_site: {
+//           site_id: wp.project_site_id,
+//           site_name: wp.project_site_name,
+//           city: wp.site_city_name,
+//           state: wp.site_state_name,
+//         },
+//         bom: {
+//           bom_id: wp.bom_id,
+//           bom_name: wp.bom_name,
+//         },
+//         bom_progress: {
+//           progress_id: wp.bom_progress_id,
+//           progress_name: wp.bom_progress_name,
+//           sl_number: wp.progress_sl_number,
+//         },
+//         work_details: {
+//           remarks: wp.remarks,
+//           total_progress: parseFloat(wp.total_progress || 0),
+//           rep_task: wp.rep_task,
+//           packet_qty: parseFloat(wp.packet_qty || 0),
+//           total_qty_of_material_used: parseFloat(wp.total_qty_of_material_used || 0),
+//         },
+//         consumed_products: productsByWorkId[wp.work_progress_site_id] || [],
+//         created_by: {
+//           user_id: wp.created_by,
+//           user_name: wp.creator_name,
+//           user_email: wp.creator_email,
+//         },
+//         timestamps: {
+//           created_at: wp.created_at,
+//           updated_at: wp.updated_at,
+//         },
+//       };
+
+//       monthBuckets[monthKey].work_progress_entries.push(entry);
+
+//       monthBuckets[monthKey].summary.total_entries += 1;
+//       monthBuckets[monthKey].summary.total_progress += entry.work_details.total_progress;
+//       monthBuckets[monthKey].summary.total_packets += entry.work_details.packet_qty;
+//       monthBuckets[monthKey].summary.total_materials_used += entry.work_details.total_qty_of_material_used;
+//       monthBuckets[monthKey].summary.total_products_consumed += entry.consumed_products.length;
+//     }
+
+//     const monthly_data = Object.values(monthBuckets).sort((a, b) =>
+//       b.year_month.localeCompare(a.year_month)
+//     );
+
+//     /* 7. Build overall summary */
+//     const overall_summary = {
+//       total_months: monthly_data.length,
+//       total_work_entries: workRows.length,
+//       total_progress: workRows.reduce(
+//         (sum, wp) => sum + parseFloat(wp.total_progress || 0),
+//         0
+//       ),
+//       total_packets: workRows.reduce(
+//         (sum, wp) => sum + parseFloat(wp.packet_qty || 0),
+//         0
+//       ),
+//       total_materials_used: workRows.reduce(
+//         (sum, wp) => sum + parseFloat(wp.total_qty_of_material_used || 0),
+//         0
+//       ),
+//       total_products_consumed: consumedRows.length,
+//       unique_sites: new Set(workRows.map((wp) => wp.project_site_id)).size,
+//       unique_boms: new Set(workRows.map((wp) => wp.bom_id)).size,
+//     };
+
+//     /* 8. Final response */
+//     return res.status(200).json({
+//       success: true,
+//       message: "Monthly work report generated successfully",
+//       report_info: {
+//         project,
+//         from_date: fromDate,
+//         to_date: toDate,
+//         report_period: `${dayjs(fromDate).format("DD MMM YYYY")} to ${dayjs(toDate).format(
+//           "DD MMM YYYY"
+//         )}`,
+//         generated_at: dayjs().format("YYYY-MM-DD HH:mm:ss"),
+//       },
+//       overall_summary,
+//       monthly_data,
+//     });
+//   } catch (error) {
+//     console.error("Error generating monthly work report:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Failed to generate monthly work report",
+//       error: error.message,
+//     });
+//   }
+// };
+
+
+
+
+
+
+
+
+
+getMonthlyWorkReport = async (req, res) => {
+  try {
+    const { project_id, project_site_id, fromDate, toDate } = req.body;
+
+
+    /* 1. Basic validation */
+    if (!project_id || !fromDate || !toDate) {
+      return res.status(400).json({
+        success: false,
+        message: "project_id, fromDate and toDate are required",
+      });
+    }
+
+
+    if (!dayjs(fromDate).isValid() || !dayjs(toDate).isValid()) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid date format. Use YYYY-MM-DD",
+      });
+    }
+
+
+    /* 2. Load project header info */
+    const projectQuery = `
+      SELECT 
+        p.project_id,
+        p.project_name,
+        p.city_id,
+        c.name AS city_name,
+        c.state_id,
+        s.name AS state_name,
+        p.create_by,
+        u.name AS created_by_name,
+        p.created_at
+      FROM md_project p
+      LEFT JOIN lo_cities c ON p.city_id = c.id
+      LEFT JOIN lo_states s ON c.state_id = s.id
+      LEFT JOIN users u ON p.create_by = u.id
+      WHERE p.project_id = ?
+    `;
+
+
+    const project = await customSelectSqlQuery2(projectQuery, [project_id], false);
+
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+
+    /* 3. Load work progress rows in the given period */
+    let workProgressQuery = `
+      SELECT 
+        wp.work_progress_site_id,
+        wp.project_id,
+        wp.project_site_id,
+        wp.bom_id,
+        wp.bom_progress_id,
+        wp.work_details_id,
+        wp.remarks,
+        wp.total_progress,
+        wp.rep_task,
+        wp.packet_qty,
+        wp.total_qty_of_material_used,
+        wp.date,
+        wp.created_by,
+        wp.created_at,
+        wp.updated_at,
+
+
+        -- Project Site
+        ps.project_site_name,
+        ps.city_id AS site_city_id,
+        sc.name AS site_city_name,
+        sc.state_id AS site_state_id,
+        ss.name AS site_state_name,
+
+
+        -- BOM
+        b.bom_name,
+
+
+        -- BOM Progress
+        bp.bom_progress_name,
+        bp.sl_number AS progress_sl_number,
+
+
+        -- Creator
+        u.name AS creator_name,
+        u.email AS creator_email,
+
+
+        -- Month keys
+        DATE_FORMAT(wp.date, '%M %Y') AS month_year,
+        DATE_FORMAT(wp.date, '%Y-%m') AS year_month_sort
+        
+      FROM tx_work_progress_as_per_project_site wp
+      LEFT JOIN md_project_site ps ON wp.project_site_id = ps.project_site_id
+      LEFT JOIN lo_cities sc ON ps.city_id = sc.id
+      LEFT JOIN lo_states ss ON sc.state_id = ss.id
+      LEFT JOIN md_bom b ON wp.bom_id = b.bom_id
+      LEFT JOIN md_bom_progress bp ON wp.bom_progress_id = bp.bom_progress_id
+      LEFT JOIN users u ON wp.created_by = u.id
+      WHERE wp.project_id = ?
+        AND wp.date BETWEEN ? AND ?
+    `;
+
+
+    const workParams = [project_id, fromDate, toDate];
+
+
+    if (project_site_id) {
+      workProgressQuery += ` AND wp.project_site_id = ?`;
+      workParams.push(project_site_id);
+    }
+
+
+    workProgressQuery += ` ORDER BY wp.date DESC, wp.work_progress_site_id DESC`;
+
+
+    const workRows = await customSelectSqlQuery2(workProgressQuery, workParams);
+
+
+    if (!workRows || workRows.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "No work progress found for the given criteria",
+        report_info: {
+          project,
+          from_date: fromDate,
+          to_date: toDate,
+          total_records: 0,
+        },
+        monthly_data: [],
+        overall_summary: {
+          total_months: 0,
+          total_work_entries: 0,
+          total_progress: 0,
+          total_packets: 0,
+          total_materials_used: 0,
+          // total_products_consumed: 0,
+          unique_sites: 0,
+          unique_boms: 0,
+        },
+        duplicate_steps_analysis: {
+          total_duplicate_steps_found: 0,
+          duplicate_steps: []
+        }
+      });
+    }
+
+
+    /* 4. Load all consumed products */
+    const workIds = workRows.map((wp) => wp.work_progress_site_id);
+    const idList = workIds.join(",");
+
+
+    const consumedQuery = `
+      SELECT 
+        ep.expenses_of_project_site_id,
+        ep.product_id,
+        ep.work_progress_site_id,
+        ep.quantity_of_product,
+        ep.created_at,
+
+
+        p.product_name,
+        p.model_no,
+        p.hsn_code,
+        p.manufacturer_name,
+
+
+        pt.product_type_name,
+        u.unit_name
+        
+      FROM tx_expenses_of_product_as_per_project_site ep
+      LEFT JOIN md_product p ON ep.product_id = p.product_id
+      LEFT JOIN md_product_type pt ON p.product_type_id = pt.product_type_id
+      LEFT JOIN md_unit u ON p.unit_id = u.unit_id
+      WHERE ep.work_progress_site_id IN (${idList})
+      ORDER BY ep.work_progress_site_id, ep.product_id
+    `;
+
+
+    const consumedRows = await customSelectSqlQuery2(consumedQuery, []);
+
+
+    /* 5. Build a map: work_progress_site_id -> list of products */
+    const productsByWorkId = {};
+    for (const row of consumedRows) {
+      const key = row.work_progress_site_id;
+      if (!productsByWorkId[key]) productsByWorkId[key] = [];
+
+
+      productsByWorkId[key].push({
+        expenses_id: row.expenses_of_project_site_id,
+        product_id: row.product_id,
+        product_name: row.product_name,
+        model_no: row.model_no,
+        hsn_code: row.hsn_code,
+        product_type: row.product_type_name,
+        manufacturer: row.manufacturer_name,
+        unit: row.unit_name,
+        quantity_consumed: parseFloat(row.quantity_of_product),
+        consumed_at: row.created_at,
+      });
+    }
+
+
+    /* 6. Group work rows by month and attach products */
+    const monthBuckets = {};
+
+
+    for (const wp of workRows) {
+      const monthKey = wp.year_month_sort;
+
+
+      if (!monthBuckets[monthKey]) {
+        monthBuckets[monthKey] = {
+          month_year: wp.month_year,
+          year_month: wp.year_month_sort,
+          work_progress_entries: [],
+          summary: {
+            total_entries: 0,
+            total_progress: 0,
+            total_packets: 0,
+            total_materials_used: 0,
+           // total_products_consumed: 0,
+          },
+        };
+      }
+
+
+      const entry = {
+        work_progress_site_id: wp.work_progress_site_id,
+        date: wp.date,
+        project_site: {
+          site_id: wp.project_site_id,
+          site_name: wp.project_site_name,
+          city: wp.site_city_name,
+          state: wp.site_state_name,
+        },
+        bom: {
+          bom_id: wp.bom_id,
+          bom_name: wp.bom_name,
+        },
+        bom_progress: {
+          progress_id: wp.bom_progress_id,
+          progress_name: wp.bom_progress_name,
+          sl_number: wp.progress_sl_number,
+        },
+        work_details: {
+          remarks: wp.remarks,
+          total_progress: parseFloat(wp.total_progress || 0),
+          rep_task: wp.rep_task,
+          packet_qty: parseFloat(wp.packet_qty || 0),
+          total_qty_of_material_used: parseFloat(wp.total_qty_of_material_used || 0),
+        },
+        consumed_products: productsByWorkId[wp.work_progress_site_id] || [],
+        created_by: {
+          user_id: wp.created_by,
+          user_name: wp.creator_name,
+          user_email: wp.creator_email,
+        },
+        timestamps: {
+          created_at: wp.created_at,
+          updated_at: wp.updated_at,
+        },
+      };
+
+
+      monthBuckets[monthKey].work_progress_entries.push(entry);
+
+
+      monthBuckets[monthKey].summary.total_entries += 1;
+      monthBuckets[monthKey].summary.total_progress += entry.work_details.total_progress;
+      monthBuckets[monthKey].summary.total_packets += entry.work_details.packet_qty;
+      monthBuckets[monthKey].summary.total_materials_used += entry.work_details.total_qty_of_material_used;
+      //monthBuckets[monthKey].summary.total_products_consumed += entry.consumed_products.length;
+    }
+
+
+    const monthly_data = Object.values(monthBuckets).sort((a, b) =>
+      b.year_month.localeCompare(a.year_month)
+    );
+
+
+    /* 7. Build overall summary */
+    const overall_summary = {
+      total_months: monthly_data.length,
+      total_work_entries: workRows.length,
+      total_progress: workRows.reduce(
+        (sum, wp) => sum + parseFloat(wp.total_progress || 0),
+        0
+      ),
+      total_packets: workRows.reduce(
+        (sum, wp) => sum + parseFloat(wp.packet_qty || 0),
+        0
+      ),
+      total_materials_used: workRows.reduce(
+        (sum, wp) => sum + parseFloat(wp.total_qty_of_material_used || 0),
+        0
+      ),
+     // total_products_consumed: consumedRows.length,
+      unique_sites: new Set(workRows.map((wp) => wp.project_site_id)).size,
+      unique_boms: new Set(workRows.map((wp) => wp.bom_id)).size,
+    };
+
+
+    /* 8. Detect duplicate STEPS (BOM Progress) per project site */
+    const stepUsageByProjectSite = {};
+
+    for (const wp of workRows) {
+      const siteId = wp.project_site_id;
+      const stepId = wp.bom_progress_id;
+      
+      if (!stepUsageByProjectSite[siteId]) {
+        stepUsageByProjectSite[siteId] = {};
+      }
+      
+      if (!stepUsageByProjectSite[siteId][stepId]) {
+        stepUsageByProjectSite[siteId][stepId] = {
+          step_id: stepId,
+          step_name: wp.bom_progress_name,
+          sl_number: wp.progress_sl_number,
+          site_id: siteId,
+          site_name: wp.project_site_name,
+          site_city: wp.site_city_name,
+          site_state: wp.site_state_name,
+          usage_count: 0,
+          used_in_boms: []
+        };
+      }
+      
+      stepUsageByProjectSite[siteId][stepId].usage_count += 1;
+      stepUsageByProjectSite[siteId][stepId].used_in_boms.push({
+        work_progress_site_id: wp.work_progress_site_id,
+        date: wp.date,
+        bom_id: wp.bom_id,
+        bom_name: wp.bom_name,
+        remarks: wp.remarks,
+        total_progress: parseFloat(wp.total_progress || 0),
+        packet_qty: parseFloat(wp.packet_qty || 0),
+        total_qty_of_material_used: parseFloat(wp.total_qty_of_material_used || 0),
+        created_by: wp.creator_name
+      });
+    }
+
+    // Extract only duplicate steps (used more than once)
+    const duplicate_steps_report = [];
+
+    for (const siteId in stepUsageByProjectSite) {
+      for (const stepId in stepUsageByProjectSite[siteId]) {
+        const stepData = stepUsageByProjectSite[siteId][stepId];
+        
+        if (stepData.usage_count > 1) {
+          duplicate_steps_report.push({
+            project_site: {
+              site_id: stepData.site_id,
+              site_name: stepData.site_name,
+              city: stepData.site_city,
+              state: stepData.site_state
+            },
+            step: {
+              step_id: stepData.step_id,
+              step_name: stepData.step_name,
+              sl_number: stepData.sl_number
+            },
+            duplicate_count: stepData.usage_count,
+            used_in_boms: stepData.used_in_boms.sort((a, b) => 
+              new Date(b.date) - new Date(a.date)
+            )
+          });
+        }
+      }
+    }
+
+    // Sort by duplicate count (highest first)
+    duplicate_steps_report.sort((a, b) => b.duplicate_count - a.duplicate_count);
+
+
+    /* 9. Final response */
+    return res.status(200).json({
+      success: true,
+      message: "Monthly work report generated successfully",
+      report_info: {
+        project,
+        from_date: fromDate,
+        to_date: toDate,
+        report_period: `${dayjs(fromDate).format("DD MMM YYYY")} to ${dayjs(toDate).format(
+          "DD MMM YYYY"
+        )}`,
+        generated_at: dayjs().format("YYYY-MM-DD HH:mm:ss"),
+      },
+      overall_summary,
+      monthly_data,
+      duplicate_steps_analysis: {
+        total_duplicate_steps_found: duplicate_steps_report.length,
+        duplicate_steps: duplicate_steps_report
+      }
+    });
+  } catch (error) {
+    console.error("Error generating monthly work report:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to generate monthly work report",
+      error: error.message,
+    });
+  }
+};
+
+
 
   // ------------------------------------------------------------
   // READ (GROUPED)

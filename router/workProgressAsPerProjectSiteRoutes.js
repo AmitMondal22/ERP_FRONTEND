@@ -26,4 +26,7 @@ router.post("/api/update", controller.updateWorkProgress);
 // DELETE
 router.delete("/delete", controller.deleteWorkProgress);
 
+//workProgressmonthwise
+router.post("/api/work/progressmonthwise", authcheck,controller.getMonthlyWorkReport)
+
 module.exports = router;

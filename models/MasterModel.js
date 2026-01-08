@@ -290,11 +290,26 @@ async function selectDataInRanges(select, table, start, end, condition = "") {
 
 
 // ---------- CUSTOM QUERY ----------
-async function customSelectSqlQuery(sql, fetchAll =true) {
+async function customSelectSqlQuery(sql,fetchAll =true) {
   let conn;
   try {
     conn = await connect();
     const [rows] = await conn.execute(sql);
+    return fetchAll ? rows : rows[0] || null;
+  } catch (err) {
+    console.error(err);
+    throw err;
+  } finally {
+    if (conn) await conn.end(); 
+  }
+}
+
+
+async function customSelectSqlQuery2(sql, params = [],fetchAll =true) {
+  let conn;
+  try {
+    conn = await connect();
+    const [rows] = await conn.execute(sql,params,);
     return fetchAll ? rows : rows[0] || null;
   } catch (err) {
     console.error(err);
@@ -375,4 +390,5 @@ module.exports = {
   countRows,
   selectDataInRanges,
   customSelectSqlQuery,
+  customSelectSqlQuery2
 };

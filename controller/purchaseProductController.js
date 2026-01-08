@@ -2,6 +2,7 @@ const {
    insertData,
    batchInsertData,
    customSelectSqlQuery,
+   customSelectSqlQuery2,
    updateData, 
    deleteData,selectOneData,selectData} = require("../models/MasterModel");
 const dayjs = require("dayjs");
@@ -195,7 +196,7 @@ createPurchase = async (req, res) => {
       unit_rate: p.unit_rate,
       discount_rate: p.discount_rate || 0,
       discount_amount: p.discount_amount || 0,
-      sgst_rate: p.sgst_rate || 0,
+      sgst_rate: p.sgst_rate || 0, 
       cgst_rate: p.cgst_rate || 0,
       igst_rate: p.igst_rate || 0,
       sgst_amt: p.sgst_amt || 0,
@@ -1275,6 +1276,759 @@ deletePurchase = async (req, res) => {
     });
   }
 };
+
+////////////////////////////
+
+
+// getStockMonthwise = async (req, res) => {
+//     try {
+//       const { project_id, site_id, store_id, product_type_id, fromDate, toDate } = req.body;
+
+//       // Validation
+//       if (!project_id || !fromDate || !toDate) {
+//         return res.status(400).json({
+//           success: false,
+//           message: "project_id, fromDate, and toDate are required",
+//         });
+//       }
+
+//       // Build WHERE clause dynamically
+//       let whereConditions = [`p.project_id = ${project_id}`];
+      
+//       if (site_id) {
+//         whereConditions.push(`p.site_id = ${site_id}`);
+//       }
+      
+//       if (store_id) {
+//         whereConditions.push(`p.stor_id = ${store_id}`);
+//       }
+      
+//       if (product_type_id) {
+//         whereConditions.push(`prod.product_type_id = ${product_type_id}`);
+//       }
+      
+//       whereConditions.push(`DATE(pp.created_at) BETWEEN '${fromDate}' AND '${toDate}'`);
+
+//       const whereClause = whereConditions.join(' AND ');
+
+//       // Main query with complete product details from md_product (WITHOUT md_uom)
+//       const sql = `
+//         SELECT
+//           DATE_FORMAT(pp.created_at, '%Y-%m') AS month_year,
+//           YEAR(pp.created_at) AS year,
+//           MONTH(pp.created_at) AS month,
+//           MONTHNAME(pp.created_at) AS month_name,
+          
+//           -- Project Details
+//           p.project_id,
+//           pr.project_name,
+          
+//           -- Site Details (optional)
+//           ${site_id ? 'p.site_id,' : 'NULL AS site_id,'}
+//           ${site_id ? 'ps.project_site_name,' : 'NULL AS project_site_name,'}
+          
+//           -- Store Details (optional)
+//           ${store_id ? 'p.stor_id AS store_id,' : 'NULL AS store_id,'}
+//           ${store_id ? 'st.store_name,' : 'NULL AS store_name,'}
+          
+//           -- Product Type Details
+//           pt.product_type_id,
+//           pt.product_type_name,
+          
+//           -- Complete Product Details from md_product
+//           prod.product_id,
+//           prod.product_name,
+//           prod.model_no,
+//           prod.unit_id,
+//           prod.hsn_code,
+//           prod.qty AS product_master_qty,
+//           prod.manufacturer_name,
+//           prod.product_image,
+          
+//           -- Unit Details
+//           u.unit_name,
+          
+//           -- Purchase Aggregations
+//           COUNT(DISTINCT pp.purchase_id) AS total_purchases,
+//           SUM(pp.product_qty) AS total_product_qty,
+//           SUM(pp.invoice_qty) AS total_invoice_qty,
+//           MAX(pp.invoice_qty) AS max_stock_qty,
+//           MIN(pp.invoice_qty) AS min_stock_qty,
+          
+//           -- Pricing Metrics
+//           AVG(pp.unit_rate) AS avg_unit_rate,
+//           MIN(pp.unit_rate) AS min_unit_rate,
+//           MAX(pp.unit_rate) AS max_unit_rate,
+          
+//           -- Financial Aggregations
+//           SUM(pp.discount_amount) AS total_discount,
+//           SUM(pp.sgst_amt) AS total_sgst,
+//           SUM(pp.cgst_amt) AS total_cgst,
+//           SUM(pp.igst_amt) AS total_igst,
+//           SUM(pp.total_amount) AS total_amount,
+          
+//           -- Date Information
+//           MIN(pp.created_at) AS first_purchase_date,
+//           MAX(pp.created_at) AS last_purchase_date
+          
+//         FROM td_purchase_product pp
+        
+//         INNER JOIN td_purchase p 
+//           ON pp.purchase_id = p.purchase_id
+          
+//         INNER JOIN md_product prod 
+//           ON pp.product_id = prod.product_id
+          
+//         INNER JOIN md_product_type pt 
+//           ON prod.product_type_id = pt.product_type_id
+          
+//         INNER JOIN md_project pr 
+//           ON p.project_id = pr.project_id
+          
+//         LEFT JOIN md_unit u
+//           ON prod.unit_id = u.unit_id
+          
+//         ${site_id ? 'INNER JOIN md_project_site ps ON p.site_id = ps.project_site_id' : ''}
+        
+//         ${store_id ? 'INNER JOIN md_store st ON p.stor_id = st.store_id' : ''}
+        
+//         WHERE ${whereClause}
+        
+//         GROUP BY 
+//           YEAR(pp.created_at),
+//           MONTH(pp.created_at),
+//           pt.product_type_id,
+//           prod.product_id,
+//           p.project_id
+//           ${site_id ? ', p.site_id' : ''}
+//           ${store_id ? ', p.stor_id' : ''}
+          
+//         ORDER BY 
+//           year DESC,
+//           month DESC,
+//           pt.product_type_name ASC,
+//           prod.product_name ASC
+//       `;
+
+//       const results = await customSelectSqlQuery(sql);
+
+//       // Structure response by month and material type
+//       const structuredData = this.structureMonthwiseData(results);
+
+//       return res.status(200).json({
+//         success: true,
+//         message: "Month-wise stock data fetched successfully",
+//         filters: {
+//           project_id,
+//           site_id: site_id || "All Sites",
+//           store_id: store_id || "All Stores",
+//           product_type_id: product_type_id || "All Product Types",
+//           fromDate,
+//           toDate,
+//         },
+//         total_records: results.length,
+//         total_months: structuredData.length,
+//         data: structuredData,
+//       });
+
+//     } catch (error) {
+//       console.error("Error fetching month-wise stock:", error);
+//       return res.status(500).json({
+//         success: false,
+//         message: "Internal server error",
+//         error: error.message,
+//       });
+//     }
+//   };
+
+
+//   /**
+//    * Helper function to structure data by month and material type
+//    */
+//   structureMonthwiseData(results) {
+//     const monthlyData = {};
+
+//     results.forEach(row => {
+//       const monthKey = row.month_year;
+      
+//       // Initialize month if not exists
+//       if (!monthlyData[monthKey]) {
+//         monthlyData[monthKey] = {
+//           month_year: row.month_year,
+//           year: row.year,
+//           month: row.month,
+//           month_name: row.month_name,
+//           project_id: row.project_id,
+//           project_name: row.project_name,
+//           site_id: row.site_id,
+//           project_site_name: row.project_site_name,
+//           store_id: row.store_id,
+//           store_name: row.store_name,
+//           material_types: {},
+//           month_summary: {
+//             total_amount: 0,
+//             total_qty: 0,
+//             total_purchases: 0,
+//             unique_products: 0,
+//           }
+//         };
+//       }
+
+//       const materialTypeKey = row.product_type_id;
+      
+//       // Initialize material type if not exists
+//       if (!monthlyData[monthKey].material_types[materialTypeKey]) {
+//         monthlyData[monthKey].material_types[materialTypeKey] = {
+//           product_type_id: row.product_type_id,
+//           product_type_name: row.product_type_name,
+//           products: [],
+//           material_summary: {
+//             total_amount: 0,
+//             total_qty: 0,
+//             max_stock: 0,
+//             product_count: 0,
+//           }
+//         };
+//       }
+
+//       // Build product data with all details from md_product (without uom)
+//       const productData = {
+//         // Product Master Details
+//         product_id: row.product_id,
+//         product_name: row.product_name,
+//         model_no: row.model_no,
+//         hsn_code: row.hsn_code,
+//         manufacturer_name: row.manufacturer_name,
+//         product_image: row.product_image,
+//         product_master_qty: row.product_master_qty,
+        
+//         // Unit Details
+//         unit_id: row.unit_id,
+//         unit_name: row.unit_name,
+        
+//         // Purchase Statistics
+//         total_purchases: row.total_purchases,
+//         total_product_qty: row.total_product_qty,
+//         total_invoice_qty: row.total_invoice_qty,
+//         max_stock_qty: row.max_stock_qty,
+//         min_stock_qty: row.min_stock_qty,
+        
+//         // Pricing
+//         avg_unit_rate: parseFloat(row.avg_unit_rate || 0).toFixed(2),
+//         min_unit_rate: parseFloat(row.min_unit_rate || 0).toFixed(2),
+//         max_unit_rate: parseFloat(row.max_unit_rate || 0).toFixed(2),
+        
+//         // Financial Details
+//         total_discount: parseFloat(row.total_discount || 0).toFixed(2),
+//         total_sgst: parseFloat(row.total_sgst || 0).toFixed(2),
+//         total_cgst: parseFloat(row.total_cgst || 0).toFixed(2),
+//         total_igst: parseFloat(row.total_igst || 0).toFixed(2),
+//         total_amount: parseFloat(row.total_amount || 0).toFixed(2),
+        
+//         // Date Range
+//         first_purchase_date: row.first_purchase_date,
+//         last_purchase_date: row.last_purchase_date,
+//       };
+
+//       // Add product to material type
+//       monthlyData[monthKey].material_types[materialTypeKey].products.push(productData);
+      
+//       // Update material type summary
+//       const materialSummary = monthlyData[monthKey].material_types[materialTypeKey].material_summary;
+//       materialSummary.total_amount += parseFloat(row.total_amount || 0);
+//       materialSummary.total_qty += parseInt(row.total_invoice_qty || 0);
+//       materialSummary.max_stock = Math.max(materialSummary.max_stock, parseInt(row.max_stock_qty || 0));
+//       materialSummary.product_count += 1;
+      
+//       // Update month summary
+//       const monthSummary = monthlyData[monthKey].month_summary;
+//       monthSummary.total_amount += parseFloat(row.total_amount || 0);
+//       monthSummary.total_qty += parseInt(row.total_invoice_qty || 0);
+//       monthSummary.total_purchases += parseInt(row.total_purchases || 0);
+//       monthSummary.unique_products += 1;
+//     });
+
+//     // Convert to array and format
+//     return Object.values(monthlyData).map(month => ({
+//       ...month,
+//       material_types: Object.values(month.material_types).map(mt => ({
+//         ...mt,
+//         material_summary: {
+//           ...mt.material_summary,
+//           total_amount: parseFloat(mt.material_summary.total_amount).toFixed(2),
+//         }
+//       })),
+//       month_summary: {
+//         ...month.month_summary,
+//         total_amount: parseFloat(month.month_summary.total_amount).toFixed(2),
+//       }
+//     }));
+//   }
+
+
+/////////////////////////////////////////////////
+
+
+
+
+
+/**
+ * Get Stock Month-wise - SIMPLIFIED for Frontend
+ */
+getStockMonthwise = async (req, res) => {
+  try {
+    const { project_id, site_id, store_id, product_type_id, fromDate, toDate } = req.body;
+
+    if (!project_id || !fromDate || !toDate) {
+      return res.status(400).json({
+        success: false,
+        message: "project_id, fromDate, and toDate are required",
+      });
+    }
+
+    const conditions = ['p.project_id = ?'];
+    const params = [project_id];
+    
+    if (site_id) {
+      conditions.push('p.site_id = ?');
+      params.push(site_id);
+    }
+    
+    if (store_id) {
+      conditions.push('p.stor_id = ?');
+      params.push(store_id);
+    }
+    
+    if (product_type_id) {
+      conditions.push('prod.product_type_id = ?');
+      params.push(product_type_id);
+    }
+    
+    conditions.push('DATE(pp.created_at) BETWEEN ? AND ?');
+    params.push(fromDate, toDate);
+
+    const whereClause = conditions.join(' AND ');
+
+    const sql = `
+      SELECT
+        DATE_FORMAT(pp.created_at, '%Y-%m') AS month_year,
+        YEAR(pp.created_at) AS year,
+        MONTH(pp.created_at) AS month,
+        MONTHNAME(pp.created_at) AS month_name,
+        
+        p.project_id,
+        pr.project_name,
+        p.site_id,
+        ps.project_site_name,
+        p.stor_id AS store_id,
+        st.store_name,
+        
+        pt.product_type_id,
+        pt.product_type_name,
+        
+        prod.product_id,
+        prod.product_name,
+        prod.model_no,
+        prod.unit_id,
+        prod.hsn_code,
+        prod.manufacturer_name,
+        prod.product_image,
+        
+        u.unit_name,
+        
+        SUM(pp.invoice_qty) AS total_qty,
+        SUM(pp.total_amount) AS total_amount
+        
+      FROM td_purchase_product pp
+      INNER JOIN td_purchase p ON pp.purchase_id = p.purchase_id
+      INNER JOIN md_product prod ON pp.product_id = prod.product_id
+      INNER JOIN md_product_type pt ON prod.product_type_id = pt.product_type_id
+      INNER JOIN md_project pr ON p.project_id = pr.project_id
+      LEFT JOIN md_unit u ON prod.unit_id = u.unit_id
+      LEFT JOIN md_project_site ps ON p.site_id = ps.project_site_id
+      LEFT JOIN md_store st ON p.stor_id = st.store_id
+
+      WHERE ${whereClause}
+
+      GROUP BY 
+        year, month, pt.product_type_id, prod.product_id, 
+        p.project_id, p.site_id, p.stor_id
+        
+      ORDER BY year DESC, month DESC, pt.product_type_name ASC, prod.product_name ASC
+    `;
+
+    const results = await customSelectSqlQuery2(sql, params);
+    const structuredData = this.structureSimplifiedData(results);
+
+    return res.status(200).json({
+      success: true,
+      message: "Month-wise stock data fetched successfully",
+      report_period: `${fromDate} to ${toDate}`,
+      total_records: results.length,
+      data: structuredData,
+    });
+
+  } catch (error) {
+    console.error("Stock monthwise error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch stock data. Please try again later.",
+    });
+  }
+};
+
+/**
+ * Structure data - SIMPLE flat structure
+ */
+structureSimplifiedData(results) {
+  const monthGroups = {};
+
+  results.forEach(row => {
+    const monthKey = row.month_year;
+    
+    // Initialize month if doesn't exist
+    if (!monthGroups[monthKey]) {
+      monthGroups[monthKey] = {
+        month: row.month_name,
+        month_year: row.month_year,
+        year: row.year,
+        project_name: row.project_name,
+        site_name: row.project_site_name,
+        store_name: row.store_name,
+        products: [],
+        totals: {
+          total_amount: 0,
+          total_qty: 0
+        }
+      };
+    }
+
+    // Add product
+    monthGroups[monthKey].products.push({
+      product_id: row.product_id,
+      product_name: row.product_name,
+      product_type: row.product_type_name,
+      model_no: row.model_no,
+      hsn_code: row.hsn_code,
+      manufacturer: row.manufacturer_name,
+      image: row.product_image,
+      unit: row.unit_name,
+      qty: parseFloat(row.total_qty || 0),
+      amount: parseFloat(row.total_amount || 0).toFixed(2)
+    });
+
+    // Update totals
+    monthGroups[monthKey].totals.total_amount += parseFloat(row.total_amount || 0);
+    monthGroups[monthKey].totals.total_qty += parseFloat(row.total_qty || 0);
+  });
+
+  // Convert to array and format totals
+  return Object.values(monthGroups).map(month => ({
+    ...month,
+    totals: {
+      total_amount: parseFloat(month.totals.total_amount).toFixed(2),
+      total_qty: parseFloat(month.totals.total_qty).toFixed(2)
+    }
+  }));
+}
+
+
+  
+ 
+/**
+ * Get Purchase Details Month-wise - Complete Financial Analysis with Date Range
+ * Shows all purchase details including taxes, discounts, rates, etc.
+ */
+getPurchaseDetailsMonthwise = async (req, res) => {
+  try {
+    const { project_id, site_id, store_id, product_type_id, fromDate, toDate } = req.body;
+
+    if (!project_id || !fromDate || !toDate) {
+      return res.status(400).json({
+        success: false,
+        message: "project_id, fromDate, and toDate are required",
+      });
+    }
+
+    const conditions = ['p.project_id = ?'];
+    const params = [project_id];
+    
+    if (site_id) {
+      conditions.push('p.site_id = ?');
+      params.push(site_id);
+    }
+    
+    if (store_id) {
+      conditions.push('p.stor_id = ?');
+      params.push(store_id);
+    }
+    
+    if (product_type_id) {
+      conditions.push('prod.product_type_id = ?');
+      params.push(product_type_id);
+    }
+    
+    conditions.push('DATE(pp.created_at) BETWEEN ? AND ?');
+    params.push(fromDate, toDate);
+
+    const whereClause = conditions.join(' AND ');
+
+    const sql = `
+      SELECT
+        DATE_FORMAT(pp.created_at, '%Y-%m') AS month_year,
+        YEAR(pp.created_at) AS year,
+        MONTH(pp.created_at) AS month,
+        MONTHNAME(pp.created_at) AS month_name,
+        
+        p.project_id,
+        pr.project_name,
+        p.site_id,
+        ps.project_site_name,
+        p.stor_id AS store_id,
+        st.store_name,
+        
+        pt.product_type_id,
+        pt.product_type_name,
+        
+        prod.product_id,
+        prod.product_name,
+        prod.model_no,
+        prod.unit_id,
+        prod.hsn_code,
+        prod.manufacturer_name,
+        prod.product_image,
+        
+        u.unit_name,
+        
+        -- Purchase Statistics
+        COUNT(DISTINCT pp.purchase_id) AS total_purchases,
+        SUM(pp.product_qty) AS total_product_qty,
+        SUM(pp.invoice_qty) AS total_invoice_qty,
+        
+        -- Pricing Details
+        AVG(pp.unit_rate) AS avg_unit_rate,
+        MIN(pp.unit_rate) AS min_unit_rate,
+        MAX(pp.unit_rate) AS max_unit_rate,
+        
+        -- Financial Breakdown
+        SUM(pp.discount_amount) AS total_discount,
+        SUM(pp.sgst_amt) AS total_sgst,
+        SUM(pp.cgst_amt) AS total_cgst,
+        SUM(pp.igst_amt) AS total_igst,
+        SUM(pp.total_amount) AS total_amount,
+        
+        -- Date Range
+        MIN(pp.created_at) AS first_purchase_date,
+        MAX(pp.created_at) AS last_purchase_date,
+        MIN(DATE(pp.created_at)) AS month_first_date,
+        MAX(DATE(pp.created_at)) AS month_last_date
+        
+      FROM td_purchase_product pp
+      INNER JOIN td_purchase p ON pp.purchase_id = p.purchase_id
+      INNER JOIN md_product prod ON pp.product_id = prod.product_id
+      INNER JOIN md_product_type pt ON prod.product_type_id = pt.product_type_id
+      INNER JOIN md_project pr ON p.project_id = pr.project_id
+      LEFT JOIN md_unit u ON prod.unit_id = u.unit_id
+      LEFT JOIN md_project_site ps ON p.site_id = ps.project_site_id
+      LEFT JOIN md_store st ON p.stor_id = st.store_id
+      
+      WHERE ${whereClause}
+      
+      GROUP BY 
+        year, month, pt.product_type_id, prod.product_id, 
+        p.project_id, p.site_id, p.stor_id
+        
+      ORDER BY year DESC, month DESC, pt.product_type_name ASC, prod.product_name ASC
+    `;
+
+    const results = await customSelectSqlQuery2(sql, params);
+    const structuredData = this.structureDetailedPurchaseData(results, fromDate, toDate);
+
+    // Calculate total days in report
+    const from = new Date(fromDate);
+    const to = new Date(toDate);
+    const totalDays = Math.ceil((to - from) / (1000 * 60 * 60 * 24)) + 1;
+
+    return res.status(200).json({
+      success: true,
+      message: "Detailed purchase data fetched successfully",
+      report_info: {
+        report_type: "Monthly Purchase Details Report",
+        report_period: `${fromDate} to ${toDate}`,
+        date_range: {
+          from: fromDate,
+          to: toDate
+        },
+        generated_at: new Date().toISOString(),
+        total_days: totalDays
+      },
+      filters: {
+        project_id,
+        site_id: site_id || null,
+        store_id: store_id || null,
+        product_type_id: product_type_id || null,
+        fromDate,
+        toDate,
+      },
+      total_records: results.length,
+      total_months: structuredData.length,
+      data: structuredData,
+    });
+
+  } catch (error) {
+    console.error("Purchase details monthwise error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch purchase details. Please try again later.",
+    });
+  }
+};
+
+/**
+ * Structure detailed purchase data with all financial information and date ranges
+ */
+structureDetailedPurchaseData(results, fromDate, toDate) {
+  const grouped = results.reduce((acc, row) => {
+    const monthKey = row.month_year;
+    
+    if (!acc[monthKey]) {
+      // Calculate if this is a partial month
+      const monthFirstDay = `${row.year}-${String(row.month).padStart(2, '0')}-01`;
+      const monthLastDay = new Date(row.year, row.month, 0).toISOString().split('T')[0];
+      
+      const effectiveFrom = new Date(fromDate) > new Date(monthFirstDay) ? fromDate : monthFirstDay;
+      const effectiveTo = new Date(toDate) < new Date(monthLastDay) ? toDate : monthLastDay;
+      
+      const isPartialMonth = effectiveFrom !== monthFirstDay || effectiveTo !== monthLastDay;
+      
+      acc[monthKey] = {
+        month_year: row.month_year,
+        year: row.year,
+        month: row.month,
+        month_name: row.month_name,
+        date_range_in_month: {
+          from: effectiveFrom,
+          to: effectiveTo
+        },
+        is_partial_month: isPartialMonth,
+        project_id: row.project_id,
+        project_name: row.project_name,
+        site_id: row.site_id,
+        project_site_name: row.project_site_name,
+        store_id: row.store_id,
+        store_name: row.store_name,
+        material_types: {},
+        month_summary: {
+          total_amount: 0,
+          total_qty: 0,
+          total_purchases: 0,
+          total_discount: 0,
+          total_sgst: 0,
+          total_cgst: 0,
+          total_igst: 0
+        }
+      };
+    }
+
+    const materialKey = row.product_type_id;
+    
+    if (!acc[monthKey].material_types[materialKey]) {
+      acc[monthKey].material_types[materialKey] = {
+        product_type_id: row.product_type_id,
+        product_type_name: row.product_type_name,
+        products: [],
+        material_summary: {
+          total_amount: 0,
+          total_qty: 0,
+          total_purchases: 0,
+          total_discount: 0,
+          total_taxes: 0
+        }
+      };
+    }
+
+    // Complete product purchase details
+    const productData = {
+      product_id: row.product_id,
+      product_name: row.product_name,
+      model_no: row.model_no,
+      hsn_code: row.hsn_code,
+      manufacturer_name: row.manufacturer_name,
+      product_image: row.product_image,
+      unit_id: row.unit_id,
+      unit_name: row.unit_name,
+      
+      // Purchase Statistics
+      total_purchases: row.total_purchases,
+      total_product_qty: parseFloat(row.total_product_qty || 0),
+      total_invoice_qty: parseFloat(row.total_invoice_qty || 0),
+      
+      // Pricing Analysis
+      avg_unit_rate: parseFloat(row.avg_unit_rate || 0).toFixed(2),
+      min_unit_rate: parseFloat(row.min_unit_rate || 0).toFixed(2),
+      max_unit_rate: parseFloat(row.max_unit_rate || 0).toFixed(2),
+      
+      // Financial Breakdown
+      total_discount: parseFloat(row.total_discount || 0).toFixed(2),
+      total_sgst: parseFloat(row.total_sgst || 0).toFixed(2),
+      total_cgst: parseFloat(row.total_cgst || 0).toFixed(2),
+      total_igst: parseFloat(row.total_igst || 0).toFixed(2),
+      total_amount: parseFloat(row.total_amount || 0).toFixed(2),
+      
+      // Date Range
+      first_purchase_date: row.first_purchase_date,
+      last_purchase_date: row.last_purchase_date
+    };
+
+    acc[monthKey].material_types[materialKey].products.push(productData);
+    
+    // Update material summary
+    const amount = parseFloat(row.total_amount || 0);
+    const qty = parseFloat(row.total_invoice_qty || 0);
+    const discount = parseFloat(row.total_discount || 0);
+    const taxes = parseFloat(row.total_sgst || 0) + parseFloat(row.total_cgst || 0) + parseFloat(row.total_igst || 0);
+    
+    acc[monthKey].material_types[materialKey].material_summary.total_amount += amount;
+    acc[monthKey].material_types[materialKey].material_summary.total_qty += qty;
+    acc[monthKey].material_types[materialKey].material_summary.total_purchases += parseInt(row.total_purchases || 0);
+    acc[monthKey].material_types[materialKey].material_summary.total_discount += discount;
+    acc[monthKey].material_types[materialKey].material_summary.total_taxes += taxes;
+    
+    // Update month summary
+    acc[monthKey].month_summary.total_amount += amount;
+    acc[monthKey].month_summary.total_qty += qty;
+    acc[monthKey].month_summary.total_purchases += parseInt(row.total_purchases || 0);
+    acc[monthKey].month_summary.total_discount += discount;
+    acc[monthKey].month_summary.total_sgst += parseFloat(row.total_sgst || 0);
+    acc[monthKey].month_summary.total_cgst += parseFloat(row.total_cgst || 0);
+    acc[monthKey].month_summary.total_igst += parseFloat(row.total_igst || 0);
+
+    return acc;
+  }, {});
+
+  return Object.values(grouped).map(month => ({
+    ...month,
+    material_types: Object.values(month.material_types).map(mt => ({
+      ...mt,
+      material_summary: {
+        total_amount: parseFloat(mt.material_summary.total_amount).toFixed(2),
+        total_qty: parseFloat(mt.material_summary.total_qty).toFixed(2),
+        total_purchases: mt.material_summary.total_purchases,
+        total_discount: parseFloat(mt.material_summary.total_discount).toFixed(2),
+        total_taxes: parseFloat(mt.material_summary.total_taxes).toFixed(2)
+      }
+    })),
+    month_summary: {
+      total_amount: parseFloat(month.month_summary.total_amount).toFixed(2),
+      total_qty: parseFloat(month.month_summary.total_qty).toFixed(2),
+      total_purchases: month.month_summary.total_purchases,
+      total_discount: parseFloat(month.month_summary.total_discount).toFixed(2),
+      total_sgst: parseFloat(month.month_summary.total_sgst).toFixed(2),
+      total_cgst: parseFloat(month.month_summary.total_cgst).toFixed(2),
+      total_igst: parseFloat(month.month_summary.total_igst).toFixed(2)
+    }
+  }));
+}
 
 
 }

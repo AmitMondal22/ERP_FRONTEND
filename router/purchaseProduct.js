@@ -22,4 +22,10 @@ router.get("/api/getallthepurchasedata",authcheck,purchaseProductController.getA
 router.delete("/api/purchase/:id", authcheck, purchaseProductController.deletePurchase);
 
 
+router.post("/api/stock/monthwise",authcheck, purchaseProductController.getStockMonthwise);
+
+router.post("/api/purchasedetails/monthwise",authcheck, purchaseProductController.getPurchaseDetailsMonthwise);
+
+
+//getPurchaseDetailsMonthwise
 module.exports = router;

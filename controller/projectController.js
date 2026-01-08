@@ -119,89 +119,134 @@ class ProjectController {
 
 //////////////////////
 
-
-  getPurchaseByProjectSiteAndDate = async (req, res) => {
+getPurchaseByProjectSiteAndDate = async (req, res) => {
   try {
     const { project_id, site_id, fromDate, toDate } = req.body;
 
+    // Validation
     if (!project_id || !site_id || !fromDate || !toDate) {
       return res.status(400).json({
         success: false,
         message: "project_id, site_id, fromDate and toDate are required",
       });
     }
-const sql = `
-  SELECT
-    p.purchase_id,
-    p.invoice_no,
-    DATE(p.invoice_date) AS invoice_date,
-    DATE(p.delivery_date) AS delivery_date,
-    p.invoice_image,
-    p.transport_insurance,
-    p.remarks,
 
-    p.project_id,
-    pr.project_name,
-    p.site_id,
-    ps.project_site_name,
+    // Strict validation to prevent SQL injection
+    const parsedProjectId = Number(project_id);
+    const parsedSiteId = Number(site_id);
+    
+    if (isNaN(parsedProjectId) || parsedProjectId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid project_id",
+      });
+    }
 
-    p.vendor_id,
-    v.vendor_name,
+    if (isNaN(parsedSiteId) || parsedSiteId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid site_id",
+      });
+    }
 
-    p.stor_id,
-    s.store_name,
+    // Strict date validation (YYYY-MM-DD format only)
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(fromDate) || !dateRegex.test(toDate)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid date format. Use YYYY-MM-DD",
+      });
+    }
 
-    p.purchase_order_id,
-    po.po_no,
-    po.total_amount,          -- ✅ ADDED HERE
+    const sql = `
+      SELECT
+        p.purchase_id,
+        p.invoice_no,
+        DATE(p.invoice_date) AS invoice_date,
+        DATE(p.delivery_date) AS delivery_date,
+        p.invoice_image,
+        p.transport_insurance,
+        p.remarks,
 
-    pop.purchase_order_product_id,
-    pop.product_id,
-    prod.product_name,
-    prod.product_type_id,
+        p.project_id,
+        pr.project_name,
 
-    pop.quantity,
-    pop.unit_price,
+        p.site_id,
+        ps.project_site_name,
 
-    DATE(pop.created_at) AS purchase_date,
-    pop.created_at,
-    pop.updated_at
+        p.vendor_id,
+        v.vendor_name,
+        v.vendor_mobile,
+        v.vendor_email,
+        v.vendor_gst_in,
 
-  FROM td_purchase p
-  LEFT JOIN td_purchase_order po
-    ON p.purchase_order_id = po.purchase_order_id
+        p.stor_id,
+        s.store_name,
 
-  LEFT JOIN td_purchase_order_product pop
-    ON po.purchase_order_id = pop.purchase_order_id
+        p.purchase_order_id,
+        po.po_no,
+        DATE(po.date) AS po_date,
+        DATE(po.delivery_date) AS po_delivery_date,
+        po.total_amount AS po_total_amount,
+        po.terms_and_condition,
 
-  LEFT JOIN md_product prod
-    ON pop.product_id = prod.product_id
+        pp.purchase_product_id,
+        pp.product_id,
+        prod.product_name,
+        prod.product_type_id,
 
-  LEFT JOIN md_project pr
-    ON p.project_id = pr.project_id
+        pp.product_qty,
+        pp.invoice_qty,
+        pp.unit_rate,
+        pp.discount_rate,
+        pp.discount_amount,
+        pp.sgst_rate,
+        pp.cgst_rate,
+        pp.igst_rate,
+        pp.sgst_amt,
+        pp.cgst_amt,
+        pp.igst_amt,
+        pp.total_amount AS product_total_amount,
+        pp.return_id,
+        DATE(pp.make_date) AS make_date,
+        pp.ownership_status,
 
-  LEFT JOIN md_project_site ps
-    ON p.site_id = ps.project_site_id
+        DATE(pp.created_at) AS purchase_date,
+        pp.created_at,
+        pp.updated_at
 
-  LEFT JOIN md_vendor v
-    ON p.vendor_id = v.vendor_id
+      FROM td_purchase p
 
-  LEFT JOIN md_store s
-    ON p.stor_id = s.store_id
+      LEFT JOIN md_project pr
+        ON p.project_id = pr.project_id
 
-  WHERE
-    p.project_id = ${Number(project_id)}
-    AND p.site_id = ${Number(site_id)}
-    AND DATE(p.invoice_date)
-      BETWEEN '${fromDate}' AND '${toDate}'
+      LEFT JOIN md_project_site ps
+        ON p.site_id = ps.project_site_id
 
-  ORDER BY p.invoice_date DESC
-`;
+      LEFT JOIN md_vendor v
+        ON p.vendor_id = v.vendor_id
 
+      LEFT JOIN md_store s
+        ON p.stor_id = s.store_id
 
+      LEFT JOIN td_purchase_order po
+        ON p.purchase_order_id = po.purchase_order_id
 
-    const params = [project_id, site_id, fromDate, toDate];
-    const results = await customSelectSqlQuery(sql, params);
+      LEFT JOIN td_purchase_product pp
+        ON p.purchase_id = pp.purchase_id
+
+      LEFT JOIN md_product prod
+        ON pp.product_id = prod.product_id
+
+      WHERE
+        p.project_id = ${parsedProjectId}
+        AND p.site_id = ${parsedSiteId}
+        AND DATE(p.invoice_date) BETWEEN '${fromDate}' AND '${toDate}'
+
+      ORDER BY p.invoice_date DESC, p.purchase_id DESC
+    `;
+
+    const results = await customSelectSqlQuery(sql);
 
     return res.status(200).json({
       success: true,
@@ -218,6 +263,7 @@ const sql = `
     });
   }
 };
+
 
 
 
