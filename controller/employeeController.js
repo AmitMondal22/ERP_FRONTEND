@@ -12,122 +12,293 @@ const {
   deleteData,
 } = require("../models/MasterModel");
 
+const { sendEmployeeCredentials } = require("../utils/mailer");
+
+
+const generateEmployeePassword = (firstName, employeeDob) => {
+  if (!firstName || !employeeDob) {
+    throw new Error("First name and employee DOB are required");
+  }
+
+  // Capitalize first name
+  const formattedName =
+    firstName.charAt(0).toUpperCase() +
+    firstName.slice(1).toLowerCase();
+
+  let year;
+
+  // DD/MM/YYYY
+  if (employeeDob.includes("/")) {
+    year = employeeDob.split("/")[2];
+  }
+  // YYYY-MM-DD
+  else if (employeeDob.includes("-")) {
+    year = employeeDob.split("-")[0];
+  } 
+  // Fallback
+  else {
+    const date = new Date(employeeDob);
+    if (isNaN(date)) {
+      throw new Error("Invalid employee_dob format");
+    }
+    year = date.getFullYear();
+  }
+
+  if (!year || year.length !== 4) {
+    throw new Error("Invalid year extracted from employee_dob");
+  }
+
+  return `${formattedName}@${year}`;
+};
+
+
 class EmployeeController {
 
 
-  generateRandomPassword = (length = 8) => {
-    return crypto.randomInt(Math.pow(10, length - 1), Math.pow(10, length)).toString();
-  };
+  // generateRandomPassword = (length = 8) => {
+  //   return crypto.randomInt(Math.pow(10, length - 1), Math.pow(10, length)).toString();
+  // };
 
-  // Add 
-  addEmployee = async (req, res) => {
-    try {
-      const {
-        first_name,
-        middle_name,
-        last_name,
-        email,
-        phone,
-        hire_date,
-        department,
-        job_title,
-        manager_id,
-        base_salary,
-        allowance,
-        status,
-        em_id,
-        employee_dob,
-        employee_address,
-        city_id,
-        employee_designation_id,
-        department_id,
-        date_of_joining,
-        role,
-      } = req.body;
 
-      if (!first_name || !last_name || !email || !phone) {
-        return res.status(400).json({
-          success: false,
-          message: "Required fields missing: first_name, last_name, email, phone",
-        });
-      }
+  // // Add 
+  // addEmployee = async (req, res) => {
+  //   try {
+  //     const {
+  //       first_name,
+  //       middle_name,
+  //       last_name,
+  //       email,
+  //       phone,
+  //       hire_date,
+  //       department,
+  //       job_title,
+  //       manager_id,
+  //       base_salary,
+  //       allowance,
+  //       status,
+  //       em_id,
+  //       employee_dob,
+  //       employee_address,
+  //       city_id,
+  //       employee_designation_id,
+  //       department_id,
+  //       date_of_joining,
+  //       role,
+  //     } = req.body;
 
-      const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+  //     if (!first_name || !last_name || !email || !phone) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "Required fields missing: first_name, last_name, email, phone",
+  //       });
+  //     }
 
-      // Full name
-      const full_name = [first_name, middle_name, last_name].filter(Boolean).join(" ");
+  //     const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+    
+  //     // Full name
+  //     const full_name = [first_name, middle_name, last_name].filter(Boolean).join(" ");
 
-      // Generate and hash password
-      const plainPassword = this.generateRandomPassword(8);
-      const hashedPassword = await bcrypt.hash(plainPassword, 10);
+  //     // Generate and hash password
+  //     const plainPassword = this.generateRandomPassword(8);
+  //     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
-      // Insert into users table
-      const userData = {
-        name: full_name,
-        email,
-        mobile_no: phone,
-        password: hashedPassword,
-        otp_status: false,
-        user_status: role == "wk" ? false : true, // activate by default?
-        role,
-        create_by: req.user?.id || null,
-        created_at,
-      };
+  //     // Insert into users table
+  //     const userData = {
+  //       name: full_name,
+  //       email,
+  //       mobile_no: phone,
+  //       password: hashedPassword,
+  //       otp_status: false,
+  //       user_status: role == "wk" ? false : true, // activate by default?
+  //       role,
+  //       create_by: req.user?.id || null,
+  //       created_at,
+  //     };
 
-      const user_id = await insertData("users", userData);
-      if (!user_id) throw new Error("Failed to create user record");
+  //     const user_id = await insertData("users", userData);
+  //     if (!user_id) throw new Error("Failed to create user record");
 
-      // Insert into employees table
-      const employeeData = {
-        user_id,
-        first_name,
-        middle_name,
-        last_name,
-        email,
-        phone,
-        hire_date,
-        department,
-        job_title,
-        manager_id,
-        base_salary,
-        allowance,
-        em_id,
-        employee_dob,
-        employee_address,
-        city_id,
-        employee_designation_id,
-        department_id,
-        date_of_joining,
-        status,
-        created_at,
-      };
+  //     // Insert into employees table
+  //     const employeeData = {
+  //       user_id,
+  //       first_name,
+  //       middle_name,
+  //       last_name,
+  //       email,
+  //       phone,
+  //       hire_date,
+  //       department,
+  //       job_title,
+  //       manager_id,
+  //       base_salary,
+  //       allowance,
+  //       em_id,
+  //       employee_dob,
+  //       employee_address,
+  //       city_id,
+  //       employee_designation_id,
+  //       department_id,
+  //       date_of_joining,
+  //       status,
+  //       created_at,
+  //     };
 
-      const employee_id = await insertData("em_employees", employeeData);
-      if (!employee_id) throw new Error("Failed to create employee record");
+  //     const employee_id = await insertData("em_employees", employeeData);
+  //     if (!employee_id) throw new Error("Failed to create employee record");
 
-      res.status(201).json({
-        success: true,
-        message: "Employee created successfully",
-        data: {
-          employee_id,
-          user_id,
-          full_name,
-          email,
-          phone,
-          department,
-          job_title,
-          created_at,
-        }
-      });
-    } catch (error) {
-      console.error("Error in addEmployee:", error.message);
-      res.status(500).json({
+  //     res.status(201).json({
+  //       success: true,
+  //       message: "Employee created successfully",
+  //       data: {
+  //         employee_id,
+  //         user_id,
+  //         full_name,
+  //         email,
+  //         phone,
+  //         department,
+  //         job_title,
+  //         created_at,
+  //       }
+  //     });
+  //   } catch (error) {
+  //     console.error("Error in addEmployee:", error.message);
+  //     res.status(500).json({
+  //       success: false,
+  //       message: "Unable to add employee",
+  //       error: error.message,
+  //     });
+  //   }
+  // };
+
+ 
+
+addEmployee = async (req, res) => {
+  try {
+    const {
+      first_name,
+      middle_name,
+      last_name,
+      email,
+      phone,
+      employee_dob,
+      hire_date,
+      department,
+      job_title,
+      manager_id,
+      base_salary,
+      allowance,
+      em_id,
+      employee_address,
+      city_id,
+      employee_designation_id,
+      department_id,
+      date_of_joining,
+      status,
+      role,
+    } = req.body;
+
+    // Required fields
+    if (!first_name || !last_name || !employee_dob) {
+      return res.status(400).json({
         success: false,
-        message: "Unable to add employee",
-        error: error.message,
+        message:
+          "Required fields missing: first_name, last_name, employee_dob",
       });
     }
-  };
+
+    const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+    // Full name
+    const full_name = [first_name, middle_name, last_name]
+      .filter(Boolean)
+      .join(" ");
+
+    // Generate password using DOB year
+    const plainPassword = generateEmployeePassword(
+      first_name,
+      employee_dob
+    );
+    const hashedPassword = await bcrypt.hash(plainPassword, 10);
+
+    // Insert into users table
+    const userData = {
+      name: full_name,
+      email: email || null,
+      mobile_no: phone || null,
+      password: hashedPassword,
+      otp: null,
+      otp_status: false,
+      user_status: role === "WK" ? false : true,
+      role,
+      create_by: req.user?.id || null,
+      created_at,
+    };
+
+    const user_id = await insertData("users", userData);
+    if (!user_id) throw new Error("Failed to create user");
+
+    // Insert into em_employees table
+    const employeeData = {
+      user_id,
+      first_name,
+      middle_name,
+      last_name,
+      email,
+      phone,
+      employee_dob,
+      hire_date,
+      department,
+      job_title,
+      manager_id,
+      base_salary,
+      allowance,
+      em_id,
+      employee_address,
+      city_id,
+      employee_designation_id,
+      department_id,
+      date_of_joining,
+      status,
+      created_at,
+    };
+
+    const employee_id = await insertData("em_employees", employeeData);
+    if (!employee_id) throw new Error("Failed to create employee");
+
+    // Send credentials via email (if email exists)
+    if (email) {
+      await sendEmployeeCredentials({
+        to: email,
+        employeeId: employee_id,
+        password: plainPassword,
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Employee created successfully",
+      data: {
+        employee_id,
+        user_id,
+        full_name,
+        email,
+        role,
+      },
+    });
+  } catch (error) {
+    console.error("Error in addEmployee:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to add employee",
+      error: error.message,
+    });
+  }
+};
+
+
+
+
+
 
 
 

@@ -252,12 +252,6 @@ async function countRows(table, condition = "") {
   }
 }
 
-
-
-
-
-
-
 // ---------- RANGE SELECT ----------
 async function selectDataInRanges(select, table, start, end, condition = "") {
   let conn;
@@ -321,28 +315,114 @@ async function customSelectSqlQuery2(sql, params = [],fetchAll =true) {
 
 
 // ---------- OPTIMIZED STOCK UPDATE (Single Query, No Loops) ----------
+
+
+
+// async function updateStockQuantities(productUpdates, projectId, siteId) {
+//   let conn;
+
+//   try {
+//     if (!Array.isArray(productUpdates) || productUpdates.length === 0) {
+//       return 0;
+//     }
+
+//     const now = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+//     // ✅ Build CASE WHEN using Atc_total
+//     const validItems = productUpdates.filter(
+//       item =>
+//         item.product_id &&
+//         item.Atc_total !== undefined &&
+//         Number(item.Atc_total) > 0
+//     );
+
+//     if (validItems.length === 0) {
+//       return 0;
+//     }
+
+//     const caseWhen = validItems
+//       .map(item => {
+//         const qty = Number(item.Atc_total);
+//         return `
+//           WHEN product_id = ${item.product_id}
+//            AND invoice_qty >= ${qty}
+//            THEN invoice_qty - ${qty}
+//         `;
+//       })
+//       .join(" ");
+
+//     const productIds = validItems
+//       .map(item => item.product_id)
+//       .join(",");
+
+//     const query = `
+//       UPDATE tx_current_stock
+//       SET
+//         invoice_qty = CASE
+//           ${caseWhen}
+//           ELSE invoice_qty
+//         END,
+//         updated_at = '${now}'
+//       WHERE project_id = ${projectId}
+//         AND site_id = ${siteId}
+//         AND product_id IN (${productIds})
+//     `;
+
+//     console.log("[STOCK UPDATE]", query);
+
+//     conn = await connect();
+//     const [result] = await conn.execute(query);
+
+//     if (result.affectedRows === 0) {
+//       throw new Error("Stock not updated (insufficient quantity or no matching rows)");
+//     }
+
+//     return result.affectedRows;
+
+//   } catch (err) {
+//     console.error("Stock update error:", err);
+//     throw err;
+//   } finally {
+//     if (conn) await conn.end();
+//   }
+// }
+
 async function updateStockQuantities(productUpdates, projectId, siteId) {
   let conn;
+
   try {
-    if (!productUpdates || productUpdates.length === 0) {
+    if (!Array.isArray(productUpdates) || productUpdates.length === 0) {
       return 0;
     }
 
     const now = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
-    // Build CASE WHEN safely
-    const caseWhen = productUpdates
-      .map(
-        item =>
-          `WHEN product_id = ${item.product_id} 
-           AND invoice_qty >= ${item.quantity_of_product}
-           THEN invoice_qty - ${item.quantity_of_product}`
-      )
-      .join(' ');
+    // ✅ Extract Act_Qty instead of Atc_total
+    const validItems = productUpdates.filter(
+      item =>
+        item.product_id &&
+        item.Act_Qty !== undefined &&
+        Number(item.Act_Qty) > 0
+    );
 
-    const productIds = productUpdates
+    if (validItems.length === 0) {
+      return 0;
+    }
+
+    const caseWhen = validItems
+      .map(item => {
+        const qty = Number(item.Act_Qty); // CHANGED HERE
+        return `
+          WHEN product_id = ${item.product_id}
+           AND invoice_qty >= ${qty}
+           THEN invoice_qty - ${qty}
+        `;
+      })
+      .join(" ");
+
+    const productIds = validItems
       .map(item => item.product_id)
-      .join(',');
+      .join(",");
 
     const query = `
       UPDATE tx_current_stock
@@ -357,14 +437,13 @@ async function updateStockQuantities(productUpdates, projectId, siteId) {
         AND product_id IN (${productIds})
     `;
 
-    console.log('[STOCK UPDATE]', query);
+    console.log("[STOCK UPDATE]", query);
 
     conn = await connect();
     const [result] = await conn.execute(query);
 
-    // Optional: validation
     if (result.affectedRows === 0) {
-      throw new Error("No matching stock found or insufficient quantity");
+      throw new Error("Stock not updated (insufficient quantity or no matching rows)");
     }
 
     return result.affectedRows;

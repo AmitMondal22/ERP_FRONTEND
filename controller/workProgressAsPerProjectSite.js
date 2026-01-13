@@ -68,7 +68,7 @@ class WorkProgressAsPerProjectSiteController {
 //       if (data[key] === undefined) data[key] = null;
 //     });
 
-//     const insertId = await insertData("tx_work_progress_as_per_project_site", data);
+//     const insertId = await insertData("tx_work_progress", data);
 
 //     return res.status(201).json({
 //       success: true,
@@ -140,7 +140,7 @@ class WorkProgressAsPerProjectSiteController {
 //     };
 
 //     // Insert main work progress record
-//     const insertId = await insertData("tx_work_progress_as_per_project_site", workProgressData);
+//     const insertId = await insertData("tx_work_progress", workProgressData);
 
 //     // If there are consumed products, insert them
 //     if (consumed_products.length > 0) {
@@ -160,7 +160,7 @@ class WorkProgressAsPerProjectSiteController {
 
 //       // Batch insert all expense rows
 //       const columns = "product_id, work_progress_site_id, quantity_of_product, created_at, updated_at";
-//       await batchInsertData("tx_expenses_of_product_as_per_project_site", columns, expenseRows);
+//       await batchInsertData("tx_site_used_items", columns, expenseRows);
 //     }
 
 //     return res.status(201).json({
@@ -243,7 +243,7 @@ class WorkProgressAsPerProjectSiteController {
 //     };
 
 
-//     const insertId = await insertData("tx_work_progress_as_per_project_site", workProgressData);
+//     const insertId = await insertData("tx_work_progress", workProgressData);
 
 
 //     if (consumed_products.length > 0) {
@@ -261,14 +261,14 @@ class WorkProgressAsPerProjectSiteController {
 //         product_id: item.product_id,
 //         work_progress_site_id: insertId,
 //         quantity_of_product: item.quantity_of_product,
-//         actual_quantity_that_is_used_in_step: item.actual_quantity_that_is_used_in_step || null,
+//         Act_Qty: item.Act_Qty || null,
 //         created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
 //         updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
 //       }));
 
 
-//       const columns = "product_id, work_progress_site_id, quantity_of_product, actual_quantity_that_is_used_in_step, created_at, updated_at";
-//       await batchInsertData("tx_expenses_of_product_as_per_project_site", columns, expenseRows);
+//       const columns = "product_id, work_progress_site_id, quantity_of_product, Act_Qty, created_at, updated_at";
+//       await batchInsertData("tx_site_used_items", columns, expenseRows);
 
 
 //       // Single fast stock update
@@ -293,13 +293,14 @@ class WorkProgressAsPerProjectSiteController {
 //       });
 //     }
 
-
 //     return res.status(500).json({
 //       success: false,
 //       message: "Unable to create work progress"
 //     });
 //   }
 // };
+
+
 
 
 createWorkProgress = async (req, res) => {
@@ -309,17 +310,18 @@ createWorkProgress = async (req, res) => {
       project_site_id,
       bom_id,
       bom_progress_id,
-      remarks, 
+      remarks,
       total_progress,
       rep_task,
       packet_qty,
       total_qty_of_material_used,
       date,
+      billing_status,
       created_by,
       consumed_products = []
     } = req.body;
 
-    // ---------------- BASIC VALIDATION ----------------
+    /* ---------------- BASIC VALIDATION ---------------- */
     if (!project_id || !project_site_id || !bom_id) {
       return res.status(400).json({
         success: false,
@@ -334,67 +336,7 @@ createWorkProgress = async (req, res) => {
       });
     }
 
-    // ---------------- BOM QUANTITY VALIDATION ----------------
-    for (const item of consumed_products) {
-      if (!item.product_id || !item.quantity_of_product || item.quantity_of_product <= 0) {
-        return res.status(400).json({
-          success: false,
-          message: "Each product must have product_id and quantity_of_product > 0"
-        });
-      }
-
-      // 1️⃣ BOM allowed qty
-      const bomQtySql = `
-        SELECT total_qty
-        FROM md_bom_item
-        WHERE bom_id = ${bom_id}
-          AND bom_progress_id = ${bom_progress_id}
-          AND product_id = ${item.product_id}
-      `;
-      const bomRow = await customSelectSqlQuery(bomQtySql, false);
-
-      if (!bomRow) {
-        return res.status(400).json({
-          success: false,
-          message: `BOM item not found for product_id ${item.product_id}`
-        });
-      }
-
-      const bomTotalQty = Number(bomRow.total_qty);
-
-      // 2️⃣ Already used qty (ALL DAYS)
-      const usedQtySql = `
-        SELECT COALESCE(SUM(ep.quantity_of_product), 0) AS used_qty
-        FROM tx_expenses_of_product_as_per_project_site ep
-        JOIN tx_work_progress_as_per_project_site w
-          ON w.work_progress_site_id = ep.work_progress_site_id
-        WHERE w.project_id = ${project_id}
-          AND w.project_site_id = ${project_site_id}
-          AND w.bom_id = ${bom_id}
-          AND w.bom_progress_id = ${bom_progress_id}
-          AND ep.product_id = ${item.product_id}
-      `;
-      const usedRow = await customSelectSqlQuery(usedQtySql, false);
-      const alreadyUsedQty = Number(usedRow.used_qty || 0);
-
-      const todayQty = Number(item.quantity_of_product);
-
-      // 3️⃣ HARD STOP IF EXCEEDED
-      if (alreadyUsedQty + todayQty > bomTotalQty) {
-        return res.status(400).json({
-          success: false,
-          message: `
-Material limit exceeded for product_id ${item.product_id}
-BOM Total Qty     : ${bomTotalQty}
-Already Used      : ${alreadyUsedQty}
-Attempted Today   : ${todayQty}
-Remaining Allowed : ${bomTotalQty - alreadyUsedQty}
-          `
-        });
-      }
-    }
-
-    // ---------------- INSERT WORK PROGRESS ----------------
+    /* ---------------- INSERT tx_work_progress ---------------- */
     const workProgressData = {
       project_id,
       project_site_id,
@@ -402,44 +344,71 @@ Remaining Allowed : ${bomTotalQty - alreadyUsedQty}
       bom_progress_id: bom_progress_id || null,
       remarks: remarks || null,
       total_progress: total_progress || 0,
-      rep_task: rep_task || null,
+      rep_task: rep_task || 0,
       packet_qty: packet_qty || 0,
       total_qty_of_material_used: total_qty_of_material_used || 0,
       date: date || dayjs().format("YYYY-MM-DD"),
+      billing_status: billing_status || "PENDING",
       created_by: created_by || null,
       created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
       updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
     };
 
-    const insertId = await insertData(
-      "tx_work_progress_as_per_project_site",
-      workProgressData
-    );
+    const insertId = await insertData("tx_work_progress", workProgressData);
 
-    // ---------------- INSERT CONSUMED PRODUCTS ----------------
+    /* ---------------- INSERT tx_site_used_items ---------------- */
     if (consumed_products.length > 0) {
-      const expenseRows = consumed_products.map(item => ({
-        product_id: item.product_id,
-        work_progress_site_id: insertId,
-        quantity_of_product: item.quantity_of_product,
-        actual_quantity_that_is_used_in_step: item.actual_quantity_that_is_used_in_step || null,
-        created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
-        updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
-      }));
 
-      const columns =
-        "product_id, work_progress_site_id, quantity_of_product, actual_quantity_that_is_used_in_step, created_at, updated_at";
+     const invalidItem = consumed_products.find(item =>
+  !item.product_id ||
+  item.Atc_total === undefined ||
+  item.Atc_total < 0
+);
 
-      await batchInsertData(
-        "tx_expenses_of_product_as_per_project_site",
-        columns,
-        expenseRows
-      );
 
-      // ---------------- STOCK UPDATE ----------------
+      if (invalidItem) {
+        return res.status(400).json({
+          success: false,
+          message: "Each consumed product must have valid product_id and quantity_of_product"
+        });
+      }
+const expenseRows = consumed_products.map(item => ({
+  expenses_of_project_site_id: item.expenses_of_project_site_id || null,
+  work_progress_site_id: insertId,
+  product_id: item.product_id,
+
+  // ✅ quantity_of_product REMOVED
+  // ✅ Atc_total is the total consumed qty (replacement)
+
+  bom_product_qty: item.bom_product_qty || 0,
+  Atc_total: item.Atc_total || 0,     // <-- MAIN VALUE
+  Act_Qty: item.Act_Qty || 0,          // per-unit / step qty
+
+  created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
+  updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
+}));
+
+
+
+      // quantity_of_product,--->Atc_total  same 
+      const columns = `
+  expenses_of_project_site_id,
+  work_progress_site_id,
+  product_id,      
+  bom_product_qty,
+  Atc_total,
+  Act_Qty,
+  created_at,
+  updated_at
+`;
+
+
+      await batchInsertData("tx_site_used_items", columns, expenseRows);
+
       await updateStockQuantities(consumed_products, project_id, project_site_id);
     }
 
+    /* ---------------- RESPONSE ---------------- */
     return res.status(201).json({
       success: true,
       message: "Work progress created successfully",
@@ -447,8 +416,7 @@ Remaining Allowed : ${bomTotalQty - alreadyUsedQty}
     });
 
   } catch (err) {
-    console.error("CREATE ERROR:", err);
-
+    console.error("CREATE WORK PROGRESS ERROR:", err);
     return res.status(500).json({
       success: false,
       message: "Unable to create work progress"
@@ -459,12 +427,322 @@ Remaining Allowed : ${bomTotalQty - alreadyUsedQty}
 
 
 
-//////////////////////////////////////////////
+
+// getMonthlyWorkReport = async (req, res) => {
+//   try {
+//     const { project_id, project_site_id, fromDate, toDate } = req.body;
+
+//     /* 1. Basic validation */
+//     if (!project_id || !fromDate || !toDate) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id, fromDate and toDate are required",
+//       });
+//     }
+
+//     if (!dayjs(fromDate).isValid() || !dayjs(toDate).isValid()) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid date format. Use YYYY-MM-DD",
+//       });
+//     }
+
+//     /* 2. Load project header info */
+//     const projectQuery = `
+//       SELECT 
+//         p.project_id,
+//         p.project_name,
+//         p.city_id,
+//         c.name AS city_name,
+//         c.state_id,
+//         s.name AS state_name,
+//         p.create_by,
+//         u.name AS created_by_name,
+//         p.created_at
+//       FROM md_project p
+//       LEFT JOIN lo_cities c ON p.city_id = c.id
+//       LEFT JOIN lo_states s ON c.state_id = s.id
+//       LEFT JOIN users u ON p.create_by = u.id
+//       WHERE p.project_id = ?
+//     `;
+
+//     const project = await customSelectSqlQuery2(projectQuery, [project_id], false);
+
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Project not found",
+//       });
+//     }
+
+//     /* 3. Load work progress rows in the given period */
+//     let workProgressQuery = `
+//       SELECT 
+//         wp.work_progress_site_id,
+//         wp.project_id,
+//         wp.project_site_id,
+//         wp.bom_id,
+//         wp.bom_progress_id,
+        
+//         wp.remarks,
+//         wp.total_progress,
+//         wp.rep_task,
+//         wp.packet_qty,
+//         wp.total_qty_of_material_used,
+//         wp.date,
+//         wp.created_by,
+//         wp.created_at,
+//         wp.updated_at,
+
+//         -- Project Site
+//         ps.project_site_name,
+//         ps.city_id AS site_city_id,
+//         sc.name AS site_city_name,
+//         sc.state_id AS site_state_id,
+//         ss.name AS site_state_name,
+
+//         -- BOM
+//         b.bom_name,
+
+//         -- BOM Progress
+//         bp.bom_progress_name,
+//         bp.sl_number AS progress_sl_number,
+
+//         -- Creator
+//         u.name AS creator_name,
+//         u.email AS creator_email,
+
+//         -- Month keys
+//         DATE_FORMAT(wp.date, '%M %Y') AS month_year,
+//         DATE_FORMAT(wp.date, '%Y-%m') AS year_month_sort
+        
+//       FROM tx_work_progress wp
+//       LEFT JOIN md_project_site ps ON wp.project_site_id = ps.project_site_id
+//       LEFT JOIN lo_cities sc ON ps.city_id = sc.id
+//       LEFT JOIN lo_states ss ON sc.state_id = ss.id
+//       LEFT JOIN md_bom b ON wp.bom_id = b.bom_id
+//       LEFT JOIN md_bom_progress bp ON wp.bom_progress_id = bp.bom_progress_id
+//       LEFT JOIN users u ON wp.created_by = u.id
+//       WHERE wp.project_id = ?
+//         AND wp.date BETWEEN ? AND ?
+//     `;
+
+//     const workParams = [project_id, fromDate, toDate];
+
+//     if (project_site_id) {
+//       workProgressQuery += ` AND wp.project_site_id = ?`;
+//       workParams.push(project_site_id);
+//     }
+
+//     workProgressQuery += ` ORDER BY wp.date DESC, wp.work_progress_site_id DESC`;
+
+//     const workRows = await customSelectSqlQuery2(workProgressQuery, workParams);
+
+//     if (!workRows || workRows.length === 0) {
+//       return res.status(200).json({
+//         success: true,
+//         message: "No work progress found for the given criteria",
+//         report_info: {
+//           project,
+//           from_date: fromDate,
+//           to_date: toDate,
+//           total_records: 0,
+//         },
+//         monthly_data: [],
+//         overall_summary: {
+//           total_months: 0,
+//           total_work_entries: 0,
+//           total_progress: 0,
+//           total_packets: 0,
+//           total_materials_used: 0,
+//           total_products_consumed: 0,
+//           unique_sites: 0,
+//           unique_boms: 0,
+//         },
+//       });
+//     }
+
+//     /* 4. Load all consumed products - FIXED QUERY */
+//     const workIds = workRows.map((wp) => wp.work_progress_site_id);
+//     const idList = workIds.join(",");
+
+//     // ✅ REMOVED md_manufacturer JOIN - assuming manufacturer info is in md_product
+//     const consumedQuery = `
+//       SELECT 
+//         ep.expenses_of_project_site_id,
+//         ep.product_id,
+//         ep.work_progress_site_id,
+//         ep.Atc_total,
+//         ep.created_at,
+
+//         p.product_name,
+//         p.model_no,
+//         p.hsn_code,
+//         p.manufacturer_name,
+
+//         pt.product_type_name,
+//         u.unit_name
+        
+//       FROM tx_site_used_items ep      --tx_site_used_items--
+//       LEFT JOIN md_product p ON ep.product_id = p.product_id
+//       LEFT JOIN md_product_type pt ON p.product_type_id = pt.product_type_id
+//       LEFT JOIN md_unit u ON p.unit_id = u.unit_id
+//       WHERE ep.work_progress_site_id IN (${idList})
+//       ORDER BY ep.work_progress_site_id, ep.product_id
+//     `;
+
+//     const consumedRows = await customSelectSqlQuery2(consumedQuery, []);
+
+//     /* 5. Build a map: work_progress_site_id -> list of products */
+//     const productsByWorkId = {};
+//     for (const row of consumedRows) {
+//       const key = row.work_progress_site_id;
+//       if (!productsByWorkId[key]) productsByWorkId[key] = [];
+
+//       productsByWorkId[key].push({
+//         expenses_id: row.expenses_of_project_site_id,
+//         product_id: row.product_id,
+//         product_name: row.product_name,
+//         model_no: row.model_no,
+//         hsn_code: row.hsn_code,
+//         product_type: row.product_type_name,
+//         manufacturer: row.manufacturer_name, // ✅ Now from md_product
+//         unit: row.unit_name,
+//         quantity_consumed: parseFloat(row.Atc_total || 0),
+//         consumed_at: row.created_at,
+//       });
+//     }
+
+//     /* 6. Group work rows by month and attach products */
+//     const monthBuckets = {};
+
+//     for (const wp of workRows) {
+//       const monthKey = wp.year_month_sort;
+
+//       if (!monthBuckets[monthKey]) {
+//         monthBuckets[monthKey] = {
+//           month_year: wp.month_year,
+//           year_month: wp.year_month_sort,
+//           work_progress_entries: [],
+//           summary: {
+//             total_entries: 0,
+//             total_progress: 0,
+//             total_packets: 0,
+//             total_materials_used: 0,
+//             total_products_consumed: 0,
+//           },
+//         };
+//       }
+
+//       const entry = {
+//         work_progress_site_id: wp.work_progress_site_id,
+//         date: wp.date,
+//         project_site: {
+//           site_id: wp.project_site_id,
+//           site_name: wp.project_site_name,
+//           city: wp.site_city_name,
+//           state: wp.site_state_name,
+//         },
+//         bom: {
+//           bom_id: wp.bom_id,
+//           bom_name: wp.bom_name,
+//         },
+//         bom_progress: {
+//           progress_id: wp.bom_progress_id,
+//           progress_name: wp.bom_progress_name,
+//           sl_number: wp.progress_sl_number,
+//         },
+//         work_details: {
+//           remarks: wp.remarks,
+//           total_progress: parseFloat(wp.total_progress || 0),
+//           rep_task: wp.rep_task,
+//           packet_qty: parseFloat(wp.packet_qty || 0),
+//           total_qty_of_material_used: parseFloat(wp.total_qty_of_material_used || 0),
+//         },
+//         consumed_products: productsByWorkId[wp.work_progress_site_id] || [],
+//         created_by: {
+//           user_id: wp.created_by,
+//           user_name: wp.creator_name,
+//           user_email: wp.creator_email,
+//         },
+//         timestamps: {
+//           created_at: wp.created_at,
+//           updated_at: wp.updated_at,
+//         },
+//       };
+
+//       monthBuckets[monthKey].work_progress_entries.push(entry);
+
+//       monthBuckets[monthKey].summary.total_entries += 1;
+//       monthBuckets[monthKey].summary.total_progress += entry.work_details.total_progress;
+//       monthBuckets[monthKey].summary.total_packets += entry.work_details.packet_qty;
+//       monthBuckets[monthKey].summary.total_materials_used += entry.work_details.total_qty_of_material_used;
+//       monthBuckets[monthKey].summary.total_products_consumed += entry.consumed_products.length;
+//     }
+
+//     const monthly_data = Object.values(monthBuckets).sort((a, b) =>
+//       b.year_month.localeCompare(a.year_month)
+//     );
+
+//     /* 7. Build overall summary */
+//     const overall_summary = {
+//       total_months: monthly_data.length,
+//       total_work_entries: workRows.length,
+//       total_progress: workRows.reduce(
+//         (sum, wp) => sum + parseFloat(wp.total_progress || 0),
+//         0
+//       ),
+//       total_packets: workRows.reduce(
+//         (sum, wp) => sum + parseFloat(wp.packet_qty || 0),
+//         0
+//       ),
+//       total_materials_used: workRows.reduce(
+//         (sum, wp) => sum + parseFloat(wp.total_qty_of_material_used || 0),
+//         0
+//       ),
+//       total_products_consumed: consumedRows.length,
+//       unique_sites: new Set(workRows.map((wp) => wp.project_site_id)).size,
+//       unique_boms: new Set(workRows.map((wp) => wp.bom_id)).size,
+//     };
+
+//     /* 8. Final response */
+//     return res.status(200).json({
+//       success: true,
+//       message: "Monthly work report generated successfully",
+//       report_info: {
+//         project,
+//         from_date: fromDate,
+//         to_date: toDate,
+//         report_period: `${dayjs(fromDate).format("DD MMM YYYY")} to ${dayjs(toDate).format(
+//           "DD MMM YYYY"
+//         )}`,
+//         generated_at: dayjs().format("YYYY-MM-DD HH:mm:ss"),
+//       },
+//       overall_summary,
+//       monthly_data,
+//     });
+//   } catch (error) {
+//     console.error("Error generating monthly work report:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Failed to generate monthly work report",
+//       error: error.message,
+//     });
+//   }
+// };
+
+
+
+
+
+
+
 
 
 getMonthlyWorkReport = async (req, res) => {
   try {
     const { project_id, project_site_id, fromDate, toDate } = req.body;
+
 
     /* 1. Basic validation */
     if (!project_id || !fromDate || !toDate) {
@@ -474,12 +752,14 @@ getMonthlyWorkReport = async (req, res) => {
       });
     }
 
+
     if (!dayjs(fromDate).isValid() || !dayjs(toDate).isValid()) {
       return res.status(400).json({
         success: false,
         message: "Invalid date format. Use YYYY-MM-DD",
       });
     }
+
 
     /* 2. Load project header info */
     const projectQuery = `
@@ -500,320 +780,6 @@ getMonthlyWorkReport = async (req, res) => {
       WHERE p.project_id = ?
     `;
 
-    const project = await customSelectSqlQuery2(projectQuery, [project_id], false);
-
-    if (!project) {
-      return res.status(404).json({
-        success: false,
-        message: "Project not found",
-      });
-    }
-
-    /* 3. Load work progress rows in the given period */
-    let workProgressQuery = `
-      SELECT 
-        wp.work_progress_site_id,
-        wp.project_id,
-        wp.project_site_id,
-        wp.bom_id,
-        wp.bom_progress_id,
-        wp.work_details_id,
-        wp.remarks,
-        wp.total_progress,
-        wp.rep_task,
-        wp.packet_qty,
-        wp.total_qty_of_material_used,
-        wp.date,
-        wp.created_by,
-        wp.created_at,
-        wp.updated_at,
-
-        -- Project Site
-        ps.project_site_name,
-        ps.city_id AS site_city_id,
-        sc.name AS site_city_name,
-        sc.state_id AS site_state_id,
-        ss.name AS site_state_name,
-
-        -- BOM
-        b.bom_name,
-
-        -- BOM Progress
-        bp.bom_progress_name,
-        bp.sl_number AS progress_sl_number,
-
-        -- Creator
-        u.name AS creator_name,
-        u.email AS creator_email,
-
-        -- Month keys
-        DATE_FORMAT(wp.date, '%M %Y') AS month_year,
-        DATE_FORMAT(wp.date, '%Y-%m') AS year_month_sort
-        
-      FROM tx_work_progress_as_per_project_site wp
-      LEFT JOIN md_project_site ps ON wp.project_site_id = ps.project_site_id
-      LEFT JOIN lo_cities sc ON ps.city_id = sc.id
-      LEFT JOIN lo_states ss ON sc.state_id = ss.id
-      LEFT JOIN md_bom b ON wp.bom_id = b.bom_id
-      LEFT JOIN md_bom_progress bp ON wp.bom_progress_id = bp.bom_progress_id
-      LEFT JOIN users u ON wp.created_by = u.id
-      WHERE wp.project_id = ?
-        AND wp.date BETWEEN ? AND ?
-    `;
-
-    const workParams = [project_id, fromDate, toDate];
-
-    if (project_site_id) {
-      workProgressQuery += ` AND wp.project_site_id = ?`;
-      workParams.push(project_site_id);
-    }
-
-    workProgressQuery += ` ORDER BY wp.date DESC, wp.work_progress_site_id DESC`;
-
-    const workRows = await customSelectSqlQuery2(workProgressQuery, workParams);
-
-    if (!workRows || workRows.length === 0) {
-      return res.status(200).json({
-        success: true,
-        message: "No work progress found for the given criteria",
-        report_info: {
-          project,
-          from_date: fromDate,
-          to_date: toDate,
-          total_records: 0,
-        },
-        monthly_data: [],
-        overall_summary: {
-          total_months: 0,
-          total_work_entries: 0,
-          total_progress: 0,
-          total_packets: 0,
-          total_materials_used: 0,
-          total_products_consumed: 0,
-          unique_sites: 0,
-          unique_boms: 0,
-        },
-      });
-    }
-
-    /* 4. Load all consumed products - FIXED QUERY */
-    const workIds = workRows.map((wp) => wp.work_progress_site_id);
-    const idList = workIds.join(",");
-
-    // ✅ REMOVED md_manufacturer JOIN - assuming manufacturer info is in md_product
-    const consumedQuery = `
-      SELECT 
-        ep.expenses_of_project_site_id,
-        ep.product_id,
-        ep.work_progress_site_id,
-        ep.quantity_of_product,
-        ep.created_at,
-
-        p.product_name,
-        p.model_no,
-        p.hsn_code,
-        p.manufacturer_name,
-
-        pt.product_type_name,
-        u.unit_name
-        
-      FROM tx_expenses_of_product_as_per_project_site ep
-      LEFT JOIN md_product p ON ep.product_id = p.product_id
-      LEFT JOIN md_product_type pt ON p.product_type_id = pt.product_type_id
-      LEFT JOIN md_unit u ON p.unit_id = u.unit_id
-      WHERE ep.work_progress_site_id IN (${idList})
-      ORDER BY ep.work_progress_site_id, ep.product_id
-    `;
-
-    const consumedRows = await customSelectSqlQuery2(consumedQuery, []);
-
-    /* 5. Build a map: work_progress_site_id -> list of products */
-    const productsByWorkId = {};
-    for (const row of consumedRows) {
-      const key = row.work_progress_site_id;
-      if (!productsByWorkId[key]) productsByWorkId[key] = [];
-
-      productsByWorkId[key].push({
-        expenses_id: row.expenses_of_project_site_id,
-        product_id: row.product_id,
-        product_name: row.product_name,
-        model_no: row.model_no,
-        hsn_code: row.hsn_code,
-        product_type: row.product_type_name,
-        manufacturer: row.manufacturer_name, // ✅ Now from md_product
-        unit: row.unit_name,
-        quantity_consumed: parseFloat(row.quantity_of_product),
-        consumed_at: row.created_at,
-      });
-    }
-
-    /* 6. Group work rows by month and attach products */
-    const monthBuckets = {};
-
-    for (const wp of workRows) {
-      const monthKey = wp.year_month_sort;
-
-      if (!monthBuckets[monthKey]) {
-        monthBuckets[monthKey] = {
-          month_year: wp.month_year,
-          year_month: wp.year_month_sort,
-          work_progress_entries: [],
-          summary: {
-            total_entries: 0,
-            total_progress: 0,
-            total_packets: 0,
-            total_materials_used: 0,
-            total_products_consumed: 0,
-          },
-        };
-      }
-
-      const entry = {
-        work_progress_site_id: wp.work_progress_site_id,
-        date: wp.date,
-        project_site: {
-          site_id: wp.project_site_id,
-          site_name: wp.project_site_name,
-          city: wp.site_city_name,
-          state: wp.site_state_name,
-        },
-        bom: {
-          bom_id: wp.bom_id,
-          bom_name: wp.bom_name,
-        },
-        bom_progress: {
-          progress_id: wp.bom_progress_id,
-          progress_name: wp.bom_progress_name,
-          sl_number: wp.progress_sl_number,
-        },
-        work_details: {
-          remarks: wp.remarks,
-          total_progress: parseFloat(wp.total_progress || 0),
-          rep_task: wp.rep_task,
-          packet_qty: parseFloat(wp.packet_qty || 0),
-          total_qty_of_material_used: parseFloat(wp.total_qty_of_material_used || 0),
-        },
-        consumed_products: productsByWorkId[wp.work_progress_site_id] || [],
-        created_by: {
-          user_id: wp.created_by,
-          user_name: wp.creator_name,
-          user_email: wp.creator_email,
-        },
-        timestamps: {
-          created_at: wp.created_at,
-          updated_at: wp.updated_at,
-        },
-      };
-
-      monthBuckets[monthKey].work_progress_entries.push(entry);
-
-      monthBuckets[monthKey].summary.total_entries += 1;
-      monthBuckets[monthKey].summary.total_progress += entry.work_details.total_progress;
-      monthBuckets[monthKey].summary.total_packets += entry.work_details.packet_qty;
-      monthBuckets[monthKey].summary.total_materials_used += entry.work_details.total_qty_of_material_used;
-      monthBuckets[monthKey].summary.total_products_consumed += entry.consumed_products.length;
-    }
-
-    const monthly_data = Object.values(monthBuckets).sort((a, b) =>
-      b.year_month.localeCompare(a.year_month)
-    );
-
-    /* 7. Build overall summary */
-    const overall_summary = {
-      total_months: monthly_data.length,
-      total_work_entries: workRows.length,
-      total_progress: workRows.reduce(
-        (sum, wp) => sum + parseFloat(wp.total_progress || 0),
-        0
-      ),
-      total_packets: workRows.reduce(
-        (sum, wp) => sum + parseFloat(wp.packet_qty || 0),
-        0
-      ),
-      total_materials_used: workRows.reduce(
-        (sum, wp) => sum + parseFloat(wp.total_qty_of_material_used || 0),
-        0
-      ),
-      total_products_consumed: consumedRows.length,
-      unique_sites: new Set(workRows.map((wp) => wp.project_site_id)).size,
-      unique_boms: new Set(workRows.map((wp) => wp.bom_id)).size,
-    };
-
-    /* 8. Final response */
-    return res.status(200).json({
-      success: true,
-      message: "Monthly work report generated successfully",
-      report_info: {
-        project,
-        from_date: fromDate,
-        to_date: toDate,
-        report_period: `${dayjs(fromDate).format("DD MMM YYYY")} to ${dayjs(toDate).format(
-          "DD MMM YYYY"
-        )}`,
-        generated_at: dayjs().format("YYYY-MM-DD HH:mm:ss"),
-      },
-      overall_summary,
-      monthly_data,
-    });
-  } catch (error) {
-    console.error("Error generating monthly work report:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to generate monthly work report",
-      error: error.message,
-    });
-  }
-};
-
-
-
-
-
-
-
-
-
-getMonthlyWorkReport = async (req, res) => {
-  try {
-    const { project_id, project_site_id, fromDate, toDate } = req.body;
-
-
-    /* 1. Basic validation */
-    if (!project_id || !fromDate || !toDate) {
-      return res.status(400).json({
-        success: false,
-        message: "project_id, fromDate and toDate are required",
-      });
-    }
-
-
-    if (!dayjs(fromDate).isValid() || !dayjs(toDate).isValid()) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid date format. Use YYYY-MM-DD",
-      });
-    }
-
-
-    /* 2. Load project header info */
-    const projectQuery = `
-      SELECT 
-        p.project_id,
-        p.project_name,
-        p.city_id,
-        c.name AS city_name,
-        c.state_id,
-        s.name AS state_name,
-        p.create_by,
-        u.name AS created_by_name,
-        p.created_at
-      FROM md_project p
-      LEFT JOIN lo_cities c ON p.city_id = c.id
-      LEFT JOIN lo_states s ON c.state_id = s.id
-      LEFT JOIN users u ON p.create_by = u.id
-      WHERE p.project_id = ?
-    `;
-
 
     const project = await customSelectSqlQuery2(projectQuery, [project_id], false);
 
@@ -825,7 +791,7 @@ getMonthlyWorkReport = async (req, res) => {
       });
     }
 
-
+//work_details_id
     /* 3. Load work progress rows in the given period */
     let workProgressQuery = `
       SELECT 
@@ -834,7 +800,6 @@ getMonthlyWorkReport = async (req, res) => {
         wp.project_site_id,
         wp.bom_id,
         wp.bom_progress_id,
-        wp.work_details_id,
         wp.remarks,
         wp.total_progress,
         wp.rep_task,
@@ -872,7 +837,7 @@ getMonthlyWorkReport = async (req, res) => {
         DATE_FORMAT(wp.date, '%M %Y') AS month_year,
         DATE_FORMAT(wp.date, '%Y-%m') AS year_month_sort
         
-      FROM tx_work_progress_as_per_project_site wp
+      FROM tx_work_progress wp
       LEFT JOIN md_project_site ps ON wp.project_site_id = ps.project_site_id
       LEFT JOIN lo_cities sc ON ps.city_id = sc.id
       LEFT JOIN lo_states ss ON sc.state_id = ss.id
@@ -938,9 +903,9 @@ getMonthlyWorkReport = async (req, res) => {
         ep.expenses_of_project_site_id,
         ep.product_id,
         ep.work_progress_site_id,
-        ep.quantity_of_product,
+        ep.Atc_total,
+        ep.Act_Qty,
         ep.created_at,
-
 
         p.product_name,
         p.model_no,
@@ -951,7 +916,7 @@ getMonthlyWorkReport = async (req, res) => {
         pt.product_type_name,
         u.unit_name
         
-      FROM tx_expenses_of_product_as_per_project_site ep
+      FROM tx_site_used_items ep
       LEFT JOIN md_product p ON ep.product_id = p.product_id
       LEFT JOIN md_product_type pt ON p.product_type_id = pt.product_type_id
       LEFT JOIN md_unit u ON p.unit_id = u.unit_id
@@ -979,7 +944,10 @@ getMonthlyWorkReport = async (req, res) => {
         product_type: row.product_type_name,
         manufacturer: row.manufacturer_name,
         unit: row.unit_name,
-        quantity_consumed: parseFloat(row.quantity_of_product),
+        act_qty: parseFloat(row.Act_Qty || 0),       // ✅ per-step qty
+         total_qty: parseFloat(row.Atc_total || 0),   // ✅ total consumed qty
+
+        quantity_consumed: parseFloat(row.Act_Qty),
         consumed_at: row.created_at,
       });
     }
@@ -1242,7 +1210,7 @@ getWorkProgressByProjectAndSite = async (req, res) => {
 
           pr.product_name
 
-      FROM tx_work_progress_as_per_project_site w
+      FROM tx_work_progress w
       LEFT JOIN md_project p ON w.project_id = p.project_id
       LEFT JOIN md_project_site s ON w.project_site_id = s.project_site_id
       LEFT JOIN md_bom b ON w.bom_id = b.bom_id
@@ -1334,7 +1302,7 @@ getWorkProgressByProjectAndSite = async (req, res) => {
     });
 
     await updateData(
-      "tx_work_progress_as_per_project_site",
+      "tx_work_progress",
       updateObj,
       `work_progress_site_id = ${work_progress_site_id}`
     );
@@ -1372,7 +1340,7 @@ getWorkProgressByProjectAndSite = async (req, res) => {
       }
 
       await deleteData(
-        "tx_work_progress_as_per_project_site",
+        "tx_work_progress",
         `work_progress_site_id = ${work_progress_site_id}`
       );
 
@@ -1414,7 +1382,7 @@ getWorkProgressByProjectAndSite = async (req, res) => {
           -- Progress Name
           bp.bom_progress_name
 
-      FROM tx_work_progress_as_per_project_site w
+      FROM tx_work_progress w
 
       LEFT JOIN md_project p 
         ON p.project_id = w.project_id
