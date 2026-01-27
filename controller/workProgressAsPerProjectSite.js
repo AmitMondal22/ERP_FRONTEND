@@ -1355,68 +1355,456 @@ getWorkProgressByProjectAndSite = async (req, res) => {
 
 
 
-  getWorkProgressfulldatafromprojectandsiteId = async (req, res) => {
+
+
+
+//   getWorkProgressfulldatafromprojectandsiteId = async (req, res) => {
+//   try {
+//     const { project_id, project_site_id } = req.body;
+
+//     if (!project_id || !project_site_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id and project_site_id are required",
+//       });
+//     }
+
+//     const sql = `
+//       SELECT 
+//           w.*,
+
+//           -- Project Name
+//           p.project_name,
+
+//           -- Project Site Name
+//           ps.project_site_name,
+
+//           -- BOM Name
+//           b.bom_name,
+
+//           -- Progress Name
+//           bp.bom_progress_name
+
+//       FROM tx_work_progress w
+
+//       LEFT JOIN md_project p 
+//         ON p.project_id = w.project_id
+
+//       LEFT JOIN md_project_site ps 
+//         ON ps.project_site_id = w.project_site_id
+
+//       LEFT JOIN md_bom b 
+//         ON b.bom_id = w.bom_id
+
+//       LEFT JOIN md_bom_progress bp 
+//         ON bp.bom_progress_id = w.bom_progress_id
+
+//       WHERE w.project_id = ${project_id}
+//         AND w.project_site_id = ${project_site_id}
+
+//       ORDER BY w.work_progress_site_id DESC;
+//     `;
+
+//     const rows = await customSelectSqlQuery(sql);
+
+//     return res.status(200).json({
+//       success: true,
+//       data: rows,
+//     });
+
+//   } catch (err) {
+//     console.error("FETCH ERROR:", err);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Unable to fetch work progress",
+//     });
+//   }
+// };
+
+
+
+///////////////////////////////this perfect//////////////////////////
+
+//  getWorkProgressfulldatafromprojectandsiteId = async (req, res) => {
+//   try {
+//     const { project_id, project_site_id } = req.body;
+
+//     /* 1. Validation */
+//     if (!project_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id is required",
+//       });
+//     }
+
+//     /* 2. Dynamic WHERE condition */
+//     let whereCondition = `w.project_id = ${project_id}`;
+//     if (project_site_id) {
+//       whereCondition += ` AND w.project_site_id = ${project_site_id}`;
+//     }
+
+//     /* 3. SQL Query */
+//     const sql = `
+//       SELECT
+//         -- Billing
+//         pb.project_work_description,
+
+//         -- Project
+//         p.project_name,
+//         ps.project_site_name,
+
+//         -- Work Progress
+//         w.work_progress_site_id,
+//         w.date,
+//         w.billing_status,
+
+//         -- BOM
+//         b.bom_name,
+
+//         -- BOM Step
+//         bp.bom_progress_name,
+       
+//         -- Product
+         
+//         prod.product_name,
+//         prod.qty AS master_product_qty,   
+
+//         -- Site Used Items
+//         sui.bom_product_qty,
+//         sui.Atc_total,
+//         sui.Act_Qty
+
+//       FROM tx_work_progress w
+
+      
+
+//       /* Billing */
+//       LEFT JOIN md_project_billing pb
+//         ON pb.project_id = w.project_id
+
+//       /* Project & Site */
+//       LEFT JOIN md_project p
+//         ON p.project_id = w.project_id
+
+//       LEFT JOIN md_project_site ps
+//         ON ps.project_site_id = w.project_site_id
+
+//       /* BOM */
+//       LEFT JOIN md_bom b
+//         ON b.bom_id = w.bom_id
+
+//       /* BOM Step */
+//       LEFT JOIN md_bom_progress bp
+//         ON bp.bom_progress_id = w.bom_progress_id
+
+//       /* Site Used Items */
+//       LEFT JOIN tx_site_used_items sui
+//         ON sui.work_progress_site_id = w.work_progress_site_id
+
+//       /* Product */
+//       LEFT JOIN md_product prod
+//         ON prod.product_id = sui.product_id
+
+//       WHERE ${whereCondition}
+
+//       ORDER BY w.work_progress_site_id DESC
+//     `;
+
+//     /* 4. Execute */
+//     const rows = await customSelectSqlQuery(sql);
+
+//     return res.status(200).json({
+//       success: true,
+//       data: rows,
+//     });
+
+//   } catch (error) {
+//     console.error("BILLING FETCH ERROR:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Unable to fetch billing work progress data",
+//     });
+//   }
+// };
+
+////////////
+
+
+
+// getWorkProgressfulldatafromprojectandsiteId = async (req, res) => {
+//   try {
+//     const { project_id, project_site_id } = req.body;
+
+//     /* 1. Validation */
+//     if (!project_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id is required",
+//       });
+//     }
+
+//     /* 2. Dynamic WHERE condition */
+//     let whereCondition = `w.project_id = ${project_id}`;
+//     if (project_site_id) {
+//       whereCondition += ` AND w.project_site_id = ${project_site_id}`;
+//     }
+
+//     /* 3. SQL Query */
+//     const sql = `
+//       SELECT
+//         -- Billing
+//         pb.project_work_description,
+
+//         -- Project
+//         p.project_name,
+//         ps.project_site_name,
+
+//         -- Work Progress
+//         w.work_progress_site_id,
+//         w.date,
+//         w.billing_status,
+
+//         -- BOM
+//         b.bom_name,
+
+//         -- BOM Step
+//         bp.bom_progress_name,
+       
+//         -- Product
+//         prod.product_name,
+//         prod.qty AS master_product_qty,   
+
+//         -- Site Used Items
+//         sui.expenses_of_project_site_id,
+//         sui.bom_product_qty,
+//         sui.Atc_total,
+//         sui.Act_Qty
+
+//       FROM tx_work_progress w
+
+//       LEFT JOIN md_project_billing pb ON pb.project_id = w.project_id
+//       LEFT JOIN md_project p ON p.project_id = w.project_id
+//       LEFT JOIN md_project_site ps ON ps.project_site_id = w.project_site_id
+//       LEFT JOIN md_bom b ON b.bom_id = w.bom_id
+//       LEFT JOIN md_bom_progress bp ON bp.bom_progress_id = w.bom_progress_id
+//       LEFT JOIN tx_site_used_items sui ON sui.work_progress_site_id = w.work_progress_site_id
+//       LEFT JOIN md_product prod ON prod.product_id = sui.product_id
+
+//       WHERE ${whereCondition}
+
+//       ORDER BY w.work_progress_site_id DESC
+//     `;
+
+//     /* 4. Execute */
+//     const rows = await customSelectSqlQuery(sql);
+
+//     /* 5. Group duplicate rows */
+//     const groupedData = {};
+
+//     rows.forEach(row => {
+//       // Create a unique key based on the grouping criteria
+//       const groupKey = `${row.work_progress_site_id}_${row.bom_progress_name}_${row.product_name}_${row.master_product_qty}_${row.Atc_total}_${row.Act_Qty}`;
+
+//       if (!groupedData[groupKey]) {
+//         // First occurrence - store the row and init descriptions array
+//         groupedData[groupKey] = {
+//           ...row,
+//           project_work_descriptions: [row.project_work_description]
+//         };
+//       } else {
+//         // Duplicate found - add description if it's unique
+//         if (!groupedData[groupKey].project_work_descriptions.includes(row.project_work_description)) {
+//           groupedData[groupKey].project_work_descriptions.push(row.project_work_description);
+//         }
+//       }
+//     });
+
+//     // Convert grouped data back to array and format
+//     const result = Object.values(groupedData).map(item => {
+//       // Combine all unique descriptions with a separator
+//       const combinedDescriptions = item.project_work_descriptions
+//         .filter(desc => desc) // Remove null/undefined
+//         .join(' | '); // Use ' | ' or '\n' as separator
+
+//       return {
+//         project_work_description: combinedDescriptions,
+//         project_name: item.project_name,
+//         project_site_name: item.project_site_name,
+//         work_progress_site_id: item.work_progress_site_id,
+//         date: item.date,
+//         billing_status: item.billing_status,
+//         bom_name: item.bom_name,
+//         bom_progress_name: item.bom_progress_name,
+//         product_name: item.product_name,
+//         master_product_qty: item.master_product_qty,
+//         expenses_of_project_site_id: item.expenses_of_project_site_id,
+//         bom_product_qty: item.bom_product_qty,
+//         Atc_total: item.Atc_total,
+//         Act_Qty: item.Act_Qty
+//       };
+//     });
+
+//     return res.status(200).json({
+//       success: true,
+//       data: result,
+//     });
+
+//   } catch (error) {
+//     console.error("BILLING FETCH ERROR:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Unable to fetch billing work progress data",
+//     });
+//   }
+// };
+
+
+
+/////////////////////
+
+getWorkProgressfulldatafromprojectandsiteId = async (req, res) => {
   try {
     const { project_id, project_site_id } = req.body;
 
-    if (!project_id || !project_site_id) {
+    /* 1. Validation */
+    if (!project_id) {
       return res.status(400).json({
         success: false,
-        message: "project_id and project_site_id are required",
+        message: "project_id is required",
       });
     }
 
+    /* 2. Dynamic WHERE condition */
+    // let whereCondition = `w.project_id = ${project_id}`;
+    // if (project_site_id) {
+    //   whereCondition += ` AND w.project_site_id = ${project_site_id}`;
+    // }
+
+
+    let whereCondition = `
+  w.project_id = ${project_id}
+  AND (w.billing_status IS NULL OR w.billing_status != 'Y')
+`;
+
+if (project_site_id) {
+  whereCondition += ` AND w.project_site_id = ${project_site_id}`;
+}
+
+
+
+
+
+    /* 3. SQL Query */
     const sql = `
-      SELECT 
-          w.*,
+      SELECT
+        -- Billing
+        pb.project_work_description,
 
-          -- Project Name
-          p.project_name,
+        -- Project
+        p.project_name,
+        ps.project_site_name,
 
-          -- Project Site Name
-          ps.project_site_name,
+        -- Work Progress
+        w.work_progress_site_id,
+        w.date,
+        w.billing_status,
+        w.rep_task,
 
-          -- BOM Name
-          b.bom_name,
+        -- BOM
+        b.bom_name,
 
-          -- Progress Name
-          bp.bom_progress_name
+        -- BOM Step
+        bp.bom_progress_name,
+       
+        -- Product
+        prod.product_name,
+        prod.qty AS master_product_qty,   
+
+        -- Site Used Items
+        sui.expenses_of_project_site_id,
+        sui.bom_product_qty,
+        sui.Atc_total,
+        sui.Act_Qty
 
       FROM tx_work_progress w
 
-      LEFT JOIN md_project p 
-        ON p.project_id = w.project_id
+      LEFT JOIN md_project_billing pb ON pb.project_id = w.project_id
+      LEFT JOIN md_project p ON p.project_id = w.project_id
+      LEFT JOIN md_project_site ps ON ps.project_site_id = w.project_site_id
+      LEFT JOIN md_bom b ON b.bom_id = w.bom_id
+      LEFT JOIN md_bom_progress bp ON bp.bom_progress_id = w.bom_progress_id
+      LEFT JOIN tx_site_used_items sui ON sui.work_progress_site_id = w.work_progress_site_id
+      LEFT JOIN md_product prod ON prod.product_id = sui.product_id
 
-      LEFT JOIN md_project_site ps 
-        ON ps.project_site_id = w.project_site_id
+      WHERE ${whereCondition}
 
-      LEFT JOIN md_bom b 
-        ON b.bom_id = w.bom_id
-
-      LEFT JOIN md_bom_progress bp 
-        ON bp.bom_progress_id = w.bom_progress_id
-
-      WHERE w.project_id = ${project_id}
-        AND w.project_site_id = ${project_site_id}
-
-      ORDER BY w.work_progress_site_id DESC;
+      ORDER BY w.work_progress_site_id DESC
     `;
 
+    /* 4. Execute */
     const rows = await customSelectSqlQuery(sql);
+
+    /* 5. Group duplicate rows */
+    const groupedData = {};
+
+    rows.forEach(row => {
+      // Create a unique key based on the grouping criteria
+      const groupKey = `${row.work_progress_site_id}_${row.bom_progress_name}_${row.product_name}_${row.master_product_qty}_${row.Atc_total}_${row.Act_Qty}`;
+
+      if (!groupedData[groupKey]) {
+        // First occurrence - store the row and init descriptions array
+        groupedData[groupKey] = {
+          ...row,
+          project_work_descriptions: [row.project_work_description]
+        };
+      } else {
+        // Duplicate found - add description if it's unique
+        if (!groupedData[groupKey].project_work_descriptions.includes(row.project_work_description)) {
+          groupedData[groupKey].project_work_descriptions.push(row.project_work_description);
+        }
+      }
+    });
+
+    // Convert grouped data back to array and format
+    const result = Object.values(groupedData).map(item => {
+      // Combine all unique descriptions with a separator
+      const combinedDescriptions = item.project_work_descriptions
+        .filter(desc => desc) // Remove null/undefined
+        .join(' | '); // Use ' | ' or '\n' as separator
+
+      return {
+        project_work_description: combinedDescriptions,
+        project_name: item.project_name,
+        project_site_name: item.project_site_name,
+        work_progress_site_id: item.work_progress_site_id,
+        date: item.date,
+        billing_status: item.billing_status,
+        rep_task: item.rep_task,
+        bom_name: item.bom_name,
+        bom_progress_name: item.bom_progress_name,
+        product_name: item.product_name,
+        master_product_qty: item.master_product_qty,
+        expenses_of_project_site_id: item.expenses_of_project_site_id,
+        bom_product_qty: item.bom_product_qty,
+        Atc_total: item.Atc_total,
+        Act_Qty: item.Act_Qty
+      };
+    });
 
     return res.status(200).json({
       success: true,
-      data: rows,
+      data: result,
     });
 
-  } catch (err) {
-    console.error("FETCH ERROR:", err);
+  } catch (error) {
+    console.error("BILLING FETCH ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: "Unable to fetch work progress",
+      message: "Unable to fetch billing work progress data",
     });
   }
 };
+
 
 
 }

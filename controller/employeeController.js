@@ -238,29 +238,54 @@ addEmployee = async (req, res) => {
     if (!user_id) throw new Error("Failed to create user");
 
     // Insert into em_employees table
+    // const employeeData = {
+    //   user_id,
+    //   first_name,
+    //   middle_name,
+    //   last_name,
+    //   email,
+    //   phone,
+    //   employee_dob,
+    //   hire_date,
+    //   department,
+    //   job_title,
+    //   manager_id,
+    //   base_salary,
+    //   allowance,
+    //   em_id,
+    //   employee_address,
+    //   city_id,
+    //   employee_designation_id,
+    //   department_id,
+    //   date_of_joining,
+    //   status,
+    //   created_at,
+    // };
+
     const employeeData = {
-      user_id,
-      first_name,
-      middle_name,
-      last_name,
-      email,
-      phone,
-      employee_dob,
-      hire_date,
-      department,
-      job_title,
-      manager_id,
-      base_salary,
-      allowance,
-      em_id,
-      employee_address,
-      city_id,
-      employee_designation_id,
-      department_id,
-      date_of_joining,
-      status,
-      created_at,
-    };
+  user_id,
+  first_name,
+  middle_name: middle_name || null,
+  last_name,
+  email: email || null,
+  phone: phone || null,
+  employee_dob,
+  hire_date: hire_date || null,
+  department: department || null,
+  job_title: job_title || null,
+  manager_id: manager_id || null,
+  base_salary: base_salary || null,
+  allowance: allowance || null,
+  em_id: em_id || null,
+  employee_address: employee_address || null,
+  city_id: city_id || null,
+  employee_designation_id: employee_designation_id || null,
+  department_id: department_id || null,
+  date_of_joining: date_of_joining || null,
+  status: status || "active",
+  created_at
+};
+
 
     const employee_id = await insertData("em_employees", employeeData);
     if (!employee_id) throw new Error("Failed to create employee");
@@ -303,39 +328,214 @@ addEmployee = async (req, res) => {
 
 
   // Get all 
-  getAllemployee = async (req, res) => {
-    try {
-        const table = "em_employees as a JOIN lo_cities AS b ON a.city_id = b.id JOIN lo_states AS c ON b.state_id = c.id LEFT JOIN em_employees m ON a.manager_id = m.employee_id";
-        // Give unique aliases for duplicate column names
-        const select = "a.*, b.name AS city_name, b.state_id, c.name AS state_name, m.employee_id AS manager_id,  m.first_name AS manager_first_name, m.last_name AS manager_last_name, m.email AS manager_email";
+//   getAllemployee = async (req, res) => {
+//     try {
+//         // const table = "em_employees as a JOIN lo_cities AS b ON a.city_id = b.id JOIN lo_states AS c ON b.state_id = c.id LEFT JOIN em_employees m ON a.manager_id = m.employee_id";
+//         // // Give unique aliases for duplicate column names
+//         // const select = "a.*, b.name AS city_name, b.state_id, c.name AS state_name, m.employee_id AS manager_id,  m.first_name AS manager_first_name, m.last_name AS manager_last_name, m.email AS manager_email";
 
-        const employee = await selectData(table, select, null ,"a.em_id ASC");
+//         // const employee = await selectData(table, select, null ,"a.em_id ASC");
+
+//         const table = `
+//   em_employees AS a
+//   JOIN lo_cities AS b ON a.city_id = b.id
+//   JOIN lo_states AS c ON b.state_id = c.id
+//   LEFT JOIN em_employees AS m ON a.manager_id = m.employee_id
+// `;
+
+// const select = `
+//   a.*,
+//   b.name AS city_name,
+//   b.state_id,
+//   c.name AS state_name,
+//   m.employee_id AS manager_employee_id,
+//   m.first_name AS manager_first_name,
+//   m.last_name AS manager_last_name,
+//   m.email AS manager_email
+// `;
+
+// const employee = await selectData(table, select, null, "a.em_id ASC");
+
         
-        res.status(200).json({ success: true, data: employee });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, message: "Unable to fetch employee" });
-    }
-  };
+//         res.status(200).json({ success: true, data: employee });
+//     } catch (error) {
+//         console.error(error);
+//         res.status(500).json({ success: false, message: "Unable to fetch employee" });
+//     }
+//   };
+
+
+
+
+getAllemployee = async (req, res) => {
+  try {
+    const table = `
+      em_employees AS a
+      JOIN lo_cities AS b ON a.city_id = b.id
+      JOIN lo_states AS c ON b.state_id = c.id
+      LEFT JOIN users AS u ON a.manager_id = u.id
+    `;
+
+    const select = `
+      a.*,
+      b.name AS city_name,
+      b.state_id,
+      c.name AS state_name,
+      u.id AS manager_id,
+      u.name AS manager_name,
+      u.email AS manager_email,
+      u.mobile_no AS manager_mobile_no
+    `;
+
+    const employee = await selectData(
+      table,
+      select,
+      null,
+      "a.em_id ASC"
+    );
+
+    res.status(200).json({
+      success: true,
+      data: employee
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Unable to fetch employee"
+    });
+  }
+};
 
   // Get vendor by ID
-  getEmployeeById = async (req, res) => {
-    try {
-      const { employee_id} = req.params;
-      const table = "em_employees as a JOIN lo_cities AS b ON a.city_id = b.id JOIN lo_states AS c ON b.state_id = c.id LEFT JOIN em_employees m ON a.manager_id = m.employee_id";
-      const condition = `a.employee_id = ${employee_id}`;
-      // Give unique aliases for duplicate column names
-      const select = "a.*, b.name AS city_name, b.state_id, c.name AS state_name, m.employee_id AS manager_id,  m.first_name AS manager_first_name, m.last_name AS manager_last_name, m.email AS manager_email";
-      const employee = await selectOneData(table, select, condition);
-       if (!employee) {
-        return res.status(404).json({ success: false, message: "employee not found" });
-      }
-      res.status(200).json({ success: true, data: employee });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ success: false, message: "Unable to fetch employee" });
+  // getEmployeeById = async (req, res) => {
+  //   try {
+  //     const { employee_id} = req.params;
+  //     const table = "em_employees as a JOIN lo_cities AS b ON a.city_id = b.id JOIN lo_states AS c ON b.state_id = c.id LEFT JOIN em_employees m ON a.manager_id = m.employee_id";
+  //     const condition = `a.employee_id = ${employee_id}`;
+  //     // Give unique aliases for duplicate column names
+  //     const select = "a.*, b.name AS city_name, b.state_id, c.name AS state_name, m.employee_id AS manager_id,  m.first_name AS manager_first_name, m.last_name AS manager_last_name, m.email AS manager_email";
+  //     const employee = await selectOneData(table, select, condition);
+  //      if (!employee) {
+  //       return res.status(404).json({ success: false, message: "employee not found" });
+  //     }
+  //     res.status(200).json({ success: true, data: employee });
+  //   } catch (error) {
+  //     console.error(error);
+  //     res.status(500).json({ success: false, message: "Unable to fetch employee" });
+  //   }
+  // };
+
+//   getEmployeeById = async (req, res) => {
+//   try {
+//     const { employee_id } = req.params;
+
+//     const table = `
+//       em_employees AS a
+//       JOIN lo_cities AS b ON a.city_id = b.id
+//       JOIN lo_states AS c ON b.state_id = c.id
+//       LEFT JOIN em_employees m ON a.manager_id = m.employee_id
+//       LEFT JOIN users u ON a.user_id = u.id
+//     `;
+
+//     const condition = `a.employee_id = ${employee_id}`;
+
+   
+
+
+//     const select = `
+//   a.*,
+//   b.name AS city_name,
+//   b.state_id,
+//   c.name AS state_name,
+
+//   -- manager info
+//   m.employee_id AS manager_employee_id,
+//   m.first_name AS manager_first_name,
+//   m.last_name AS manager_last_name,
+//   m.email AS manager_email,
+
+//   -- user role
+//   u.role AS employee_role
+// `;
+
+
+//     const employee = await selectOneData(table, select, condition);
+
+//     if (!employee) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Employee not found",
+//       });
+//     }
+
+//     res.status(200).json({
+//       success: true,
+//       data: employee,
+//     });
+
+//   } catch (error) {
+//     console.error("getEmployeeById error:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Unable to fetch employee",
+//     });
+//   }
+// };
+
+
+getEmployeeById = async (req, res) => {
+  try {
+    const { employee_id } = req.params;
+
+    const table = `
+      em_employees AS a
+      JOIN lo_cities AS b ON a.city_id = b.id
+      JOIN lo_states AS c ON b.state_id = c.id
+      LEFT JOIN users u ON a.user_id = u.id
+      LEFT JOIN users mu ON a.manager_id = mu.id
+    `;
+
+    const condition = `a.employee_id = ${employee_id}`;
+
+    const select = `
+      a.*,
+      a.hire_date,
+      a.date_of_joining,
+      b.name AS city_name,
+      b.state_id,
+      c.name AS state_name,
+      u.role AS employee_role,
+      mu.id AS manager_user_id,
+      mu.name AS manager_name,
+      mu.email AS manager_email,
+      mu.mobile_no AS manager_phone,
+      mu.role AS manager_role
+    `;
+
+    const employee = await selectOneData(table, select, condition);
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "Employee not found",
+      });
     }
-  };
+
+    res.status(200).json({
+      success: true,
+      data: employee,
+    });
+
+  } catch (error) {
+    console.error("getEmployeeById error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Unable to fetch employee",
+    });
+  }
+};
+
 
   // Update 
   updateEmployee = async (req, res) => {

@@ -29,6 +29,13 @@ const ProjectBillingRoutes= require('./router/projectBillingRoutes')
 const ReturnPurchaseRoutes= require('./router/returnPurchaseRoutes')
 const purchaseOrderRoutes= require('./router/purchaseOrderRoutes')
 
+const billingOrderRoutes= require('./router/billingRoutes')
+
+const employeeSalaryRoutes = require('./router/employeeSalaryRoutes')
+const employeeleaveassignedRoutes = require("./router/employeeLeaveAssignedRoutes")
+
+const AnnualLeaveRoutes= require("./router/employeeAnnualLeaveRoutes")
+
 const app= express()
 const path = require("path");
 const cors = require('cors');
@@ -79,7 +86,10 @@ app.use('/',ProjectEstimationRoutes);
 app.use('/',WorkProgressAsPerProjectSiteRoutes);
 app.use('/',ReturnPurchaseRoutes);
 app.use('/',purchaseOrderRoutes);
-
+app.use('/',billingOrderRoutes);
+app.use('/',employeeSalaryRoutes)
+app.use('/',employeeleaveassignedRoutes)
+app.use('/',AnnualLeaveRoutes);
 
 //need tomake Upload Path Public
 

@@ -1090,6 +1090,7 @@ class purchaseOrderController {
   // --------------------------------------------------
   // GET ALL
   // --------------------------------------------------
+
   async getAllPurchaseOrders(req, res) {
     try {
       const sql = `
@@ -1130,12 +1131,126 @@ class purchaseOrderController {
     }
   }
 
+
+
+
+// async getPurchaseOrderByIdWithFullProductDetailsPo(req, res) {
+//   try {
+//     const { purchase_order_id } = req.params;
+
+//     if (!purchase_order_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "purchase_order_id is required",
+//       });
+//     }
+
+//     /* ----------------------------------
+//      * 1️⃣ Fetch Purchase Order (Header)
+//      * ---------------------------------- */
+//     const poSql = `
+//       SELECT
+//         p.purchase_order_id,
+//         p.po_no,
+//         p.vendor_id,
+//         v.vendor_name,
+//         p.project_id,
+//         pr.project_name,
+//         p.project_site_id,
+//         ps.project_site_name,
+//         p.date,
+//         p.delivery_date,
+//         p.remarks,
+//         p.terms_and_condition,
+//         p.total_amount
+//       FROM td_purchase_order p
+//       LEFT JOIN md_vendor v ON p.vendor_id = v.vendor_id
+//       LEFT JOIN md_project pr ON p.project_id = pr.project_id
+//       LEFT JOIN md_project_site ps ON p.project_site_id = ps.project_site_id
+//       WHERE p.purchase_order_id = ${purchase_order_id}
+//       LIMIT 1
+//     `;
+
+//     const poRows = await customSelectSqlQuery(poSql);
+
+//     if (poRows.length === 0) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Purchase order not found",
+//       });
+//     }
+
+//     const purchaseOrder = poRows[0];
+
+//     /* ----------------------------------
+//      * 2️⃣ Fetch Purchase Order Products
+//      * ---------------------------------- */
+//     const productSql = `
+//       SELECT
+//         pop.purchase_order_product_id,
+//         pop.product_id,
+//         prod.product_name,
+//         pop.quantity,
+//         pop.unit_price,
+//         pop.unit_id,
+//         u.unit_name,
+//         pop.discount_rate,
+//         pop.discount_amount,
+//         pop.sgst_rate,
+//         pop.cgst_rate,
+//         pop.igst_rate,
+//         pop.sgst_amt,
+//         pop.cgst_amt,
+//         pop.igst_amt,
+//         pop.total_amount
+//       FROM td_purchase_order_product pop
+//       LEFT JOIN md_product prod ON prod.product_id = pop.product_id
+//       LEFT JOIN md_unit u ON u.unit_id = pop.unit_id
+//       WHERE pop.purchase_order_id = ${purchase_order_id}
+//       ORDER BY pop.purchase_order_product_id ASC
+//     `;
+
+//     const products = await customSelectSqlQuery(productSql);
+
+//     /* ----------------------------------
+//      * 3️⃣ Final Response
+//      * ---------------------------------- */
+//     res.status(200).json({
+//       success: true,
+//       data: {
+//         ...purchaseOrder,
+//         products,
+//       },
+//     });
+
+//   } catch (err) {
+//     console.error("getPurchaseOrderById Error:", err);
+//     res.status(500).json({
+//       success: false,
+//       message: "Internal Server Error",
+//     });
+//   }
+// }
+
+
+
+
+
+
   // --------------------------------------------------
   // GET ONE PO BY ID
   // --------------------------------------------------
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
   async getPurchaseOrderById(req, res) {
     try {
-      const { id } = req.params;
+      const { id } = req.params;//this is purchase_order_id
 
       // ---------------------------
       // PURCHASE ORDER

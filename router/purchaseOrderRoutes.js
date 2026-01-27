@@ -6,6 +6,9 @@ const authcheck= require('../middleware/auth')
 
 router.post("/api/create-purchase-order",authcheck, purchaseOrderController.createPurchaseOrder);
 router.get("/api/getall-purchase-order",authcheck, purchaseOrderController.getAllPurchaseOrders);
+
+//router.get("/api/getpurchaseorderdetailswithproduct", authcheck,purchaseOrderController.getPurchaseOrderByIdWithFullProductDetailsPo)
+
 router.get("/api/get-purchase-order-by-id/:id",authcheck, purchaseOrderController.getPurchaseOrderById);
 router.post("/api/update-purchase-order-by-id/:id",authcheck, purchaseOrderController.updatePurchaseOrder);
 router.delete("/api/delete-purchase-order/:id",authcheck, purchaseOrderController.deletePurchaseOrder);

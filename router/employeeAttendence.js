@@ -12,4 +12,6 @@ router.get("/api/getattendencebyid/:id", authcheck,attendanceController.getAtten
 
 router.delete("/api/delete-attendence/:id",authcheck, attendanceController.deleteAttendance);
 
+router.post("/api/getemployeeattendencedaywise",authcheck, attendanceController.getDailyEmployeeAttendance)
+
 module.exports = router; 

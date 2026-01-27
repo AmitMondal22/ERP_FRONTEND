@@ -10,54 +10,16 @@ const {
   selectOneData,
   updateData,
   deleteData,
-  customSelectSqlQuery 
+  customSelectSqlQuery ,
+  customSelectSqlQuery2
 } = require("../models/MasterModel");
+
+
+
+
 
 class EmployeeTeamController {
 
-
-// resetActiveEmployeesAPI = async (req, res) => {
-//   try {
-//     const { id } = req.body; // employee_team_id from route
-
-//     if (!id) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "employee_team_id is required",
-//       });
-//     }
-
-//     const updateObj = {
-//       status: "N",
-//       out_date: dayjs.utc().format("YYYY-MM-DD"),
-//       updated_at: dayjs.utc().format("YYYY-MM-DD HH:mm:ss"),
-//     };
-
-//     const result = await updateData(
-//       "md_em_employee_team",
-//       updateObj,
-//       `employee_team_id = ${id} AND status = 'Y'`
-//     );
-
-//     if (result === 0) {
-//       return res.status(404).json({
-//         success: false,
-//         message: `No active employee found with employee_team_id = ${id}`,
-//       });
-//     }
-
-//     res.status(200).json({
-//       success: true,
-//       message: `Employee team ID ${id} reset to 'N' successfully`,
-//     });
-//   } catch (error) {
-//     console.error("[EmployeeTeamController] resetActiveEmployeesAPI Error:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: "Failed to reset employee status",
-//     });
-//   }
-// };
 
 
 
@@ -268,40 +230,105 @@ resetActiveEmployeesAPI = async (req, res) => {
   
   
   
-  getAllEmployeeByTeamId = async (req, res) => {
+//   getAllEmployeeByTeamId = async (req, res) => {
+//   try {
+//     const { id } = req.params;
+
+//     // Validation
+//     if (!id) {
+//       return res
+//         .status(400)
+//         .json({ success: false, message: "team_id is required" });
+//     }
+
+//     // SQL join query — only employees with status = 'Y'
+//     const sql = `
+//       SELECT 
+//        t.employee_team_id,      
+//         t.employee_id,
+//         e.first_name,
+//         e.last_name,
+//         e.email,
+//         e.phone
+//       FROM md_em_employee_team AS t
+//       INNER JOIN em_employees AS e
+//         ON t.employee_id = e.employee_id
+//       WHERE t.team_id = ${id}
+//         AND t.status = 'Y'
+//       ORDER BY e.first_name ASC
+//     `;
+
+//     const employees = await customSelectSqlQuery(sql);
+
+//     if (!employees || employees.length === 0) {
+//       return res.status(404).json({
+//         success: false,
+//         message: `No active (status='Y') employees found for team_id: ${id}`,
+//       });
+//     }
+
+//     res.status(200).json({
+//       success: true,
+//       count: employees.length,
+//       data: employees,
+//     });
+//   } catch (error) {
+//     console.error("Get All Employees By TeamId Error:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Internal Server Error",
+//     });
+//   }
+// };
+
+
+
+getAllEmployeeByTeamId = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validation
     if (!id) {
-      return res
-        .status(400)
-        .json({ success: false, message: "team_id is required" });
+      return res.status(400).json({
+        success: false,
+        message: "team_id is required",
+      });
     }
 
-    // SQL join query — only employees with status = 'Y'
+
     const sql = `
-      SELECT 
-       t.employee_team_id,      
-        t.employee_id,
-        e.first_name,
-        e.last_name,
-        e.email,
-        e.phone
-      FROM md_em_employee_team AS t
-      INNER JOIN em_employees AS e
-        ON t.employee_id = e.employee_id
-      WHERE t.team_id = ${id}
-        AND t.status = 'Y'
-      ORDER BY e.first_name ASC
+    SELECT 
+  t.employee_team_id,
+  t.employee_id,
+  e.first_name,
+  e.last_name,
+  e.email,
+  e.phone,
+  a.in_out_status AS db_in_out_status,
+  CASE
+    WHEN a.check_in IS NOT NULL AND a.check_out IS NULL THEN 'IN'
+    WHEN a.check_out IS NOT NULL THEN 'OUT'
+    ELSE 'ABSENT'
+  END AS in_out_status
+FROM md_em_employee_team t
+JOIN em_employees e
+  ON e.employee_id = t.employee_id
+LEFT JOIN em_attendance a
+  ON a.employee_id = t.employee_id
+ AND a.work_date = ?
+WHERE t.team_id = ?
+  AND t.status = 'Y'
+ORDER BY e.first_name ASC;
+
+
     `;
 
+    
     const employees = await customSelectSqlQuery(sql);
 
     if (!employees || employees.length === 0) {
       return res.status(404).json({
         success: false,
-        message: `No active (status='Y') employees found for team_id: ${id}`,
+        message: `No active employees found for team_id: ${id}`,
       });
     }
 
@@ -322,61 +349,144 @@ resetActiveEmployeesAPI = async (req, res) => {
 
 
 
+// getAllEmployeeByTeamIdFromBody = async (req, res) => {
+//   try {
+//     //console.log("🔥🔥🔥 getAllEmployeeByTeamIdFromBody IS BEING CALLED 🔥🔥🔥");
+    
+//     const { id } = req.body;
+//     console.log('Team ID from body:', id);
 
+//     // Validation
+//     if (!id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "team_id is required"
+//       });
+//     }
 
- getAllEmployeeByTeamIdFromBody = async (req, res) => {
+//     // Get today's date in YYYY-MM-DD format
+//     const today = new Date().toISOString().split('T')[0];
+//     console.log('Today date:', today);
+
+//     // SQL join query — only employees with status = 'Y'
+//     const sql = `
+//       SELECT 
+//         t.employee_team_id,      
+//         t.employee_id,
+//         e.first_name,
+//         e.last_name,
+//         e.email,
+//         e.phone,
+//         CASE
+//           WHEN a.check_in IS NOT NULL AND a.check_out IS NULL THEN 'IN'
+//           WHEN a.check_out IS NOT NULL THEN 'OUT'
+//           ELSE 'ABSENT'
+//         END AS in_out_status
+//       FROM md_em_employee_team AS t
+//       INNER JOIN em_employees AS e
+//         ON t.employee_id = e.employee_id
+//       LEFT JOIN em_attendance a
+//         ON a.employee_id = t.employee_id
+//         AND a.work_date = ?
+//       WHERE t.team_id = ?
+//         AND t.status = 'Y'
+//       ORDER BY e.first_name ASC
+//     `;
+
+//     //console.log('📝 About to execute SQL with customSelectSqlQuery2');
+//     const employees = await customSelectSqlQuery2(sql, [today, id]);
+//     //console.log('✅ Query executed. Result:', employees);
+
+//     if (!employees || employees.length === 0) {
+//       return res.status(404).json({
+//         success: false,
+//         message: `No active (status='Y') employees found for team_id: ${id}`,
+//       });
+//     }
+
+//     res.status(200).json({
+//       success: true,
+//       count: employees.length,
+//       data: employees,
+//     });
+//   } catch (error) {
+//     console.error("Get All Employees By TeamId Error:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Internal Server Error",
+//     });
+//   }
+// };
+  
+  getAllEmployeeByTeamIdFromBody = async (req, res) => {
   try {
-    const { id } = req.body;
+    const { team_id, in_out_status } = req.body;
 
-    // Validation
-    if (!id) {
-      return res
-        .status(400)
-        .json({ success: false, message: "team_id is required" });
+    if (!team_id || !in_out_status) {
+      return res.status(400).json({
+        success: false,
+        message: "team_id and in_out_status are required",
+      });
     }
 
-    // SQL join query — only employees with status = 'Y'
+    const today = new Date().toISOString().split("T")[0];
+    const fetchStatus = in_out_status === "N" ? "Y" : "N";
+
     const sql = `
       SELECT 
-       t.employee_team_id,      
+        t.employee_team_id,
         t.employee_id,
         e.first_name,
         e.last_name,
         e.email,
-        e.phone
+        e.phone,
+        a.in_out_status
       FROM md_em_employee_team AS t
       INNER JOIN em_employees AS e
         ON t.employee_id = e.employee_id
-      WHERE t.team_id = ${id}
+      LEFT JOIN (
+        SELECT 
+          employee_id,
+          in_out_status,
+          work_date,
+          ROW_NUMBER() OVER (
+            PARTITION BY employee_id 
+            ORDER BY attendance_id DESC
+          ) AS rn
+        FROM em_attendance
+        WHERE work_date = ?
+      ) AS a
+        ON a.employee_id = t.employee_id AND a.rn = 1
+      WHERE t.team_id = ?
         AND t.status = 'Y'
+        AND (
+          a.in_out_status = ?
+          OR a.in_out_status IS NULL
+        )
       ORDER BY e.first_name ASC
     `;
 
-    const employees = await customSelectSqlQuery(sql);
+    const employees = await customSelectSqlQuery2(sql, [
+      today,
+      team_id,
+      fetchStatus,
+    ]);
 
-    if (!employees || employees.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: `No active (status='Y') employees found for team_id: ${id}`,
-      });
-    }
-
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       count: employees.length,
       data: employees,
     });
+
   } catch (error) {
     console.error("Get All Employees By TeamId Error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Internal Server Error",
     });
   }
 };
-  
-  
-  
+
   
   
   
