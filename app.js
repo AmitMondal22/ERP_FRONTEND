@@ -34,7 +34,11 @@ const billingOrderRoutes= require('./router/billingRoutes')
 const employeeSalaryRoutes = require('./router/employeeSalaryRoutes')
 const employeeleaveassignedRoutes = require("./router/employeeLeaveAssignedRoutes")
 
-const AnnualLeaveRoutes= require("./router/employeeAnnualLeaveRoutes")
+const AnnualLeaveRoutes= require("./router/employeeAnnualLeaveRoutes");
+
+const documnetUploadRoutes= require("./router/documnetUploadRoutes")
+
+const startScheduler = require('./scheduler/payrollScheduler');
 
 const app= express()
 const path = require("path");
@@ -46,11 +50,12 @@ app.use(cors({
   credentials: true
 }));
 
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+
 
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
-
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 
 // app.use(express.json({limit: '200kb'}));
@@ -73,12 +78,12 @@ app.use('/',Relation)
 app.use('/',Upload)
 app.use('/',Bom)
 app.use('/',purchaseProduct)
-app.use('/',productType);
+app.use('/',productType); 
 app.use('/',progressRoutes);
 app.use('/',employeeTeamRoutes);
 app.use('/',employeeAttendence);
 app.use('/',leaveRoutes);
-app.use('/',leaveRequestRoutes);
+app.use('/',leaveRequestRoutes); 
 app.use('/',employeePaySlipRoutes);
 app.use('/',currentStockRoutes);
 app.use('/',ProjectBillingRoutes);
@@ -90,9 +95,10 @@ app.use('/',billingOrderRoutes);
 app.use('/',employeeSalaryRoutes)
 app.use('/',employeeleaveassignedRoutes)
 app.use('/',AnnualLeaveRoutes);
+app.use('/',documnetUploadRoutes);
 
 //need tomake Upload Path Public
-
+startScheduler();
 
 
 // ---------- Scheduler Code ----------

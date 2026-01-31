@@ -33,6 +33,7 @@ const LEAVE_TYPE_MAP = {
 };
 
 class employeeLeaveRequestController {
+
   //  Create new leave request
   // async createLeaveRequest(req, res) {
   //   try {
@@ -96,22 +97,22 @@ class employeeLeaveRequestController {
         employee_id,
         leave_type_id,
         start_date,
-        end_date,
+        end_date, 
         status,
         reason,
         request_date: new Date(),
       };
 
-      // 1️⃣ Insert leave request
+      //  Insert leave request
       const insertId = await insertData(table, data);
-      // 3️⃣ Final response
+      //  Final response
       res.status(201).json({
         success: true,
         message: "Leave request created successfully.",
         leave_id: insertId,
       });
 
-      // 2️⃣ Send mail to manager (non-blocking)
+      //  Send mail to manager (non-blocking)
       try {
 
        setImmediate(()=>{
@@ -128,7 +129,7 @@ class employeeLeaveRequestController {
        
       } catch (mailErr) {
         console.error("Leave mail failed:", mailErr.message);
-        // ❗ Do NOT return error – DB insert already done
+        //  Do NOT return error – DB insert already done
       }
 
       
@@ -139,52 +140,65 @@ class employeeLeaveRequestController {
   }
 
 
+async getApprovedLeavesByDateRange(req, res) {
+  try {
+    const { fromdate, todate } = req.body;
+
+    if (!fromdate || !todate) {
+      return res.status(400).json({
+        success: false,
+        message: "fromdate and todate are required",
+      });
+    }
+
+    const sql = `
+      SELECT 
+        lr.leave_id,
+        lr.employee_id,
+        lr.leave_type_id,
+        lr.start_date,
+        lr.end_date,
+        lr.status,
+        lr.request_date,
+        lr.reason,
+
+        emp.first_name,
+        emp.last_name,
+        emp.email,
+        emp.phone,
+        emp.department,
+        emp.job_title,
+        emp.hire_date
+
+      FROM em_leave_requests lr
+      LEFT JOIN em_employees emp 
+        ON lr.employee_id = emp.employee_id
+      WHERE lr.status = 'approved'
+        AND DATE(lr.start_date) >= '${fromdate}'
+        AND DATE(lr.end_date) <= '${todate}'
+      ORDER BY lr.start_date ASC
+    `;
+
+    const data = await customSelectSqlQuery(sql);
+
+    res.json({
+      success: true,
+      data,
+    });
+
+  } catch (err) {
+    console.error("getApprovedLeavesByDateRange Error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch approved leaves",
+      error: err.message,
+    });
+  }
+}
 
 
 
 
-  // 🔍 Get leave requests with employee + leave type info
-
-  // async getAllLeaveRequestsWithDetails(req, res) {
-  //   try {
-  //     const sql = `
-  //       SELECT
-  //         lr.leave_id,
-  //         CONCAT(emp.first_name, ' ', emp.last_name) AS employee_name,
-  //         lt.type_name AS leave_type,
-  //         lr.start_date AS from_date,
-  //         lr.end_date AS to_date,
-  //         lr.reason,
-  //         lr.status,
-  //         lr.request_date
-  //       FROM em_leave_requests lr
-  //       LEFT JOIN em_employees emp ON lr.employee_id = emp.employee_id
-  //       LEFT JOIN em_leave_types lt ON lr.leave_type_id = lt.leave_type_id
-  //       ORDER BY lr.leave_id DESC
-  //     `;
-
-  //     const result = await customSelectSqlQuery(sql);
-
-  //     // Format dates
-  //     const formattedResult = result.map(record => ({
-  //       ...record,
-  //       from_date: record.from_date ? record.from_date.toISOString().split('T')[0] : null,
-  //       to_date: record.to_date ? record.to_date.toISOString().split('T')[0] : null,
-  //     }));
-
-  //     res.json({
-  //       success: true,
-  //       data: formattedResult,
-  //     });
-  //   } catch (err) {
-  //     console.error("getAllLeaveRequestsWithDetails Error:", err);
-  //     res.status(500).json({
-  //       success: false,
-  //       message: "Failed to fetch detailed leave requests",
-  //       error: err.message,
-  //     });
-  //   }
-  // }
   async getAllLeaveRequestsWithDetails(req, res) {
     try {
       const sql = `
@@ -303,7 +317,7 @@ class employeeLeaveRequestController {
     }
   }
 
-  // ❌ Delete leave request
+  //  Delete leave request
   async deleteLeaveRequest(req, res) {
     try {
       const { id } = req.params;
@@ -327,667 +341,6 @@ class employeeLeaveRequestController {
     }
   }
 
-  //  Update leave request status (Approve / Reject)
-  // async updateLeaveStatus(req, res) {
-  //   try {
-  //     const { id } = req.params;
-  //     const { status } = req.body; // expecting 'approved' or 'rejected'
-
-  //     // --- Validation ---
-  //     if (!status || !["approved", "rejected"].includes(status.toLowerCase())) {
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "Invalid status value. Must be 'approved' or 'rejected'.",
-  //       });
-  //     }
-
-  //     // --- Check if leave exists ---
-  //     const existing = await selectOneData(table, "*", `leave_id = ${id}`);
-  //     if (!existing) {
-  //       return res
-  //         .status(404)
-  //         .json({ success: false, message: "Leave request not found." });
-  //     }
-
-  //     // --- Prevent re-updating approved/rejected leaves ---
-  //     if (existing.status !== "pending") {
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: `Cannot change status. Leave is already '${existing.status}'.`,
-  //       });
-  //     }
-
-  //     // --- Update status ---
-  //     const affected = await updateData(
-  //       table,
-  //       { status: status.toLowerCase() },
-  //       `leave_id = ${id}`
-  //     );
-
-  //     res.json({
-  //       success: true,
-  //       message: `Leave status updated to '${status}'.`,
-  //       affected,
-  //     });
-  //   } catch (err) {
-  //     console.error("updateLeaveStatus Error:", err);
-  //     res.status(500).json({
-  //       success: false,
-  //       message: "Failed to update leave status.",
-  //       error: err.message,
-  //     });
-  //   }
-  // }
-
-  //////this working innitialy////////
-  // async updateLeaveStatus(req, res) {
-  //   try {
-  //     console.log("▶ updateLeaveStatus called");
-
-  //     const { id } = req.params;
-  //     const { status } = req.body;
-
-  //     console.log("Leave ID:", id);
-  //     console.log("Requested Status:", status);
-
-  //     if (!status || !["approved", "rejected"].includes(status.toLowerCase())) {
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "Invalid status value",
-  //       });
-  //     }
-
-  //     // 1️⃣ FETCH LEAVE REQUEST
-  //     const leave = await selectOneData(
-  //       "em_leave_requests",
-  //       "*",
-  //       `leave_id = ${id}`
-  //     );
-
-  //     console.log("Leave Record:", leave);
-
-  //     if (!leave) {
-  //       return res.status(404).json({
-  //         success: false,
-  //         message: "Leave request not found",
-  //       });
-  //     }
-
-  //     if (leave.status !== "pending") {
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: `Leave already ${leave.status}`,
-  //       });
-  //     }
-
-  //     // 2️⃣ REJECT FLOW
-  //     if (status === "rejected") {
-  //       await updateData(
-  //         "em_leave_requests",
-  //         { status: "rejected" },
-  //         `leave_id = ${id}`
-  //       );
-
-  //       return res.json({
-  //         success: true,
-  //         message: "Leave rejected successfully",
-  //       });
-  //     }
-
-  //     // 🔥 APPROVAL FLOW 🔥
-
-  //     // 3️⃣ FETCH LATEST LEAVE BALANCE (LEDGER STYLE)
-  //     const balanceRows = await customSelectSqlQuery(`
-  //       SELECT *
-  //       FROM em_leave_assigned
-  //       WHERE employee_id = ${leave.employee_id}
-  //       ORDER BY leave_assigned_id DESC
-  //       LIMIT 1
-  //     `);
-
-  //     console.log("Balance Rows:", balanceRows);
-
-  //     if (!balanceRows.length) {
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "Leave balance not assigned by HR",
-  //       });
-  //     }
-
-  //     const currentBalance = balanceRows[0];
-  //     console.log("Current Balance Snapshot:", currentBalance);
-
-  //     // 4️⃣ FETCH HOLIDAYS BETWEEN DATES
-  //     const holidays = await customSelectSqlQuery(`
-  //       SELECT holiday_date
-  //       FROM em_annual_holiday
-  //       WHERE holiday_date BETWEEN '${leave.start_date}' AND '${leave.end_date}'
-  //     `);
-
-  //     const holidayDates = holidays.map(h =>
-  //       new Date(h.holiday_date).toISOString().split("T")[0]
-  //     );
-
-  //     console.log("Holiday Dates:", holidayDates);
-
-  //     // 5️⃣ CALCULATE PAYABLE DAYS
-  //     const allDates = getDatesBetween(leave.start_date, leave.end_date);
-
-  //     console.log("All Dates:", allDates);
-
-  //     const payableLeaveDays = allDates.filter(
-  //       d => !holidayDates.includes(d)
-  //     );
-
-  //     const totalDeductDays = payableLeaveDays.length;
-
-  //     console.log("Payable Leave Dates:", payableLeaveDays);
-  //     console.log("Total Deduct Days:", totalDeductDays);
-
-  //     if (totalDeductDays <= 0) {
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "All selected days are holidays",
-  //       });
-  //     }
-
-  //     // 6️⃣ DETERMINE LEAVE COLUMN
-  //     const leaveColumn = LEAVE_TYPE_MAP[leave.leave_type_id];
-
-  //     console.log("Leave Type ID:", leave.leave_type_id);
-  //     console.log("Mapped Leave Column:", leaveColumn);
-
-  //     if (!leaveColumn) {
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "Invalid leave type mapping",
-  //       });
-  //     }
-
-  //     console.log(
-  //       `Available ${leaveColumn}:`,
-  //       currentBalance[leaveColumn]
-  //     );
-
-  //     if (currentBalance[leaveColumn] < totalDeductDays) {
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "Insufficient leave balance",
-  //       });
-  //     }
-
-  //     // 7️⃣ PREPARE NEW BALANCE SNAPSHOT
-  //     const newBalanceRow = {
-  //       employee_id: leave.employee_id,
-  //       privilege_leave: currentBalance.privilege_leave,
-  //       casual_leave: currentBalance.casual_leave,
-  //       earned_leave: currentBalance.earned_leave,
-  //       maternity_leave: currentBalance.maternity_leave,
-  //       sick_leave: currentBalance.sick_leave,
-  //       created_by: req.user?.id || leave.employee_id,
-  //       created_at: new Date(),
-  //     };
-
-  //     newBalanceRow[leaveColumn] =
-  //       currentBalance[leaveColumn] - totalDeductDays;
-
-  //     console.log("New Balance Row to Insert:", newBalanceRow);
-
-  //     // 8️⃣ INSERT NEW BALANCE (NO UPDATE)
-  //     await insertData("em_leave_assigned", newBalanceRow);
-
-  //     // 9️⃣ UPDATE LEAVE STATUS
-  //     await updateData(
-  //       "em_leave_requests",
-  //       { status: "approved" },
-  //       `leave_id = ${id}`
-  //     );
-
-  //     res.json({
-  //       success: true,
-  //       message: "Leave approved and balance updated",
-  //       deducted_days: totalDeductDays,
-  //     });
-
-  //   } catch (err) {
-  //     console.error("updateLeaveStatus ERROR:", err);
-  //     res.status(500).json({
-  //       success: false,
-  //       message: "Failed to update leave status",
-  //       error: err.message,
-  //     });
-  //   }
-  // }
-
-  //this perfectly fine do not chnage this -up
-
-//   async updateLeaveStatus(req, res) {
-//     try {
-//       //console.log("▶ updateLeaveStatus called");
-
-//       const { id } = req.params;
-//       const { status } = req.body;
-
-//       console.log("Leave ID:", id);
-//       console.log("Requested Status:", status);
-
-//       if (!status || !["approved", "rejected"].includes(status.toLowerCase())) {
-//         return res.status(400).json({
-//           success: false,
-//           message: "Invalid status value",
-//         });
-//       }
-
-//       //  FETCH LEAVE REQUEST
-//       const leave = await selectOneData(
-//         "em_leave_requests",
-//         "*",
-//         `leave_id = ${id}`,
-//       );
-
-//       //console.log("Leave Record:", leave);
-
-//       if (!leave) {
-//         return res.status(404).json({
-//           success: false,
-//           message: "Leave request not found",
-//         });
-//       }
-
-//       if (leave.status !== "pending") {
-//         return res.status(400).json({
-//           success: false,
-//           message: `Leave already ${leave.status}`,
-//         });
-//       }
-
-//       // 2️⃣ REJECT FLOW
-//       if (status === "rejected") {
-//         await updateData(
-//           "em_leave_requests",
-//           { status: "rejected" },
-//           `leave_id = ${id}`,
-//         );
-
-//         return res.json({
-//           success: true,
-//           message: "Leave rejected successfully",
-//         });
-//       }
-
-//       // 🔥 APPROVAL FLOW 🔥
-
-//       // 3️⃣ FETCH LATEST LEAVE BALANCE (LEDGER STYLE)
-//       const balanceRows = await customSelectSqlQuery(`
-//       SELECT *
-//       FROM em_leave_assigned
-//       WHERE employee_id = ${leave.employee_id}
-//       ORDER BY leave_assigned_id DESC
-//       LIMIT 1
-//     `);
-
-//       console.log("Balance Rows:", balanceRows);
-
-//       if (!balanceRows.length) {
-//         return res.status(400).json({
-//           success: false,
-//           message: "Leave balance not assigned by HR",
-//         });
-//       }
-
-//       const currentBalance = balanceRows[0];
-//       console.log("Current Balance Snapshot:", currentBalance);
-
-//       const startDateStr = leave.start_date.toISOString().split("T")[0];
-//       const endDateStr = leave.end_date.toISOString().split("T")[0];
-
-//       const holidays = await customSelectSqlQuery(`
-//   SELECT DATE(holiday_date) AS holiday_date
-//   FROM em_annual_holiday
-//   WHERE DATE(holiday_date) BETWEEN '${startDateStr}' AND '${endDateStr}'
-// `);
-
-//       const holidayDates = holidays.map(
-//         (h) => new Date(h.holiday_date).toISOString().split("T")[0],
-//       );
-
-//       console.log("Holiday Dates:", holidayDates);
-
-//       // 5️⃣ CALCULATE PAYABLE DAYS (EXCLUDE SUNDAYS & HOLIDAYS)
-//       const allDates = getDatesBetween(leave.start_date, leave.end_date);
-
-//       console.log("All Dates:", allDates);
-
-//       const payableLeaveDays = allDates.filter((dateStr) => {
-//         // Exclude if date is in holiday table
-//         if (holidayDates.includes(dateStr)) {
-//           console.log(`Excluding holiday: ${dateStr}`);
-//           return false;
-//         }
-
-//         // Exclude if date is a Sunday (day 0)
-//         const date = new Date(dateStr + "T00:00:00");
-//         if (date.getDay() === 0) {
-//           console.log(`Excluding Sunday: ${dateStr}`);
-//           return false;
-//         }
-
-//         return true;
-//       });
-
-//       const totalDeductDays = payableLeaveDays.length;
-
-//       console.log("Payable Leave Dates:", payableLeaveDays);
-//       console.log("Total Deduct Days:", totalDeductDays);
-
-//       if (totalDeductDays <= 0) {
-//         return res.status(400).json({
-//           success: false,
-//           message: "All selected days are holidays or Sundays",
-//         });
-//       }
-
-//       //  DETERMINE LEAVE COLUMN
-//       const leaveColumn = LEAVE_TYPE_MAP[leave.leave_type_id];
-
-//       console.log("Leave Type ID:", leave.leave_type_id);
-//       console.log("Mapped Leave Column:", leaveColumn);
-
-//       if (!leaveColumn) {
-//         return res.status(400).json({
-//           success: false,
-//           message: "Invalid leave type mapping",
-//         });
-//       }
-
-//       console.log(`Available ${leaveColumn}:`, currentBalance[leaveColumn]);
-
-//       if (currentBalance[leaveColumn] < totalDeductDays) {
-//         return res.status(400).json({
-//           success: false,
-//           message: "Insufficient leave balance",
-//         });
-//       }
-
-//       //  PREPARE NEW BALANCE SNAPSHOT
-//       const newBalanceRow = {
-//         employee_id: leave.employee_id,
-//         privilege_leave: currentBalance.privilege_leave,
-//         casual_leave: currentBalance.casual_leave,
-//         earned_leave: currentBalance.earned_leave,
-//         maternity_leave: currentBalance.maternity_leave,
-//         sick_leave: currentBalance.sick_leave,
-//         created_by: req.user?.id || leave.employee_id,
-//         created_at: new Date(),
-//       };
-
-//       newBalanceRow[leaveColumn] =
-//         currentBalance[leaveColumn] - totalDeductDays;
-
-//       console.log("New Balance Row to Insert:", newBalanceRow);
-
-//       //  INSERT NEW BALANCE (NO UPDATE)
-//       await insertData("em_leave_assigned", newBalanceRow);
-
-//       //  UPDATE LEAVE STATUS
-//       await updateData(
-//         "em_leave_requests",
-//         { status: "approved" },
-//         `leave_id = ${id}`,
-//       );
-
-//       res.json({
-//         success: true,
-//         message: "Leave approved and balance updated",
-//         deducted_days: totalDeductDays,
-//       });
-//     } catch (err) {
-//       console.error("updateLeaveStatus ERROR:", err);
-//       res.status(500).json({
-//         success: false,
-//         message: "Failed to update leave status",
-//         error: err.message,
-//       });
-//     }
-//   }
-
-
-//show-down
-
-// async updateLeaveStatus(req, res) {
-//   try {
-//     const { id } = req.params;
-//     const { status } = req.body;
-
-//     console.log("Leave ID:", id);
-//     console.log("Requested Status:", status);
-
-//     if (!status || !["approved", "rejected"].includes(status.toLowerCase())) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Invalid status value",
-//       });
-//     }
-
-//     // 1️⃣ FETCH LEAVE REQUEST
-//     const leave = await selectOneData(
-//       "em_leave_requests",
-//       "*",
-//       `leave_id = ${id}`
-//     );
-
-//     if (!leave) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Leave request not found",
-//       });
-//     }
-
-//     if (leave.status !== "pending") {
-//       return res.status(400).json({
-//         success: false,
-//         message: `Leave already ${leave.status}`,
-//       });
-//     }
-
-//     // 2️⃣ REJECT FLOW
-//     // if (status === "rejected") {
-//     //   await updateData(
-//     //     "em_leave_requests",
-//     //     { status: "rejected" },
-//     //     `leave_id = ${id}`
-//     //   );
-
-//     //   const employee = await selectOneData(
-//     //     "em_employees",
-//     //     "first_name, last_name, email",
-//     //     `employee_id = ${leave.employee_id}`
-//     //   );
-
-//     //   await sendLeaveStatusMail({
-//     //     to: employee.email,
-//     //     employeeName: `${employee.first_name} ${employee.last_name}`,
-//     //     status: "rejected",
-//     //     startDate: leave.start_date,
-//     //     endDate: leave.end_date,
-//     //   });
-
-//     //   return res.json({
-//     //     success: true,
-//     //     message: "Leave rejected successfully",
-//     //   });
-//     // }
-
-
-
-//     // 3️⃣ REJECT FLOW
-//     if (status === "rejected") {
-//       await updateData(
-//         "em_leave_requests",
-//         { status: "rejected" },
-//         `leave_id = ${id}`
-//       );
-
-//       // 🔥 Send response immediately
-//       res.json({
-//         success: true,
-//         message: "Leave rejected successfully",
-//       });
-
-//       // 📧 Background mail
-//       setImmediate(() => {
-//         sendLeaveStatusMail({
-//           to: employee.email,
-//           employeeName: `${employee.first_name} ${employee.last_name}`,
-//           status: "rejected",
-//           startDate: leave.start_date,
-//           endDate: leave.end_date,
-//         }).catch(err =>
-//           console.error("Reject mail failed:", err.message)
-//         );
-//       });
-
-//       return;
-//     }
-
-
-//     // 🔥 APPROVAL FLOW 🔥
-
-//     // 3️⃣ FETCH LATEST LEAVE BALANCE
-//     const balanceRows = await customSelectSqlQuery(`
-//       SELECT *
-//       FROM em_leave_assigned
-//       WHERE employee_id = ${leave.employee_id}
-//       ORDER BY leave_assigned_id DESC
-//       LIMIT 1
-//     `);
-
-//     if (!balanceRows.length) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Leave balance not assigned by HR",
-//       });
-//     }
-
-//     const currentBalance = balanceRows[0];
-
-//     // 4️⃣ FETCH HOLIDAYS BETWEEN DATES
-//     const startDateStr = leave.start_date.toISOString().split("T")[0];
-//     const endDateStr = leave.end_date.toISOString().split("T")[0];
-
-//     const holidays = await customSelectSqlQuery(`
-//       SELECT DATE(holiday_date) AS holiday_date
-//       FROM em_annual_holiday
-//       WHERE DATE(holiday_date) BETWEEN '${startDateStr}' AND '${endDateStr}'
-//     `);
-
-//     const holidayDates = holidays.map(h =>
-//       new Date(h.holiday_date).toISOString().split("T")[0]
-//     );
-
-//     // 5️⃣ CALCULATE PAYABLE DAYS
-//     const allDates = getDatesBetween(leave.start_date, leave.end_date);
-
-//     const payableLeaveDays = allDates.filter(dateStr => {
-//       if (holidayDates.includes(dateStr)) return false;
-//       const date = new Date(dateStr + "T00:00:00");
-//       return date.getDay() !== 0; // exclude Sunday
-//     });
-
-//     const totalDeductDays = payableLeaveDays.length;
-
-//     if (totalDeductDays <= 0) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "All selected days are holidays or Sundays",
-//       });
-//     }
-
-//     // 6️⃣ DETERMINE LEAVE COLUMN
-//     const leaveColumn = LEAVE_TYPE_MAP[leave.leave_type_id];
-
-//     if (!leaveColumn) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Invalid leave type mapping",
-//       });
-//     }
-
-//     if (currentBalance[leaveColumn] < totalDeductDays) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Insufficient leave balance",
-//       });
-//     }
-
-//     // 7️⃣ PREPARE NEW BALANCE SNAPSHOT
-//     const newBalanceRow = {
-//       employee_id: leave.employee_id,
-//       privilege_leave: currentBalance.privilege_leave,
-//       casual_leave: currentBalance.casual_leave,
-//       earned_leave: currentBalance.earned_leave,
-//       maternity_leave: currentBalance.maternity_leave,
-//       sick_leave: currentBalance.sick_leave,
-//       created_by: req.user?.id || leave.employee_id,
-//       created_at: new Date(),
-//     };
-
-//     newBalanceRow[leaveColumn] =
-//       currentBalance[leaveColumn] - totalDeductDays;
-
-//     //  INSERT NEW BALANCE
-//     await insertData("em_leave_assigned", newBalanceRow);
-
-//     //  UPDATE LEAVE STATUS
-//     await updateData(
-//       "em_leave_requests",
-//       { status: "approved" },
-//       `leave_id = ${id}`
-//     );
-
-//     const employee = await selectOneData(
-//       "em_employees",
-//       "first_name, last_name, email",
-//       `employee_id = ${leave.employee_id}`
-//     );
-
-//     // await sendLeaveStatusMail({
-//     //   to: employee.email,
-//     //   employeeName: `${employee.first_name} ${employee.last_name}`,
-//     //   status: "approved",
-//     //   startDate: leave.start_date,
-//     //   endDate: leave.end_date,
-//     // });
-// setImmediate(() => {
-//       sendLeaveStatusMail({
-//         to: employee.email,
-//         employeeName: `${employee.first_name} ${employee.last_name}`,
-//         status: "approved",
-//         startDate: leave.start_date,
-//         endDate: leave.end_date,
-//       }).catch(err =>
-//         console.error("Approve mail failed:", err.message)
-//       );
-//     });
-
-//     return res.json({
-//       success: true,
-//       message: "Leave approved and balance updated",
-//       deducted_days: totalDeductDays,
-//     });
-
-//   } catch (err) {
-//     console.error("updateLeaveStatus ERROR:", err);
-//     res.status(500).json({
-//       success: false,
-//       message: "Failed to update leave status",
-//       error: err.message,
-//     });
-//   }
-// }
-
-
-
 
 
 async updateLeaveStatus(req, res) {
@@ -1005,7 +358,7 @@ async updateLeaveStatus(req, res) {
       });
     }
 
-    // 1️⃣ FETCH LEAVE REQUEST
+    //  FETCH LEAVE REQUEST
     const leave = await selectOneData(
       "em_leave_requests",
       "*",
@@ -1026,14 +379,14 @@ async updateLeaveStatus(req, res) {
       });
     }
 
-    // 2️⃣ FETCH EMPLOYEE (ONCE)
+    //  FETCH EMPLOYEE (ONCE)
     const employee = await selectOneData(
       "em_employees",
       "first_name, last_name, email",
       `employee_id = ${leave.employee_id}`
     );
 
-    // 3️⃣ REJECT FLOW
+    //  REJECT FLOW
     if (status === "rejected") {
       await updateData(
         "em_leave_requests",
@@ -1041,13 +394,13 @@ async updateLeaveStatus(req, res) {
         `leave_id = ${id}`
       );
 
-      // 🔥 Send response immediately
+      //  Send response immediately
       res.json({
         success: true,
         message: "Leave rejected successfully",
       });
 
-      // 📧 Background mail
+      //  Background mail
       setImmediate(() => {
         sendLeaveStatusMail({
           to: employee.email,
@@ -1115,7 +468,7 @@ async updateLeaveStatus(req, res) {
       });
     }
 
-    // 7️⃣ DETERMINE LEAVE COLUMN
+    //  DETERMINE LEAVE COLUMN
     const leaveColumn = LEAVE_TYPE_MAP[leave.leave_type_id];
 
     if (!leaveColumn) {
@@ -1156,14 +509,14 @@ async updateLeaveStatus(req, res) {
       `leave_id = ${id}`
     );
 
-    // 🔥 Send response immediately
+    //  Send response immediately
     res.json({
       success: true,
       message: "Leave approved and balance updated",
       deducted_days: totalDeductDays,
     });
 
-    // 📧 Background mail
+    //  Background mail
     setImmediate(() => {
       sendLeaveStatusMail({
         to: employee.email,

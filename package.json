@@ -22,6 +22,7 @@
     "mongoose": "^8.18.0",
     "multer": "^2.0.2",
     "mysql2": "^3.14.4",
+    "node-cron": "^4.2.1",
     "nodemailer": "^7.0.6",
     "nodemon": "^3.1.10",
     "origin": "^0.5.8",

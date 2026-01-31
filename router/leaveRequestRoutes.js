@@ -10,5 +10,6 @@ router.get("/api/getleaveby/:id",authcheck, controller.getLeaveRequestById);
 router.post("/api/updateleave/:id",authcheck, controller.updateLeaveRequest);
 router.delete("/api/deleteleave/:id",authcheck, controller.deleteLeaveRequest);
 router.post("/api/update-status/:id",authcheck,controller.updateLeaveStatus);
+router.post("/api/getemployeeleaveassigneddatebydate",authcheck,controller.getApprovedLeavesByDateRange);
 
 module.exports = router;

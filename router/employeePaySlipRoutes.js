@@ -7,9 +7,13 @@ const authcheck= require('../middleware/auth');
 
 router.get("/api/getallpayslips",authcheck, payslipController.generateAllMonthlyPayslips);
 
-// router.get("/api/getpayslipbyid/:id",authcheck, payslipController.getPayslipById);
+ router.post("/api/getpayslipdataofusers",authcheck, payslipController.getPayslipsByDateRange);
 
-// router.post("/api/updatepayslips/:id",authcheck, payslipController.updatePayslip);
+ router.get("/api/getpayslipbyid/:payslip_id",authcheck, payslipController.getPayslipById);//
+
+ router.delete("/api/payslips/:payslip_id",authcheck,payslipController.deletePayslipById);
+
+ router.post("/api/updatepayslip/:payslip_id",authcheck,payslipController.updatePayslipById);
 
 // router.delete("/api/deletepayslips/:id",authcheck, payslipController.deletePayslip);
 

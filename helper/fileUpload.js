@@ -66,6 +66,8 @@ const path = require("path");
 
 class FileUploader {
 
+
+  
   constructor({
     folderName = "uploads",
     supportedFiles = ["image/png", "image/jpeg", "image/jpg", "application/pdf"],

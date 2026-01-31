@@ -26,7 +26,7 @@ const fileUploader = new FileUploader({
 });
 
 const upload = fileUploader.upload();
-
+ 
 
 
 // helper: validate base64 image
