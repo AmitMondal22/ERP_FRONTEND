@@ -8,7 +8,7 @@ router.get("/api/getallemployeeinteaam",authcheck, employeeTeamController.getAll
 router.get("/api/employeeinteaam/:id",authcheck ,employeeTeamController.getEmployeeById);
 router.get("/api/getallemployeesbyteamId/:id",authcheck,employeeTeamController.getAllEmployeeByTeamId);
 
-
+router.get("/api/getemployeesforviewandaddinginteam/:id",authcheck,employeeTeamController.getAllEmployeeByTeamIdOnlyForAddingEmployeeToTeam)
 
 
 router.post('/api/getallemployeebyteam',authcheck,employeeTeamController.getAllEmployeeByTeamIdFromBody);
@@ -16,6 +16,8 @@ router.post('/api/getallemployeebyteam',authcheck,employeeTeamController.getAllE
 router.post("/api/updateemployeeinteaam/:id", authcheck,employeeTeamController.updateEmployee);
 router.delete("/api/deleteemployeeinteaam/:id",authcheck, employeeTeamController.deleteEmployee);
 
+
+//getAllEmployeeByTeamIdOnlyForAddingEmployeeToTeam
 router.post('/api/employee-team/reset',authcheck,employeeTeamController.resetActiveEmployeesAPI);
 ///////
 
