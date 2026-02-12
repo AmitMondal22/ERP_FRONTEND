@@ -3,7 +3,8 @@ const router = express.Router();
 const ProjectSiteEmployeeAssignmentController = require("../controller/projectSiteEmployeeAssignmentController");
 const TeamEmployeeAssignmentController = require("../controller/teamEmployeeAssignmentController");
 const ProjectEmployeeAssignmentController = require("../controller/projectEmployeeAssignmentController");
-const authcheck= require('../middleware/auth')
+const authcheck= require('../middleware/auth');
+const projectSiteEmployeeAssignmentController = require("../controller/projectSiteEmployeeAssignmentController");
 
 
 
@@ -19,6 +20,7 @@ router.delete("/api/delete_team_employee/:id",authcheck, TeamEmployeeAssignmentC
 router.post("/api/create_project_site_employee",authcheck, ProjectSiteEmployeeAssignmentController.createProjectSiteEmployeeAssignment);
 
 router.get("/api/get_all_project_site_employee",authcheck, ProjectSiteEmployeeAssignmentController.getAllProjectSiteEmployeeAssignments);//get all site Employe//site_in_charge_id 
+router.get("/api/project-site-employee-assignment/:site_id",authcheck,projectSiteEmployeeAssignmentController.getProjectSiteEmployeeAssignmentsBySiteId )
 
 router.post("/api/update_project_site_employee/:id",authcheck, ProjectSiteEmployeeAssignmentController.updateProjectSiteEmployeeAssignment);
 router.get("/api/get_project_site_employee/:id",authcheck, ProjectSiteEmployeeAssignmentController.getProjectSiteEmployeeAssignmentById);
@@ -28,11 +30,12 @@ router.delete("/api/delete_project_site_employee/:id",authcheck, ProjectSiteEmpl
 
 
 
-
+// 
 
 //working here   insertedDAta//this one
 router.post("/api/create_project_employee",authcheck, ProjectEmployeeAssignmentController.createProjectEmployeeAssignment);//create project incharge
 
+router.get("/api/employee_with_projectId/:projectId",authcheck ,ProjectEmployeeAssignmentController.getEmployeesByProjectId)
 router.get("/api/get_all_project_employee",authcheck, ProjectEmployeeAssignmentController.getAllProjectEmployeeAssignments);//project_in_charge_id	
 router.post("/api/update_project_employee/:id",authcheck, ProjectEmployeeAssignmentController.updateProjectEmployeeAssignment);
 router.get("/api/get_project_employee/:id",authcheck, ProjectEmployeeAssignmentController.getProjectEmployeeAssignmentById);

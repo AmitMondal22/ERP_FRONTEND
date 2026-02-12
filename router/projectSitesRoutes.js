@@ -7,7 +7,7 @@ router.post("/api/createprojectsites", authcheck,ProjectSiteController.createPro
 router.get("/api/getallprojectsites",authcheck, ProjectSiteController.getAllProjectsSite);
 
 
-router.get("/api/getprojecsitetbyId/:id", ProjectSiteController.getProjectSite);
+router.get("/api/getprojecsitetbyId/:id",authcheck, ProjectSiteController.getProjectSite);
 
 router.post("/api/updateprojectsites/:id",authcheck, ProjectSiteController.updateProjectsSite);
 router.delete("/api/deleteprojectsites/:id", authcheck,ProjectSiteController.deleteProjectSite);

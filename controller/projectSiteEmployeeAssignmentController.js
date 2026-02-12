@@ -126,6 +126,61 @@ class ProjectSiteEmployeeAssignmentController {
             });
         }
     };
+
+    getProjectSiteEmployeeAssignmentsBySiteId = async (req, res) => {
+  try {
+    const { site_id } = req.params;
+
+    if (!site_id) {
+      return res.status(400).json({
+        success: false,
+        message: "site_id is required"
+      });
+    }
+
+    const table = `
+      tx_project_site_employee_assignment AS a
+      JOIN md_project AS p ON a.project_id = p.project_id
+      JOIN md_project_site AS s ON a.site_id = s.project_site_id
+      JOIN em_employees AS e ON a.site_in_charge_id = e.employee_id
+    `;
+
+    const select = `
+      a.*,
+      p.project_name,
+      s.project_site_name,
+      e.first_name AS site_in_charge_first_name,
+      e.last_name AS site_in_charge_last_name,
+      e.email AS site_in_charge_email,
+      e.phone AS site_in_charge_phone
+    `;
+
+    const condition = `a.site_id = ${site_id}`;
+
+    const assignments = await selectData(
+      table,
+      select,
+      condition,
+      "a.project_site_employee_assignment_id ASC"
+    );
+
+    res.status(200).json({
+      success: true,
+      data: assignments
+    });
+
+  } catch (error) {
+    console.error(
+      "Error in getProjectSiteEmployeeAssignmentsBySiteId:",
+      error.message
+    );
+    res.status(500).json({
+      success: false,
+      message: "Unable to fetch assignments by site_id",
+      error: error.message
+    });
+  }
+};
     updateProjectSiteEmployeeAssignment = async (req, res) => {
         try {
             const { id } = req.params;

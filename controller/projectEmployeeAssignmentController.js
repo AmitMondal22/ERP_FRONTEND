@@ -63,7 +63,7 @@ class ProjectEmployeeAssignmentController {
 
             const select = `
             a.*,
-            p.project_name,
+            p.project_name,    
             e.first_name AS employee_first_name,
             e.last_name AS employee_last_name,
             e.email AS employee_email,
@@ -115,11 +115,72 @@ class ProjectEmployeeAssignmentController {
             console.error("Error in getProjectEmployeeAssignmentById:", error.message);
             res.status(500).json({
             success: false,
-            message: "Unable to fetch assignment",
+            message: "Unable to fetch assignment", 
             error: error.message
             });
         }
     };
+
+
+getEmployeesByProjectId = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+
+    if (!projectId) {
+      return res.status(400).json({
+        success: false,
+        message: "projectId is required",
+      });
+    }
+
+    // JOIN tables
+    const table = `
+      tx_project_employee_assignment AS a
+      JOIN em_employees AS e ON a.employee_id = e.employee_id
+      JOIN md_project AS p ON a.project_id = p.project_id
+    `;
+
+    // Select employee details
+    const select = `
+      a.project_employee_assignment_id,
+      a.project_id,
+      p.project_name,
+      e.employee_id,
+      e.first_name,
+      e.last_name,
+      e.email,
+      e.phone,
+      a.active_status
+    `;
+
+    // Filter by project_id
+    const condition = `
+      a.project_id = ${Number(projectId)}
+      AND a.active_status = 1
+    `;
+
+    const employees = await selectData(
+      table,
+      select,
+      condition,
+      "e.first_name ASC"
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: employees || [],
+    });
+
+  } catch (error) {
+    console.error("Error in getEmployeesByProjectId:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch employees by project",
+      error: error.message,
+    });
+  }
+};
+
 
     updateProjectEmployeeAssignment = async (req, res) => {
         try {

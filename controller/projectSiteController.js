@@ -167,12 +167,56 @@ class projectSiteController{
 
 
 
+ 
+// async getProjectSite(req, res) {
+//   try {
+//     const { id } = req.params;
+
+//     // Build JOIN table (valid for MasterModel)
+//     const table = `
+//       md_project_site AS a
+//       JOIN lo_cities AS b ON a.city_id = b.id
+//       JOIN lo_states AS c ON b.state_id = c.id
+//       JOIN md_project AS d ON a.project_id = d.project_id
+//     `;
+
+//     // Select fields
+//     const select = `
+//       a.*,
+//       b.name AS city_name,
+//       b.state_id,
+//       c.name AS state_name,
+//       d.project_name
+//     `;
+
+//     // Condition
+//     const condition = `a.project_site_id = ${Number(id)}`;
+
+//     // OrderBy (optional)
+//     const orderBy = `a.project_site_name DESC`;
+
+//     // Use MasterModel → selectOneData()
+//     const result = await selectOneData(table, select, condition, orderBy);
+
+//     return res.status(200).json({
+//       success: true,
+//       data: result || null
+//     });
+
+//   } catch (error) {
+//     console.error("Error in getProjectSite:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Unable to fetch project site"
+//     });
+//   }
+// }
 
 async getProjectSite(req, res) {
   try {
-    const { id } = req.params;
+    const { id } = req.params; // project_id
 
-    // Build JOIN table (valid for MasterModel)
+    // JOIN tables
     const table = `
       md_project_site AS a
       JOIN lo_cities AS b ON a.city_id = b.id
@@ -182,36 +226,41 @@ async getProjectSite(req, res) {
 
     // Select fields
     const select = `
-      a.*,
+      a.project_site_id,
+      a.project_site_name,
+      a.address,
+      a.city_id,
+      a.project_id,
+      a.from_date,
+      a.to_date,
+      a.is_time_extended,
       b.name AS city_name,
-      b.state_id,
       c.name AS state_name,
       d.project_name
     `;
 
-    // Condition
-    const condition = `a.project_site_id = ${Number(id)}`;
+    // ✅ Correct condition
+    const condition = `a.project_id = ${Number(id)}`;
 
-    // OrderBy (optional)
-    const orderBy = `a.project_site_name DESC`;
+    // Optional ordering
+    const orderBy = `a.project_site_name ASC`;
 
-    // Use MasterModel → selectOneData()
-    const result = await selectOneData(table, select, condition, orderBy);
+    // ✅ Use selectData (multiple rows)
+    const result = await selectData(table, select, condition, orderBy);
 
     return res.status(200).json({
       success: true,
-      data: result || null
+      data: result || []
     });
 
   } catch (error) {
-    console.error("Error in getProjectSite:", error);
+    console.error("Error in getProjectSitesByProjectId:", error);
     return res.status(500).json({
       success: false,
-      message: "Unable to fetch project site"
+      message: "Unable to fetch project sites"
     });
   }
 }
-
 
 
 
