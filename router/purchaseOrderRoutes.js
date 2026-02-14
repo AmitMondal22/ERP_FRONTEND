@@ -12,6 +12,10 @@ router.get("/api/getall-purchase-order",authcheck, purchaseOrderController.getAl
 router.get("/api/get-purchase-order-by-id/:id",authcheck, purchaseOrderController.getPurchaseOrderById);
 router.post("/api/update-purchase-order-by-id/:id",authcheck, purchaseOrderController.updatePurchaseOrder);
 router.delete("/api/delete-purchase-order/:id",authcheck, purchaseOrderController.deletePurchaseOrder);
+//router.get()
+
+router.get('/api/purchase-orders/project/:project_id/site/:site_id',authcheck, purchaseOrderController.getAllPurchaseOrdersByProjectIdAndSiteId);
+
 
 
 module.exports = router;

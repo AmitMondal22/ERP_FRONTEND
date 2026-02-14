@@ -13,18 +13,23 @@ router.get("/api/perchase-product", authcheck,validate(purchaseQuerySchema), pur
 
 router.get("/api/perchase-product/:id", purchaseProductController.getPurchaseById);
 
+
 router.post("/api/get-purchased-product-details/:id",purchaseProductController.getPurchaseByProductAndDate)
 
 router.post("/api/update-purchase-product/:id",authcheck,purchaseProductController.updatePurchase);
 
 router.get("/api/getallthepurchasedata",authcheck,purchaseProductController.getAllThePurchaseData);
 
-router.delete("/api/purchase/:id", authcheck, purchaseProductController.deletePurchase);
+router.delete("/api/purchase/:id", authcheck, purchaseProductController.deletePurchase); 
 
 
 router.post("/api/stock/monthwise",authcheck, purchaseProductController.getStockMonthwise);
 
 router.post("/api/purchasedetails/monthwise",authcheck, purchaseProductController.getPurchaseDetailsMonthwise);
+
+// In your purchaseProductRoutes.js
+
+router.post('/api/purchases/by-project-site-product', purchaseProductController.getPurchasesByProjectSiteAndProductwithAlldetails);
 
 
 //getPurchaseDetailsMonthwise
