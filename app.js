@@ -28,17 +28,17 @@ const WorkProgressAsPerProjectSiteRoutes= require('./router/workProgressAsPerPro
 const ProjectBillingRoutes= require('./router/projectBillingRoutes')
 const ReturnPurchaseRoutes= require('./router/returnPurchaseRoutes')
 const purchaseOrderRoutes= require('./router/purchaseOrderRoutes')
-
 const billingOrderRoutes= require('./router/billingRoutes')
-
 const employeeSalaryRoutes = require('./router/employeeSalaryRoutes')
 const employeeleaveassignedRoutes = require("./router/employeeLeaveAssignedRoutes")
-
 const AnnualLeaveRoutes= require("./router/employeeAnnualLeaveRoutes");
-
 const documnetUploadRoutes= require("./router/documnetUploadRoutes")
-
 const startScheduler = require('./scheduler/payrollScheduler');
+const claimDamageProductRoutes= require("./router/damagedProductClaimRoutes");
+
+const uploadFileRoutes= require('./router/uploadFilesRoutes');
+
+
 
 const app= express()
 const path = require("path");
@@ -96,6 +96,8 @@ app.use('/',employeeSalaryRoutes)
 app.use('/',employeeleaveassignedRoutes)
 app.use('/',AnnualLeaveRoutes);
 app.use('/',documnetUploadRoutes);
+app.use('/',claimDamageProductRoutes);
+app.use('/',claimDamageProductRoutes);
 
 //need tomake Upload Path Public
 startScheduler();
