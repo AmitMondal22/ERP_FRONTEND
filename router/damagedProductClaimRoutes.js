@@ -55,6 +55,7 @@ const upload = new FileUploader({
 
 router.post("/api/createdamageclaim", auth, controller.createClaim);
 
+
 router.post(
 "/api/createdamageclaim/upload-image",
 auth,
@@ -65,6 +66,13 @@ controller.addClaimImage
 );
 
 router.get("/api/getalldamageclaim", auth, controller.getAllClaims);
+
+
+router.get("/api/approve/:id",auth,controller.approveClaim);
+
+
+
+
 
 router.get("/:id", auth, controller.getClaimById);
  

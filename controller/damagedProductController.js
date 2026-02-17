@@ -7,6 +7,7 @@ const {
   updateData,
   deleteData,
   batchInsertData,
+  customSelectSqlQuery,
 } = require("../models/MasterModel");
 
 class DamagedProductClaimController {
@@ -25,7 +26,7 @@ class DamagedProductClaimController {
         vendor_id,
         product_type_id,
         product_id,
-        invoice_id,
+        purchase_id,
         reason_for_damage,
         date_of_damage,
         expected_replacement_date
@@ -40,7 +41,7 @@ class DamagedProductClaimController {
         vendor_id,
         product_type_id,
         product_id,
-        invoice_id,
+        purchase_id,
         reason_for_damage,
         date_of_damage,
         expected_replacement_date,
@@ -142,6 +143,8 @@ class DamagedProductClaimController {
 //     }
 
 //   };
+
+
 addClaimImage = async (req, res) => {
 
   try {
@@ -206,89 +209,144 @@ addClaimImage = async (req, res) => {
 };
 
 
-// addClaimImage = async (req, res) => {
+
+
+// getAllClaims = async (req, res) => {
 
 //   try {
 
-//     const {
+//     const sql = `
 
-//       damage_claim_id,
-//       product_id,
-//       vendor_id
+//     SELECT
 
-//     } = req.body;
+//     /* ================= CLAIM ================= */
 
-
-//     const files = req.files;
-
-
-//     if (!files || files.length === 0) {
-
-//       return res.status(400).json({
-
-//         success: false,
-//         message: "No files uploaded"
-
-//       });
-
-//     }
+//     c.damage_claim_id,
+//     c.claim_status,
+//     c.reason_for_damage,
+//     c.date_of_damage,
+//     c.expected_replacement_date,
+//     c.created_at,
 
 
-//     const insertedIds = [];
+//     /* ================= PROJECT ================= */
+
+//     p.project_id,
+//     p.project_name,
 
 
-//     for (const file of files) {
+//     /* ================= SITE ================= */
 
-//       const imageData = {
-
-//         damage_claim_id,
-
-//         image_url: file.path,
-
-//         product_id,
-
-//         vendor_id,
-
-//         created_by: req.user.id
-
-//       };
+//     ps.project_site_id,
+//     ps.project_site_name,
 
 
-//       const imageId = await insertData(
+//     /* ================= VENDOR ================= */
 
-//         "md_damaged_product_claim_images",
-
-//         imageData
-
-//       );
-
-
-//       insertedIds.push(imageId);
-
-//     }
+//     v.vendor_id,
+//     v.vendor_name,
+//     v.vendor_mobile,
+//     v.vendor_email,
+//     v.vendor_address,
+//     v.vendor_gst_in,
 
 
-//     res.status(201).json({
+
+
+//     /* ================= PURCHASE ================= */
+
+//     tp.purchase_id,
+//     tp.invoice_no,
+//     tp.invoice_date,
+//     tp.delivery_date,
+
+
+//     /* ================= PURCHASE ORDER ================= */
+
+//     po.purchase_order_id,
+//     po.po_no,
+//     po.date AS po_date,
+//     po.total_amount AS po_total,
+
+
+//     /* ================= PURCHASE ORDER PRODUCT ================= */
+
+//     pop.purchase_order_product_id,
+//     pop.product_id,
+//     pop.quantity,
+//     pop.unit_price,
+//     pop.total_amount AS product_total
+
+
+//     FROM md_damaged_product_claim c
+
+
+//     /* PURCHASE */
+
+//     LEFT JOIN td_purchase tp
+//     ON tp.purchase_id = c.purchase_id
+
+
+//     /* PURCHASE ORDER */
+
+//     LEFT JOIN td_purchase_order po
+//     ON po.purchase_order_id = tp.purchase_order_id
+
+
+//     /* PURCHASE ORDER PRODUCT */
+
+//     LEFT JOIN td_purchase_order_product pop
+//     ON pop.purchase_order_id = po.purchase_order_id
+
+
+//     /* PROJECT */
+
+//     LEFT JOIN md_project p
+//     ON p.project_id = c.project_id
+
+
+//     /* SITE */
+
+//     LEFT JOIN md_project_site ps
+//     ON ps.project_site_id = c.project_site_id
+
+
+//     /* VENDOR */
+
+//     LEFT JOIN md_vendor v
+//     ON v.vendor_id = c.vendor_id
+
+
+
+//     ORDER BY c.damage_claim_id DESC
+
+//     `;
+
+
+
+//     const claims = await customSelectSqlQuery(sql);
+
+
+
+//     res.status(200).json({
 
 //       success: true,
-
-//       message: "Images Uploaded",
-
-//       damage_image_ids: insertedIds
+//       data: claims
 
 //     });
+
 
 //   }
 
 //   catch (error) {
 
-//     console.log(error);
+//     console.error(error);
+
 
 //     res.status(500).json({
 
 //       success: false,
-
-//       message: error.message
+//       message: "Error fetching claims"
 
 //     });
 
@@ -296,53 +354,75 @@ addClaimImage = async (req, res) => {
 
 // };
 
+getAllClaims = async (req, res) => {
+  try {
+    const sql = `
+      SELECT
+        /* CLAIM */
+        c.damage_claim_id,
+        c.claim_status,
+        c.reason_for_damage,
+        c.date_of_damage,
+        c.expected_replacement_date,
+        c.created_at,
+
+        /* PROJECT */
+        p.project_id,
+        p.project_name,
+
+        /* SITE */
+        ps.project_site_id,
+        ps.project_site_name,
+
+        /* VENDOR */
+        v.vendor_id,
+        v.vendor_name,
+        v.vendor_mobile,
+        v.vendor_email,
+        v.vendor_address,
+        v.vendor_gst_in,
+
+        /* PURCHASE */
+        tp.purchase_id,
+        tp.invoice_no,
+        tp.invoice_date,
+        tp.delivery_date,
+
+        /* PURCHASE ORDER */
+        po.purchase_order_id,
+        po.po_no,
+        po.date AS po_date,
+        po.total_amount AS po_total,
+
+        /* PRODUCT */
+        pr.product_id,
+        pr.product_name,
+        pr.hsn_code,
+        pr.product_type_id
+
+      FROM md_damaged_product_claim c
+      LEFT JOIN td_purchase tp       ON tp.purchase_id = c.purchase_id
+      LEFT JOIN td_purchase_order po ON po.purchase_order_id = tp.purchase_order_id
+      LEFT JOIN md_project p         ON p.project_id = c.project_id
+      LEFT JOIN md_project_site ps   ON ps.project_site_id = c.project_site_id
+      LEFT JOIN md_vendor v          ON v.vendor_id = c.vendor_id
+      LEFT JOIN md_product pr        ON pr.product_id = c.product_id
+
+      ORDER BY c.damage_claim_id DESC
+    `;
+
+    const claims = await customSelectSqlQuery(sql);
+    res.status(200).json({ success: true, data: claims });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Error fetching claims" });
+  }
+};
 
 
-  // ===============================
-  // GET ALL CLAIMS
-  // ===============================
-
-  getAllClaims = async (req, res) => {
-
-    try {
-
-      const claims = await selectData(
-
-        "md_damaged_product_claim",
-        "*",
-        null,
-        "damage_claim_id DESC"
-
-      );
 
 
-      res.json({
-
-        success: true,
-        data: claims
-
-      });
-
-    }
-
-    catch (error) {
-
-      res.status(500).json({
-
-        success: false,
-        message: "Error fetching claims"
-
-      });
-
-    }
-
-  };
-
-
-
-  // ===============================
-  // GET CLAIM BY ID
-  // ===============================
 
   getClaimById = async (req, res) => {
 
@@ -434,6 +514,72 @@ addClaimImage = async (req, res) => {
     }
 
   };
+
+
+
+
+
+  
+  // ===============================
+  // APPROVE CLAIM (SET claim_status = 'Y')
+  // ===============================
+
+  approveClaim = async (req, res) => {
+
+    try {
+
+      const id = req.params.id;
+
+      // Check if the claim exists first
+      const existingClaim = await selectOneData(
+        "md_damaged_product_claim",
+        "*",
+        `damage_claim_id=${id}`
+      );
+
+      if (!existingClaim) {
+        return res.status(404).json({
+          success: false,
+          message: "Claim not found"
+        });
+      }
+
+      // Check if already approved
+      if (existingClaim.claim_status === "Y") {
+        return res.status(400).json({
+          success: false,
+          message: "Claim is already approved"
+        });
+      }
+
+      await updateData(
+        "md_damaged_product_claim",
+        {
+          claim_status: "Y",
+          updated_at: dayjs().format("YYYY-MM-DD HH:mm:ss")
+        },
+        `damage_claim_id=${id}`
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: "Claim Approved Successfully",
+        damage_claim_id: Number(id)
+      });
+
+    } catch (error) {
+
+      console.log(error);
+
+      res.status(500).json({
+        success: false,
+        message: "Error approving claim"
+      });
+
+    }
+
+  };
+
 
 
 

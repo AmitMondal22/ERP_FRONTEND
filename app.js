@@ -35,7 +35,6 @@ const AnnualLeaveRoutes= require("./router/employeeAnnualLeaveRoutes");
 const documnetUploadRoutes= require("./router/documnetUploadRoutes")
 const startScheduler = require('./scheduler/payrollScheduler');
 const claimDamageProductRoutes= require("./router/damagedProductClaimRoutes");
-
 const uploadFileRoutes= require('./router/uploadFilesRoutes');
 
 
@@ -97,7 +96,11 @@ app.use('/',employeeleaveassignedRoutes)
 app.use('/',AnnualLeaveRoutes);
 app.use('/',documnetUploadRoutes);
 app.use('/',claimDamageProductRoutes);
-app.use('/',claimDamageProductRoutes);
+app.use('/',uploadFileRoutes);
+
+
+
+
 
 //need tomake Upload Path Public
 startScheduler();

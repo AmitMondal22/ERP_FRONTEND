@@ -333,6 +333,20 @@ updateProductById = async (req, res) => {
       res.status(500).json({ success: false, message: "Unable to delete product" });
     }
   };
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
 }
 
 module.exports = new productController();

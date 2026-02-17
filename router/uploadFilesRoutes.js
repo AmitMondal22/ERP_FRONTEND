@@ -49,6 +49,8 @@ const upload = new FileUploader({
 
 router.post("/api/alltypeoffile/upload", auth, upload.array("image", 10), controller.uploadFile);
 
+///api/alltypeoffile/upload
+
 router.get("/:group_id", auth, controller.getFiles);
 
 router.delete("/:id", auth, controller.deleteFile);

@@ -14,110 +14,49 @@ class UploadFilesController {
 
   // GENERATE GROUP ID
 
-  generateGroupId = async () => {
+  // generateGroupId = async () => {
 
-    const today = dayjs().format("DD-MM-YYYY");
-
-
-    const lastRecord = await selectOneData(
-
-      "td_uploads_files",
-
-      "group_id",
-
-      `group_id LIKE '${today}/%'`,
-
-      "file_id DESC"
-
-    );
+  //   const today = dayjs().format("DD-MM-YYYY");
 
 
-    if (!lastRecord) {
+  //   const lastRecord = await selectOneData(
 
-      return `${today}/1`;
+  //     "td_uploads_files",
 
-    }
+  //     "group_id",
+
+  //     `group_id LIKE '${today}/%'`,
+
+  //     "file_id DESC"
+
+  //   );
 
 
-    const lastNumber =
-      parseInt(lastRecord.group_id.split("/")[1]);
+  //   if (!lastRecord) {
+
+  //     return `${today}/1`;
+
+  //   }
 
 
-    return `${today}${lastNumber + 1}`;
+  //   const lastNumber =
+  //     parseInt(lastRecord.group_id.split("/")[1]);
 
-  };
 
+  //   return `${today}${lastNumber + 1}`;
+
+  // };
+
+  generateGroupId = () => {
+  const today = dayjs().format("DD-MM-YYYY");
+  const random = Math.random().toString(36).substring(2, 7).toUpperCase();
+  return `${today}/${random}`;
+  // produces e.g. "15-07-2025/K3X9F" — unique, instant, no DB round-trip
+};
 
 
 
   // UPLOAD FILE
-
-//   uploadFile = async (req, res) => {
-
-//     try {
-//       const file = req.file;
-
-
-//       // AUTO GENERATE GROUP ID
-//       const group_id = await this.generateGroupId();
-
-
-//       const data = {
-
-//         group_id,
-
-//         file_name: file.filename,
-
-//         original_name: file.originalname,
-
-//         file_path: file.path,
-
-//         file_type: file.mimetype,
-
-//         file_size: file.size,
-
-//         module_name: req.body.module_name,
-
-//         reference_id: req.body.reference_id,
-
-//         uploaded_by: req.user.id
-
-//       };
-
-
-//       const id = await insertData(
-//         "td_uploads_files",
-//         data
-//       );
-
-
-//       res.json({
-
-//         success: true,
-
-//         file_id: id,
-
-//         group_id: group_id
-
-//       });
-
-//     }
-
-//     catch (error) {
-
-//       res.status(500).json({
-
-//         success: false,
-
-//         message: error.message
-
-//       });
-
-//     }
-
-//   };
-
-
 // uploadFile = async (req, res) => {
 
 //   try {
@@ -209,6 +148,9 @@ class UploadFilesController {
 //   }
 
 // };
+
+
+
 uploadFile = async (req, res) => {
 
   try {
@@ -222,6 +164,7 @@ uploadFile = async (req, res) => {
       });
     }
 
+    //console.log("iam being called")
     // Generate group id
     const group_id = await this.generateGroupId();
 
