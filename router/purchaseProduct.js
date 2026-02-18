@@ -11,7 +11,7 @@ router.get("/api/getpurchase", authcheck, purchaseProductController.allPurchase)
 
 router.get("/api/perchase-product", authcheck,validate(purchaseQuerySchema), purchaseProductController.allProductPurchase);
 
-router.get("/api/perchase-product/:id", purchaseProductController.getPurchaseById);
+router.get("/api/perchase-product/:id", purchaseProductController.getPurchaseById);///
 
 
 router.post("/api/get-purchased-product-details/:id",purchaseProductController.getPurchaseByProductAndDate)
