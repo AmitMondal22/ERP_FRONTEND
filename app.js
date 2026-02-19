@@ -37,6 +37,10 @@ const startScheduler = require('./scheduler/payrollScheduler');
 const claimDamageProductRoutes= require("./router/damagedProductClaimRoutes");
 const uploadFileRoutes= require('./router/uploadFilesRoutes');
 
+const claimTypeRoutes= require('./router/claimTypeRoutes');
+
+const claimTypeReimbursementRoutes= require('./router/claimTypeReimbursementRoutes');
+
 
 
 const app= express()
@@ -97,6 +101,8 @@ app.use('/',AnnualLeaveRoutes);
 app.use('/',documnetUploadRoutes);
 app.use('/',claimDamageProductRoutes);
 app.use('/',uploadFileRoutes);
+app.use('/',claimTypeRoutes);
+app.use('/',claimTypeReimbursementRoutes)
 
 
 
