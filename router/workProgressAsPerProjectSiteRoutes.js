@@ -17,6 +17,12 @@ router.post("/api/create-work-progress-perprojectsite",authcheck, controller.cre
 router.post("/api/get-by-project-and-project-site",authcheck, controller.getWorkProgressByProjectAndSite);   
 
 
+router.post("/api/get-data-comparison-with",controller.getBomItemsByProjectComparisonData)
+
+router.post("/api/get-work-progress-details-for-comparison", controller.getBomItemsByProjectAndSiteForComparison)
+
+
+
 router.post("/api/getallworkprogressbyprojectandsiteid",authcheck,controller.getWorkProgressfulldatafromprojectandsiteId)
 
 
@@ -27,6 +33,10 @@ router.post("/api/update", controller.updateWorkProgress);
 router.delete("/delete", controller.deleteWorkProgress);
 
 //workProgressmonthwise
-router.post("/api/work/progressmonthwise", authcheck,controller.getMonthlyWorkReport)
+router.post("/api/work/progressmonthwise", authcheck,controller.getMonthlyWorkReport);
+
+router.get("/api/getallworkprogressbyprojectwise",controller.getWorkProgressByProjectalltheworkdetails)
+
+router.post("/api/getallworkprogressdetailswithpercent",authcheck,controller.getBomFullDetailsWithProgressByProject_Id)
 
 module.exports = router;

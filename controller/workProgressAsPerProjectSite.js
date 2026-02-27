@@ -377,8 +377,8 @@ const expenseRows = consumed_products.map(item => ({
   work_progress_site_id: insertId,
   product_id: item.product_id,
 
-  // ✅ quantity_of_product REMOVED
-  // ✅ Atc_total is the total consumed qty (replacement)
+  //  quantity_of_product REMOVED
+  //  Atc_total is the total consumed qty (replacement)
 
   bom_product_qty: item.bom_product_qty || 0,
   Atc_total: item.Atc_total || 0,     // <-- MAIN VALUE
@@ -1161,11 +1161,326 @@ getMonthlyWorkReport = async (req, res) => {
   // READ (GROUPED)
   // ------------------------------------------------------------
 
+// getBomItemsByProjectAndSiteForComparison = async (req, res) => {
+//   try {
+//     const { project_id, project_site_id } = req.body;
+
+//     if (!project_id || !project_site_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id and project_site_id are required",
+//       });
+//     }
+
+//     const sql = `
+//       SELECT 
+//           bi.bom_item_id,
+//           bi.bom_id,
+//           bi.bom_progress_id,
+//           bi.product_id,
+//           bi.qty,
+//           bi.total_qty,
+//           bi.created_by,
+//           bi.created_at,
+//           bi.updated_at,
+
+//           p.product_name,
+//           p.qty AS product_qty,
+//           u.unit_name
+
+//       FROM md_bom_item bi
+
+//       LEFT JOIN md_product p 
+//         ON bi.product_id = p.product_id
+
+//       LEFT JOIN md_unit u
+//         ON p.unit_id = u.unit_id
+
+//       LEFT JOIN tx_work_progress w
+//         ON bi.bom_id = w.bom_id
+//        AND bi.bom_progress_id = w.bom_progress_id
+
+//       WHERE w.project_id = ${project_id}
+//         AND w.project_site_id = ${project_site_id}
+
+//       ORDER BY bi.bom_item_id;
+//     `;
+
+//     const rows = await customSelectSqlQuery(sql);
+
+//     return res.status(200).json({
+//       success: true,
+//       data: rows,
+//     });
+
+//   } catch (error) {
+//     console.error("FETCH BOM ITEMS ERROR:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Unable to fetch BOM items",
+//     });
+//   }
+// };
 
 
+// getBomItemsByProjectAndSiteForComparison = async (req, res) => {
+//   try {
+//     const { project_id, project_site_id } = req.body;
+
+//     if (!project_id || !project_site_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id and project_site_id are required",
+//       });
+//     }
+
+//     const sql = `
+//       SELECT 
+//           bi.product_id,
+//           p.product_name,
+//           u.unit_name,
+
+//           SUM(bi.qty) AS qty,
+//           SUM(bi.total_qty) AS total_qty,
+//           SUM(p.qty) AS product_qty,
+
+//           MIN(bi.bom_item_id) AS bom_item_id,
+//           MIN(bi.bom_id) AS bom_id,
+//           MIN(bi.bom_progress_id) AS bom_progress_id,
+//           MIN(bi.created_by) AS created_by,
+//           MIN(bi.created_at) AS created_at,
+//           MIN(bi.updated_at) AS updated_at
+
+//       FROM md_bom_item bi
+
+//       LEFT JOIN md_product p 
+//         ON bi.product_id = p.product_id
+
+//       LEFT JOIN md_unit u
+//         ON p.unit_id = u.unit_id
+
+//       LEFT JOIN tx_work_progress w
+//         ON bi.bom_id = w.bom_id
+//        AND bi.bom_progress_id = w.bom_progress_id
+
+//       WHERE w.project_id = ?
+//         AND w.project_site_id = ?
+
+//       GROUP BY 
+//           bi.product_id,
+//           p.product_name,
+//           u.unit_name
+
+//       ORDER BY bi.product_id;
+//     `;
+
+//     const rows = await customSelectSqlQuery2(sql, [
+//       project_id,
+//       project_site_id,
+//     ]);
+
+//     return res.status(200).json({
+//       success: true,
+//       data: rows,
+//     });
+
+//   } catch (error) {
+//     console.error("FETCH GROUPED BOM ITEMS ERROR:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Unable to fetch grouped BOM items",
+//     });
+//   }
+// };
+
+getBomItemsByProjectAndSiteForComparison = async (req, res) => {
+  try {
+    const { project_id, project_site_id } = req.body;
+
+    if (!project_id || !project_site_id) {
+      return res.status(400).json({
+        success: false,
+        message: "project_id and project_site_id are required",
+      });
+    }
+
+    const sql = `
+      SELECT 
+          bi.product_id,
+          p.product_name,
+          u.unit_name,
+
+          SUM(w.total_qty_of_material_used) AS used_qty,  -- ✅ SITE USED QTY
+        --  SUM(bi.total_qty) AS total_bom_qty,             -- ✅ BOM total qty
+          SUM(p.qty) AS product_qty,
+
+          MIN(bi.bom_item_id) AS bom_item_id,
+          MIN(bi.bom_id) AS bom_id,
+          MIN(bi.bom_progress_id) AS bom_progress_id
+
+      FROM md_bom_item bi
+
+      LEFT JOIN md_product p 
+        ON bi.product_id = p.product_id
+
+      LEFT JOIN md_unit u
+        ON p.unit_id = u.unit_id
+
+      LEFT JOIN tx_work_progress w
+        ON bi.bom_id = w.bom_id
+       AND bi.bom_progress_id = w.bom_progress_id
+
+      WHERE w.project_id = ?
+        AND w.project_site_id = ?
+
+      GROUP BY 
+          bi.product_id,
+          p.product_name,
+          u.unit_name
+
+      ORDER BY bi.product_id;
+    `;
+
+    const rows = await customSelectSqlQuery2(sql, [
+      project_id,
+      project_site_id,
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: rows,
+    });
+
+  } catch (error) {
+    console.error("FETCH GROUPED BOM ITEMS ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch grouped BOM items",
+    });
+  }
+};
+//////*************** */
 
 
+getBomItemsByProjectComparisonData = async (req, res) => {
+  try {
+    const { project_id, project_site_id } = req.body;
 
+    if (!project_id || !project_site_id) {
+      return res.status(400).json({
+        success: false,
+        message: "project_id and project_site_id are required"
+      });
+    }
+
+    const sql = `
+      SELECT 
+        t.project_id,
+        p.project_name,
+        t.site_id,
+        s.project_site_name,
+
+        t.bom_id,
+        t.bom_name,
+        t.rep_task,
+
+        bp.bom_progress_id,
+        bp.bom_progress_name,
+
+        bi.total_qty,
+
+        pr.product_name,
+        pr.product_type_id,
+        uom.unit_name
+
+      FROM tx_project_details_with_estimation t
+      LEFT JOIN md_project p ON t.project_id = p.project_id
+      LEFT JOIN md_project_site s ON t.site_id = s.project_site_id
+
+      LEFT JOIN md_bom_progress bp ON t.bom_id = bp.bom_id
+      LEFT JOIN md_bom_item bi 
+             ON bp.bom_progress_id = bi.bom_progress_id 
+            AND t.bom_id = bi.bom_id
+
+      LEFT JOIN md_product pr ON bi.product_id = pr.product_id
+      LEFT JOIN md_unit uom ON pr.unit_id = uom.unit_id
+
+      WHERE t.project_id = ?
+        AND t.site_id = ?
+
+      ORDER BY t.bom_id, bp.sl_number, bi.bom_item_id
+    `;
+
+    const rows = await customSelectSqlQuery2(sql, [
+      project_id,
+      project_site_id
+    ]);
+
+    const map = new Map();
+
+    for (const row of rows) {
+
+      if (!map.has(row.bom_id)) {
+        map.set(row.bom_id, {
+          project_id: row.project_id,
+          project_name: row.project_name,
+          site_id: row.site_id,
+          site_name: row.project_site_name,
+          bom_id: row.bom_id,
+          bom_name: row.bom_name,
+          rep_task: row.rep_task,
+          progresses: new Map()
+        });
+      }
+
+      const bom = map.get(row.bom_id);
+
+      if (row.bom_progress_id && !bom.progresses.has(row.bom_progress_id)) {
+        bom.progresses.set(row.bom_progress_id, {
+          bom_progress_id: row.bom_progress_id,
+          bom_progress_name: row.bom_progress_name,
+          items: []
+        });
+      }
+
+      if (row.bom_progress_id && row.product_name) {
+
+        const totalQty = Number(row.total_qty || 0);
+        const repTask = Number(row.rep_task || 0);
+
+        bom.progresses.get(row.bom_progress_id).items.push({
+          total_qty: totalQty,
+          product_name: row.product_name,
+          unit: row.unit_name,
+          product_type_id: row.product_type_id,
+
+          // ✅ THIS IS YOUR REQUIRED VALUE
+          calculated_total_qty: totalQty * repTask
+        });
+      }
+    }
+
+    const result = [];
+    for (const bom of map.values()) {
+      bom.progresses = Array.from(bom.progresses.values());
+      result.push(bom);
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result
+    });
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch BOM comparison data"
+    });
+  }
+};
+/******** */
+/////////
 
 getWorkProgressByProjectAndSite = async (req, res) => {
   try {
@@ -1251,6 +1566,99 @@ getWorkProgressByProjectAndSite = async (req, res) => {
 
 
 
+
+////////////
+
+getWorkProgressByProjectalltheworkdetails = async (req, res) => {
+  try {
+    const { project_id } = req.body;
+
+    if (!project_id) {
+      return res.status(400).json({
+        success: false,
+        message: "project_id is required",
+      });
+    }
+
+    const sql = `
+      SELECT 
+          w.project_id,
+          w.project_site_id,
+          w.bom_id,
+          w.bom_progress_id,
+          w.date,
+
+          SUM(w.packet_qty) AS total_packet_qty,
+          SUM(w.total_qty_of_material_used) AS total_material_used,
+          SUM(w.total_progress) AS total_progress,
+
+          MAX(w.remarks) AS remarks,
+          MAX(w.rep_task) AS rep_task,
+          MAX(w.created_at) AS created_at,
+          MAX(w.updated_at) AS updated_at,
+          MAX(w.created_by) AS created_by,
+
+          CONCAT(e.first_name, ' ', e.last_name) AS created_by_name,
+          p.project_name,
+          s.project_site_name,
+          b.bom_name,
+          bp.bom_progress_name,
+
+          bi.product_id,
+          pr.product_name
+
+      FROM tx_work_progress w
+
+      LEFT JOIN md_project p 
+             ON w.project_id = p.project_id
+
+      LEFT JOIN md_project_site s 
+             ON w.project_site_id = s.project_site_id
+
+      LEFT JOIN md_bom b 
+             ON w.bom_id = b.bom_id
+
+      LEFT JOIN em_employees e 
+             ON w.created_by = e.employee_id
+
+      LEFT JOIN md_bom_item bi 
+             ON bi.bom_id = w.bom_id
+            AND bi.bom_progress_id = w.bom_progress_id
+
+      LEFT JOIN md_bom_progress bp 
+             ON w.bom_progress_id = bp.bom_progress_id 
+
+      LEFT JOIN md_product pr 
+             ON bi.product_id = pr.product_id
+
+      WHERE w.project_id = ?
+
+      GROUP BY 
+          w.project_id,
+          w.project_site_id,
+          w.bom_id,
+          w.bom_progress_id,
+          w.date,
+          bi.product_id
+
+      ORDER BY w.date DESC, w.bom_id, w.bom_progress_id;
+    `;
+
+    const rows = await customSelectSqlQuery2(sql, [project_id]);
+
+    return res.status(200).json({
+      success: true,
+      data: rows,
+    });
+
+  } catch (err) {
+    console.error("FETCH ERROR:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch work progress",
+    });
+  }
+};
 
 
 
@@ -1674,11 +2082,6 @@ getWorkProgressfulldatafromprojectandsiteId = async (req, res) => {
       });
     }
 
-    /* 2. Dynamic WHERE condition */
-    // let whereCondition = `w.project_id = ${project_id}`;
-    // if (project_site_id) {
-    //   whereCondition += ` AND w.project_site_id = ${project_site_id}`;
-    // }
 
 
     let whereCondition = `
@@ -1689,10 +2092,6 @@ getWorkProgressfulldatafromprojectandsiteId = async (req, res) => {
 if (project_site_id) {
   whereCondition += ` AND w.project_site_id = ${project_site_id}`;
 }
-
-
-
-
 
     /* 3. SQL Query */
     const sql = `
@@ -1804,6 +2203,243 @@ if (project_site_id) {
     });
   }
 };
+
+
+
+
+
+getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
+  try {
+    const { project_id } = req.body;
+
+    if (!project_id) {
+      return res.status(400).json({
+        success: false,
+        message: "project_id is required",
+      });
+    }
+
+    // ─── Query 1: BOM Estimation Details ──────────────────────────────────
+    const bomSql = `
+      SELECT 
+        t.project_estimation_id,
+        t.project_id,
+        p.project_name,
+        t.site_id,
+        s.project_site_name,
+        t.bom_id,
+        t.bom_name,
+        t.rep_task,
+        t.billing_id,
+
+        billing.project_work_description,
+        billing.unit         AS billing_unit,
+        billing.quantity     AS billing_quantity,
+        billing.rate         AS billing_rate,
+        billing.amount       AS billing_amount,
+        billing.remarks      AS billing_remarks,
+
+        bp.bom_progress_id,
+        bp.bom_progress_name,
+        bp.sl_number,
+
+        bi.bom_item_id,
+        bi.product_id,
+        bi.qty               AS per_unit_qty,
+        bi.total_qty,
+
+        pr.product_name,
+        pr.product_type_id,
+        uom.unit_name        AS unit
+
+      FROM tx_project_details_with_estimation t
+      INNER JOIN md_project p         ON t.project_id   = p.project_id
+      LEFT  JOIN md_project_site s    ON t.site_id      = s.project_site_id
+      LEFT  JOIN md_project_billing billing ON t.billing_id = billing.billing_id
+      LEFT  JOIN md_bom_progress bp   ON t.bom_id       = bp.bom_id
+      LEFT  JOIN md_bom_item bi       ON bp.bom_progress_id = bi.bom_progress_id
+                                     AND t.bom_id           = bi.bom_id
+      LEFT  JOIN md_product pr        ON bi.product_id  = pr.product_id
+      LEFT  JOIN md_unit uom          ON pr.unit_id     = uom.unit_id
+      WHERE t.project_id = ?
+      ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
+    `;
+
+    // ─── Query 2: Work Progress + Percentage per BOM Progress ─────────────
+    // percentage is computed fully in SQL — no JS loop needed
+    const progressSql = `
+      SELECT
+        w.bom_id,
+        w.bom_progress_id,
+        w.project_site_id,
+        w.date,
+        bi.product_id,
+        pr.product_name,
+        bp.bom_progress_name,
+        b.bom_name,
+        s.project_site_name,
+        MAX(w.created_by)                              AS created_by,
+        CONCAT(e.first_name, ' ', e.last_name)         AS created_by_name,
+        MAX(w.remarks)                                 AS remarks,
+        MAX(w.rep_task)                                AS rep_task,
+        MAX(w.created_at)                              AS created_at,
+        MAX(w.updated_at)                              AS updated_at,
+        SUM(w.packet_qty)                              AS total_packet_qty,
+        SUM(w.total_qty_of_material_used)              AS total_material_used,
+        SUM(w.total_progress)                          AS total_progress,
+        bi.total_qty                                   AS planned_qty,
+
+        --  Percentage calculated in SQL itself--
+
+        ROUND(
+          (SUM(w.total_progress) / NULLIF(bi.total_qty, 0)) * 100
+        , 2)                                           AS progress_percentage
+
+      FROM tx_work_progress w
+      LEFT JOIN md_project_site  s   ON w.project_site_id  = s.project_site_id
+      LEFT JOIN md_bom           b   ON w.bom_id            = b.bom_id
+      LEFT JOIN md_bom_progress  bp  ON w.bom_progress_id   = bp.bom_progress_id
+      LEFT JOIN md_bom_item      bi  ON bi.bom_id           = w.bom_id
+                                    AND bi.bom_progress_id  = w.bom_progress_id
+      LEFT JOIN md_product       pr  ON bi.product_id       = pr.product_id
+      LEFT JOIN em_employees     e   ON w.created_by        = e.employee_id
+      WHERE w.project_id = ?
+      GROUP BY
+        w.bom_id,
+        w.bom_progress_id,
+        w.project_site_id,
+        w.date,
+        bi.product_id,
+        bi.total_qty,
+        bp.bom_progress_name,
+        b.bom_name,
+        s.project_site_name,
+        e.first_name,
+        e.last_name,
+        pr.product_name
+      ORDER BY w.date DESC, w.bom_id, w.bom_progress_id
+    `;
+
+    // ─── Run both in parallel — no sequential waiting ──────────────────────
+    const [bomRows, progressRows] = await Promise.all([
+      customSelectSqlQuery2(bomSql, [project_id]),
+      customSelectSqlQuery2(progressSql, [project_id]),
+    ]);
+
+    if (!bomRows.length) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    // ─── Build lookup Map for work progress keyed by "bom_id|bom_progress_id"
+    // One reduce — no forEach/for loops
+    const progressMap = progressRows.reduce((acc, wp) => {
+      const key = `${wp.bom_id}|${wp.bom_progress_id}`;
+      if (!acc[key]) acc[key] = [];
+      acc[key].push({
+        date:                 wp.date,
+        project_site_id:      wp.project_site_id,
+        project_site_name:    wp.project_site_name,
+        product_id:           wp.product_id,
+        product_name:         wp.product_name,
+        total_packet_qty:     wp.total_packet_qty,
+        total_material_used:  wp.total_material_used,
+        total_progress:       wp.total_progress,
+        planned_qty:          wp.planned_qty,
+        progress_percentage:  wp.progress_percentage, // ← from SQL
+        remarks:              wp.remarks,
+        rep_task:             wp.rep_task,
+        created_by:           wp.created_by,
+        created_by_name:      wp.created_by_name,
+        created_at:           wp.created_at,
+        updated_at:           wp.updated_at,
+      });
+      return acc;
+    }, {});
+
+    // ─── Build estimation map using reduce — zero explicit loops ───────────
+    const estimationMap = bomRows.reduce((map, row) => {
+
+      // ── Level 1: estimation ───────────────────────────────────────────────
+      if (!map[row.project_estimation_id]) {
+        map[row.project_estimation_id] = {
+          project_estimation_id:    row.project_estimation_id,
+          project_id:               row.project_id,
+          project_name:             row.project_name,
+          site_id:                  row.site_id,
+          site_name:                row.project_site_name,
+          bom_id:                   row.bom_id,
+          bom_name:                 row.bom_name,
+          rep_task:                 row.rep_task,
+          billing_id:               row.billing_id,
+          project_work_description: row.project_work_description,
+          billing_unit:             row.billing_unit,
+          billing_quantity:         row.billing_quantity,
+          billing_rate:             row.billing_rate,
+          billing_amount:           row.billing_amount,
+          billing_remarks:          row.billing_remarks,
+          progresses:               {},
+        };
+      }
+
+      const est = map[row.project_estimation_id];
+
+      // ── Level 2: progress ─────────────────────────────────────────────────
+      if (row.bom_progress_id && !est.progresses[row.bom_progress_id]) {
+        const wpKey = `${row.bom_id}|${row.bom_progress_id}`;
+        est.progresses[row.bom_progress_id] = {
+          bom_progress_id:   row.bom_progress_id,
+          bom_progress_name: row.bom_progress_name,
+          sl_number:         row.sl_number,
+          items:             [],
+          work_progress:     progressMap[wpKey] || [], // ← attached here
+        };
+      }
+
+      // ── Level 3: item ─────────────────────────────────────────────────────
+      if (row.bom_item_id && row.bom_progress_id) {
+        est.progresses[row.bom_progress_id].items.push({
+          bom_item_id: row.bom_item_id,
+          product_id:  row.product_id,
+          qty:         row.per_unit_qty,
+          total_qty:   row.total_qty,
+          product: {
+            product_id:      row.product_id,
+            product_name:    row.product_name,
+            unit:            row.unit || "Pc",
+            product_type_id: row.product_type_id,
+          },
+        });
+      }
+
+      return map;
+    }, {});
+
+    // ─── Convert nested objects → arrays using Object.values only ─────────
+    const result = Object.values(estimationMap).map((est) => ({
+      ...est,
+      progresses: Object.values(est.progresses),
+    }));
+
+    return res.status(200).json({ success: true, data: result });
+
+  } catch (err) {
+    console.error("FETCH ERROR:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch BOM details with work progress",
+    });
+  }
+};
+
+
+
+
+
+
+
+
+
+
 
 
 

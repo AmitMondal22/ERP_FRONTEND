@@ -25,5 +25,7 @@ router.post("/api/getallbomdetailsbyprojectsiteid",authcheck,ProjectEstimationCo
 
 router.post('/estimation/get-billing-id',authcheck, ProjectEstimationController.getBillingIdByProjectAndBom);
 
+router.get("/api/getbomdetailsallwithproject/:project_id",ProjectEstimationController.getBomFullDetailsOfAllBomByProject)
+
 
 module.exports = router;

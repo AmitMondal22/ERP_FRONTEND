@@ -431,7 +431,8 @@ const {
   deleteData, 
   selectData, 
   selectOneData,
-  customSelectSqlQuery 
+  customSelectSqlQuery ,
+  customSelectSqlQuery2
 } = require("../models/MasterModel");
 
 class ProjectEstimationController {
@@ -523,6 +524,8 @@ class ProjectEstimationController {
       });
     }
   };
+
+  
 
   // ======================================================
   // GET ONE by ID
@@ -938,6 +941,162 @@ getBillingIdByProjectAndBom = async (req, res) => {
       });
     }
   };
+
+
+
+
+
+
+  //===================================
+  //===================================
+
+  getBomFullDetailsOfAllBomByProject = async (req, res) => {
+  try {
+    const { project_id } = req.params;
+
+    if (!project_id) {
+      return res.status(400).json({
+        success: false,
+        message: "project_id is required"
+      });
+    }
+
+    const sql = `
+      SELECT 
+        t.project_estimation_id,
+        t.project_id,
+        p.project_name,
+        t.site_id,
+        s.project_site_name,
+        t.bom_id,
+        t.bom_name,
+        t.rep_task,
+        t.billing_id,
+
+        billing.project_work_description,
+        billing.unit AS billing_unit,
+        billing.quantity AS billing_quantity,
+        billing.rate AS billing_rate,
+        billing.amount AS billing_amount,
+        billing.remarks AS billing_remarks,
+
+        bp.bom_progress_id,
+        bp.bom_progress_name,
+        bp.sl_number,
+
+        bi.bom_item_id,
+        bi.product_id,
+        bi.qty AS per_unit_qty,
+        bi.total_qty,
+
+        pr.product_name,
+        pr.product_type_id,
+        uom.unit_name AS unit
+
+      FROM tx_project_details_with_estimation t
+      INNER JOIN md_project p ON t.project_id = p.project_id
+      LEFT JOIN md_project_site s ON t.site_id = s.project_site_id
+      LEFT JOIN md_project_billing billing ON t.billing_id = billing.billing_id
+      LEFT JOIN md_bom_progress bp ON t.bom_id = bp.bom_id
+      LEFT JOIN md_bom_item bi 
+        ON bp.bom_progress_id = bi.bom_progress_id 
+        AND t.bom_id = bi.bom_id
+      LEFT JOIN md_product pr ON bi.product_id = pr.product_id
+      LEFT JOIN md_unit uom ON pr.unit_id = uom.unit_id
+      WHERE t.project_id = ?
+      ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
+    `;
+
+    const rows = await customSelectSqlQuery2(sql, [project_id]);
+
+    if (!rows.length) {
+      return res.status(200).json({
+        success: true,
+        data: []
+      });
+    }
+
+    const map = new Map();
+
+    for (const row of rows) {
+
+      let est = map.get(row.project_estimation_id);
+
+      if (!est) {
+        est = {
+          project_estimation_id: row.project_estimation_id,
+          project_id: row.project_id,
+          project_name: row.project_name,
+          site_id: row.site_id,
+          site_name: row.project_site_name,
+          bom_id: row.bom_id,
+          bom_name: row.bom_name,
+          rep_task: row.rep_task,
+          billing_id: row.billing_id,
+          project_work_description: row.project_work_description,
+          billing_unit: row.billing_unit,
+          billing_quantity: row.billing_quantity,
+          billing_rate: row.billing_rate,
+          billing_amount: row.billing_amount,
+          billing_remarks: row.billing_remarks,
+          progresses: new Map()
+        };
+
+        map.set(row.project_estimation_id, est);
+      }
+
+      if (row.bom_progress_id) {
+        let progress = est.progresses.get(row.bom_progress_id);
+
+        if (!progress) {
+          progress = {
+            bom_progress_id: row.bom_progress_id,
+            bom_progress_name: row.bom_progress_name,
+            sl_number: row.sl_number,
+            items: []
+          };
+
+          est.progresses.set(row.bom_progress_id, progress);
+        }
+
+        if (row.bom_item_id) {
+          progress.items.push({
+            bom_item_id: row.bom_item_id,
+            product_id: row.product_id,
+            qty: row.per_unit_qty,
+            total_qty: row.total_qty,
+            product: {
+              product_id: row.product_id,
+              product_name: row.product_name,
+              unit: row.unit || "Pc",
+              product_type_id: row.product_type_id
+            }
+          });
+        }
+      }
+    }
+
+    const result = Array.from(map.values()).map(est => ({
+      ...est,
+      progresses: Array.from(est.progresses.values())
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data: result
+    });
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch BOM estimation details"
+    });
+  }
+};
+
+
+
 
 
 }
