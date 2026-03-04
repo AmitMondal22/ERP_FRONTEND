@@ -143,6 +143,8 @@ async function batchInsertData(table, columns, rows) {
   }
 }
 
+
+
 // ---------- DELETE ----------
 async function deleteData(table, condition) {
 

@@ -16,12 +16,13 @@ router.post("/api/create-work-progress-perprojectsite",authcheck, controller.cre
 // READ using project_id + project_site_id (NEW)
 router.post("/api/get-by-project-and-project-site",authcheck, controller.getWorkProgressByProjectAndSite);   
 
+/////////////////////////////////////***/ */
 
 router.post("/api/get-data-comparison-with",controller.getBomItemsByProjectComparisonData)
 
 router.post("/api/get-work-progress-details-for-comparison", controller.getBomItemsByProjectAndSiteForComparison)
 
-
+/******** */
 
 router.post("/api/getallworkprogressbyprojectandsiteid",authcheck,controller.getWorkProgressfulldatafromprojectandsiteId)
 
