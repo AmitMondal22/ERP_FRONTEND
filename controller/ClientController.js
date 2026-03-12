@@ -589,6 +589,95 @@ class ClientController {
   // UPDATE CLIENT (md_client + md_client_details only)
   // Use separate contact person endpoints to manage contacts
   // ================================================================
+  // async updateClient(req, res) {
+  //   try {
+  //     const { id } = req.params;
+
+  //     const {
+  //       // md_client fields
+  //       client_name, client_type, industry_type,
+  //       client_mobile, client_phone, client_email, client_website,
+  //       client_address, city_id, state_id, country_id, pincode,
+  //       client_gst_in, client_pan, client_tan, client_cin, msme_number,
+  //       client_status, client_category, is_verified, remarks, updated_by,
+
+  //       // md_client_details fields
+  //       credit_limit, credit_days, currency_id, payment_terms,
+  //       bank_name, bank_account_number, bank_ifsc_code, bank_branch,
+  //     } = req.body;
+
+  //     // Check client exists
+  //     const existing = await selectOneData("md_client", "*", `client_id = ${id}`);
+  //     if (!existing) {
+  //       return res.status(404).json({ success: false, message: "Client not found" });
+  //     }
+
+  //     // ── Step 1: Update md_client ──
+  //     const clientUpdate = {
+  //       ...(client_name     !== undefined && { client_name }),
+  //       ...(client_type     !== undefined && { client_type }),
+  //       ...(industry_type   !== undefined && { industry_type }),
+  //       ...(client_mobile   !== undefined && { client_mobile }),
+  //       ...(client_phone    !== undefined && { client_phone }),
+  //       ...(client_email    !== undefined && { client_email }),
+  //       ...(client_website  !== undefined && { client_website }),
+  //       ...(client_address  !== undefined && { client_address }),
+  //       ...(city_id         !== undefined && { city_id }),
+  //       ...(state_id        !== undefined && { state_id }),
+  //       ...(country_id      !== undefined && { country_id }),
+  //       ...(pincode         !== undefined && { pincode }),
+  //       ...(client_gst_in   !== undefined && { client_gst_in }),
+  //       ...(client_pan      !== undefined && { client_pan }),
+  //       ...(client_tan      !== undefined && { client_tan }),
+  //       ...(client_cin      !== undefined && { client_cin }),
+  //       ...(msme_number     !== undefined && { msme_number }),
+  //       ...(client_status   !== undefined && { client_status }),
+  //       ...(client_category !== undefined && { client_category }),
+  //       ...(is_verified     !== undefined && { is_verified }),
+  //       ...(remarks         !== undefined && { remarks }),
+  //       ...(updated_by      !== undefined && { updated_by }),
+  //     };
+
+  //     if (Object.keys(clientUpdate).length > 0) {
+  //       await updateData("md_client", clientUpdate, `client_id = ${id}`);
+  //     }
+
+  //     // ── Step 2: Upsert md_client_details ──
+  //     const existingDetail = await selectOneData(
+  //       "md_client_details", "*", `client_id = ${id}`
+  //     );
+
+  //     const detailPayload = {
+  //       ...(credit_limit        !== undefined && { credit_limit }),
+  //       ...(credit_days         !== undefined && { credit_days }),
+  //       ...(currency_id         !== undefined && { currency_id }),
+  //       ...(payment_terms       !== undefined && { payment_terms }),
+  //       ...(bank_name           !== undefined && { bank_name }),
+  //       ...(bank_account_number !== undefined && { bank_account_number }),
+  //       ...(bank_ifsc_code      !== undefined && { bank_ifsc_code }),
+  //       ...(bank_branch         !== undefined && { bank_branch }),
+  //       ...(updated_by          !== undefined && { updated_by }),
+  //     };
+
+  //     if (Object.keys(detailPayload).length > 0) {
+  //       if (existingDetail) {
+  //         await updateData("md_client_details", detailPayload, `client_id = ${id}`);
+  //       } else {
+  //         await insertData("md_client_details", { client_id: parseInt(id), ...detailPayload });
+  //       }
+  //     }
+
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: "Client updated successfully",
+  //     });
+  //   } catch (err) {
+  //     console.error("updateClient error:", err);
+  //     return res.status(500).json({ success: false, message: "Internal server error" });
+  //   }
+  // }
+
+
   async updateClient(req, res) {
     try {
       const { id } = req.params;
@@ -604,6 +693,9 @@ class ClientController {
         // md_client_details fields
         credit_limit, credit_days, currency_id, payment_terms,
         bank_name, bank_account_number, bank_ifsc_code, bank_branch,
+
+        // contact persons
+        contact_persons,
       } = req.body;
 
       // Check client exists
@@ -667,8 +759,68 @@ class ClientController {
         }
       }
 
+      // ── Step 3: Sync md_client_contact_person ──
+      if (Array.isArray(contact_persons)) {
+
+        // 3a. Separate existing (have contact_id) from new (no contact_id)
+        const toUpdate = contact_persons.filter(p => p.contact_id);
+        const toInsert = contact_persons.filter(p => !p.contact_id);
+
+        // 3b. Hard delete contacts that were removed by the user
+        //     (exist in DB but are not present in the incoming payload)
+        const incomingIds = toUpdate.map(p => p.contact_id);
+
+        if (incomingIds.length > 0) {
+          // Delete only those NOT in the incoming list
+          await deleteData(
+            "md_client_contact_person",
+            `client_id = ${id} AND contact_id NOT IN (${incomingIds.join(",")})`
+          );
+        } else {
+          // No existing contacts kept — delete all for this client
+          await deleteData(
+            "md_client_contact_person",
+            `client_id = ${id}`
+          );
+        }
+
+        // 3c. Update existing contacts
+        for (const person of toUpdate) {
+          const personPayload = {
+            ...(person.contact_person_name        !== undefined && { contact_person_name: person.contact_person_name }),
+            ...(person.contact_person_mobile      !== undefined && { contact_person_mobile: person.contact_person_mobile }),
+            ...(person.contact_person_email       !== undefined && { contact_person_email: person.contact_person_email }),
+            ...(person.contact_person_designation !== undefined && { contact_person_designation: person.contact_person_designation }),
+            ...(person.is_primary                 !== undefined && { is_primary: person.is_primary }),
+            ...(updated_by                        !== undefined && { updated_by }),
+          };
+
+          if (Object.keys(personPayload).length > 0) {
+            await updateData(
+              "md_client_contact_person",
+              personPayload,
+              `contact_id = ${person.contact_id} AND client_id = ${id}`
+            );
+          }
+        }
+
+        // 3d. Insert new contacts (no contact_id in payload)
+        for (const person of toInsert) {
+          const newPerson = {
+            client_id: parseInt(id),
+            ...(person.contact_person_name        !== undefined && { contact_person_name: person.contact_person_name }),
+            ...(person.contact_person_mobile      !== undefined && { contact_person_mobile: person.contact_person_mobile }),
+            ...(person.contact_person_email       !== undefined && { contact_person_email: person.contact_person_email }),
+            ...(person.contact_person_designation !== undefined && { contact_person_designation: person.contact_person_designation }),
+            ...(person.is_primary                 !== undefined && { is_primary: person.is_primary }),
+            ...(updated_by                        !== undefined && { created_by: updated_by, updated_by }),
+          };
+          await insertData("md_client_contact_person", newPerson);
+        }
+      }
+
       return res.status(200).json({
-        success: true,
+        success: true, 
         message: "Client updated successfully",
       });
     } catch (err) {
@@ -676,7 +828,6 @@ class ClientController {
       return res.status(500).json({ success: false, message: "Internal server error" });
     }
   }
-
 
   // ================================================================
   // UPDATE CLIENT STATUS ONLY

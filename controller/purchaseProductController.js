@@ -791,7 +791,7 @@ updatePurchase = async (req, res) => {
   } = req.body;
 
   /* ---------------- USER FROM AUTH MIDDLEWARE ---------------- */
-  const userId = req.user?.id;   // 🔐 MUST come from middleware
+  const userId = req.user?.id;   //  MUST come from middleware
 
   if (!userId) {
     return res.status(401).json({
@@ -1736,7 +1736,7 @@ deletePurchase = async (req, res) => {
 // }
 
 
-  
+   
 getStockMonthwise = async (req, res) => {
   try {
     const { project_id, site_id, store_id, product_type_id, fromDate, toDate } = req.body;
