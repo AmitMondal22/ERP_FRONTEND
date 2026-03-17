@@ -1020,6 +1020,269 @@ class StoreStockController {
 //   }
 // }
 
+// async transferStock(req, res) {
+//   try {
+
+//     const {
+//       from_store_id,
+//       from_project_id,
+//       from_site_id,
+//       to_store_id,
+//       to_project_id,
+//       to_site_id,
+//       products,           // [{ product_id, transfer_qty, purchase_id, invoice_no }]
+//       transaction_date,
+//       created_by
+//     } = req.body;
+
+//     // ---------------- VALIDATION ----------------
+//     if (
+//       !from_store_id || !from_project_id || !from_site_id ||
+//       !to_store_id   || !to_project_id   || !to_site_id
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "All from/to store, project, and site fields are required"
+//       });
+//     }
+
+//     if (
+//       parseInt(from_store_id) === parseInt(to_store_id) &&
+//       parseInt(from_project_id) === parseInt(to_project_id) &&
+//       parseInt(from_site_id) === parseInt(to_site_id)
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Source and destination cannot be the same"
+//       });
+//     }
+
+//     if (!Array.isArray(products) || products.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "products must be a non-empty array"
+//       });
+//     }
+
+//     const txDate = transaction_date || dayjs().format("YYYY-MM-DD");
+//     const now    = dayjs().format("YYYY-MM-DD HH:mm:ss");
+
+//     // ---------------- PER-PRODUCT STOCK CHECKS & UPDATES ----------------
+//     const transferOutRows = [];   // batch ledger rows for TRANSFER_OUT
+//     const transferInRows  = [];   // batch ledger rows for TRANSFER_IN
+//     const results         = [];
+
+//     for (const item of products) {
+
+//       const { product_id, transfer_qty, purchase_id = null, invoice_no = null } = item;
+
+//       if (!product_id || !transfer_qty) {
+//         return res.status(400).json({
+//           success: false,
+//           message: `product_id and transfer_qty are required for every product (failed on product_id: ${product_id})`
+//         });
+//       }
+
+//       const qty = parseFloat(transfer_qty);
+
+//       // ── SOURCE STOCK ──
+//       const sourceStock = await selectOneData(
+//         "tx_current_stock",
+//         "*",
+//         `project_id=${from_project_id}
+//          AND site_id=${from_site_id}
+//          AND store_id=${from_store_id}
+//          AND product_id=${product_id}`
+//       );
+
+//       if (!sourceStock) {
+//         return res.status(400).json({
+//           success: false,
+//           message: `Source stock not found for product_id: ${product_id}`
+//         });
+//       }
+
+//       const availableQty = parseFloat(sourceStock.invoice_qty);
+
+//       if (qty > availableQty) {
+//         return res.status(400).json({
+//           success: false,
+//           message: `Insufficient stock for product_id: ${product_id}. Available: ${availableQty}`
+//         });
+//       }
+
+//       const remainingQty = availableQty - qty;
+
+//       // ── UPDATE SOURCE STOCK ──
+//       await updateData(
+//         "tx_current_stock",
+//         {
+//           invoice_qty: remainingQty,
+//           updated_by:  created_by,
+//           updated_at:  now
+//         },
+//         `current_stock_id=${sourceStock.current_stock_id}`
+//       );
+
+//       // ── DESTINATION STOCK ──
+//       const destStock = await selectOneData(
+//         "tx_current_stock",
+//         "*",
+//         `project_id=${to_project_id}
+//          AND site_id=${to_site_id}
+//          AND store_id=${to_store_id}
+//          AND product_id=${product_id}`
+//       );
+
+//       let destFinalQty = 0;
+
+//       if (destStock) {
+
+//         destFinalQty = parseFloat(destStock.invoice_qty) + qty;
+
+//         await updateData(
+//           "tx_current_stock",
+//           {
+//             invoice_qty: destFinalQty,
+//             updated_by:  created_by,
+//             updated_at:  now
+//           },
+//           `current_stock_id=${destStock.current_stock_id}`
+//         );
+
+//       } else {
+
+//         destFinalQty = qty;
+
+//         await insertData("tx_current_stock", {
+//           project_id: to_project_id,
+//           site_id:    to_site_id,
+//           store_id:   to_store_id,
+//           product_id,
+//           invoice_qty: qty,
+//           created_by
+//         });
+
+//       }
+
+//       // ── SOURCE LEDGER BALANCE ──
+//       const sourceBalance = await customSelectSqlQuery(
+//         `SELECT COALESCE(SUM(qty_in) - SUM(qty_out), 0) AS balance
+//          FROM tx_store_stock_ledger
+//          WHERE store_id=${from_store_id}
+//            AND project_id=${from_project_id}
+//            AND site_id=${from_site_id}
+//            AND product_id=${product_id}`,
+//         false
+//       );
+
+//       const sourceLedgerBalance = parseFloat(sourceBalance?.balance || 0);
+
+//       // ── DEST LEDGER BALANCE ──
+//       const destBalance = await customSelectSqlQuery(
+//         `SELECT COALESCE(SUM(qty_in) - SUM(qty_out), 0) AS balance
+//          FROM tx_store_stock_ledger
+//          WHERE store_id=${to_store_id}
+//            AND project_id=${to_project_id}
+//            AND site_id=${to_site_id}
+//            AND product_id=${product_id}`,
+//         false
+//       );
+
+//       const destLedgerBalance = parseFloat(destBalance?.balance || 0);
+
+//       // ── COLLECT LEDGER ROWS ──
+//       transferOutRows.push({
+//         store_id:    from_store_id,
+//         project_id:  from_project_id,
+//         site_id:     from_site_id,
+//         product_id,
+//         purchase_id,
+//         invoice_no,
+//         from_store_id,
+//         from_project_id,
+//         from_site_id,
+//         to_store_id,
+//         to_project_id,
+//         to_site_id,
+//         transaction_type: "TRANSFER_OUT",
+//         qty_in:           0,
+//         qty_out:          qty,
+//         balance_qty:      sourceLedgerBalance - qty,
+//         transaction_date: txDate,
+//         created_by
+//       });
+
+//       transferInRows.push({
+//         store_id:    to_store_id,
+//         project_id:  to_project_id,
+//         site_id:     to_site_id,
+//         product_id,
+//         purchase_id,
+//         invoice_no,
+//         from_store_id,
+//         from_project_id,
+//         from_site_id,
+//         to_store_id,
+//         to_project_id,
+//         to_site_id,
+//         transaction_type: "TRANSFER_IN",
+//         qty_in:           qty,
+//         qty_out:          0,
+//         balance_qty:      destLedgerBalance + qty,
+//         transaction_date: txDate,
+//         created_by
+//       });
+
+//       results.push({
+//         product_id,
+//         transfer_qty:              qty,
+//         purchase_id,
+//         invoice_no,
+//         source_balance_after:      remainingQty,
+//         destination_balance_after: destFinalQty
+//       });
+//     }
+
+//     // ---------------- BATCH INSERT BOTH LEDGER SETS ----------------
+//     const ledgerColumns =
+//       "store_id, project_id, site_id, product_id, purchase_id, invoice_no, " +
+//       "from_store_id, from_project_id, from_site_id, " +
+//       "to_store_id, to_project_id, to_site_id, " +
+//       "transaction_type, qty_in, qty_out, balance_qty, transaction_date, created_by";
+
+//     await batchInsertData(
+//       "tx_store_stock_ledger",
+//       ledgerColumns,
+//       transferOutRows
+//     );
+
+//     await batchInsertData(
+//       "tx_store_stock_ledger",
+//       ledgerColumns,
+//       transferInRows
+//     );
+
+//     // ---------------- RESPONSE ----------------
+//     return res.status(201).json({
+//       success: true,
+//       message: `${products.length} product(s) transferred successfully`,
+//       data: results
+//     });
+
+//   } catch (err) {
+
+//     console.error("[transferStock]", err);
+
+//     return res.status(500).json({
+//       success: false,
+//       message: err.message
+//     });
+
+//   }
+// }
+
+
 async transferStock(req, res) {
   try {
 
@@ -1030,10 +1293,16 @@ async transferStock(req, res) {
       to_store_id,
       to_project_id,
       to_site_id,
-      products,           // [{ product_id, transfer_qty, purchase_id, invoice_no }]
+      products,
       transaction_date,
-      created_by
+     
     } = req.body;
+ const created_by = req.user.id;
+    // ---------------- SANITIZE HELPER ----------------
+    const sanitize = (obj) =>
+      Object.fromEntries(
+        Object.entries(obj).map(([k, v]) => [k, v === undefined ? null : v])
+      );
 
     // ---------------- VALIDATION ----------------
     if (
@@ -1068,13 +1337,15 @@ async transferStock(req, res) {
     const now    = dayjs().format("YYYY-MM-DD HH:mm:ss");
 
     // ---------------- PER-PRODUCT STOCK CHECKS & UPDATES ----------------
-    const transferOutRows = [];   // batch ledger rows for TRANSFER_OUT
-    const transferInRows  = [];   // batch ledger rows for TRANSFER_IN
+    const transferOutRows = [];
+    const transferInRows  = [];
     const results         = [];
 
     for (const item of products) {
 
-      const { product_id, transfer_qty, purchase_id = null, invoice_no = null } = item;
+      const { product_id, transfer_qty } = item;
+      const purchase_id = item.purchase_id ?? null;  // ✅ undefined → null
+      const invoice_no  = item.invoice_no  ?? null;  // ✅ undefined → null
 
       if (!product_id || !transfer_qty) {
         return res.status(400).json({
@@ -1118,7 +1389,7 @@ async transferStock(req, res) {
         "tx_current_stock",
         {
           invoice_qty: remainingQty,
-          updated_by:  created_by,
+          updated_by:  created_by ?? null,
           updated_at:  now
         },
         `current_stock_id=${sourceStock.current_stock_id}`
@@ -1144,7 +1415,7 @@ async transferStock(req, res) {
           "tx_current_stock",
           {
             invoice_qty: destFinalQty,
-            updated_by:  created_by,
+            updated_by:  created_by ?? null,
             updated_at:  now
           },
           `current_stock_id=${destStock.current_stock_id}`
@@ -1154,14 +1425,14 @@ async transferStock(req, res) {
 
         destFinalQty = qty;
 
-        await insertData("tx_current_stock", {
-          project_id: to_project_id,
-          site_id:    to_site_id,
-          store_id:   to_store_id,
+        await insertData("tx_current_stock", sanitize({
+          project_id:  to_project_id,
+          site_id:     to_site_id,
+          store_id:    to_store_id,
           product_id,
           invoice_qty: qty,
           created_by
-        });
+        }));
 
       }
 
@@ -1192,10 +1463,10 @@ async transferStock(req, res) {
       const destLedgerBalance = parseFloat(destBalance?.balance || 0);
 
       // ── COLLECT LEDGER ROWS ──
-      transferOutRows.push({
-        store_id:    from_store_id,
-        project_id:  from_project_id,
-        site_id:     from_site_id,
+      transferOutRows.push(sanitize({
+        store_id:         from_store_id,
+        project_id:       from_project_id,
+        site_id:          from_site_id,
         product_id,
         purchase_id,
         invoice_no,
@@ -1211,12 +1482,12 @@ async transferStock(req, res) {
         balance_qty:      sourceLedgerBalance - qty,
         transaction_date: txDate,
         created_by
-      });
+      }));
 
-      transferInRows.push({
-        store_id:    to_store_id,
-        project_id:  to_project_id,
-        site_id:     to_site_id,
+      transferInRows.push(sanitize({
+        store_id:         to_store_id,
+        project_id:       to_project_id,
+        site_id:          to_site_id,
         product_id,
         purchase_id,
         invoice_no,
@@ -1232,7 +1503,7 @@ async transferStock(req, res) {
         balance_qty:      destLedgerBalance + qty,
         transaction_date: txDate,
         created_by
-      });
+      }));
 
       results.push({
         product_id,
@@ -1281,9 +1552,8 @@ async transferStock(req, res) {
 
   }
 }
-
 //----------------------------------
-
+       
 
 //----------------------------------
 
@@ -2096,6 +2366,151 @@ async deductStockByProjectSite(req, res) {
 // }
 // -----------------------------------------------------------------------
 
+// async deductStockBulk(req, res) {
+//   try {
+//     const {
+//       project_id,
+//       site_id,
+//       dpr_id        = null,
+//       transaction_date,
+//       created_by,
+//       products      = [],
+//     } = req.body;
+
+//     // ── Validation ──
+//     if (!project_id || !site_id || !products.length) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id, site_id and products[] are required",
+//       });
+//     }
+
+//     const txDate  = transaction_date || dayjs().format("YYYY-MM-DD");
+//     const success = [];
+//     const failed  = [];
+
+//     // ── Process each product ──
+//     for (const item of products) {
+//       const { product_id, qty_to_deduct } = item;
+//       const deductQty = parseFloat(qty_to_deduct || 0);
+
+//       if (!product_id || deductQty <= 0) {
+//         failed.push({
+//           product_id,
+//           qty_to_deduct: deductQty,
+//           reason: "Invalid product_id or qty_to_deduct <= 0",
+//         });
+//         continue;
+//       }
+
+//       try {
+//         // Get current balance + store_id for this product at project+site
+//         const balanceRow = await customSelectSqlQuery2(
+//           `SELECT
+//              COALESCE(SUM(qty_in) - SUM(qty_out), 0) AS current_balance,
+//              store_id
+//            FROM tx_store_stock_ledger
+//            WHERE project_id = ?
+//              AND site_id    = ?
+//              AND product_id = ?
+//            GROUP BY store_id
+//            ORDER BY MAX(ledger_id) DESC
+//            LIMIT 1`,
+//           [project_id, site_id, product_id],
+//           false
+//         );
+
+//         if (!balanceRow) {
+//           failed.push({
+//             product_id,
+//             qty_to_deduct: deductQty,
+//             reason: "No ledger entry found for this product at project+site",
+//           });
+//           continue;
+//         }
+
+//         const current_balance = parseFloat(balanceRow.current_balance || 0);
+//         const store_id        = balanceRow.store_id;
+
+//         if (deductQty > current_balance) {
+//           failed.push({
+//             product_id,
+//             qty_to_deduct  : deductQty,
+//             current_balance,
+//             reason         : `Insufficient stock. Available: ${current_balance}`,
+//           });
+//           continue;
+//         }
+
+//         const new_balance = current_balance - deductQty;
+
+//         // Insert DPR_ISSUE row
+//         const ledger_id = await insertData("tx_store_stock_ledger", {
+//           store_id,
+//           project_id,
+//           site_id,
+//           product_id,
+
+//           purchase_id      : null,
+//           invoice_no       : null,
+
+//           from_store_id    : store_id,
+//           from_project_id  : project_id,
+//           from_site_id     : site_id,
+
+//           to_store_id      : null,
+//           to_project_id    : null,
+//           to_site_id       : null,
+
+//           transaction_type : "DPR_ISSUE",
+//           dpr_id,
+
+//           qty_in           : 0,
+//           qty_out          : deductQty,
+//           balance_qty      : new_balance,
+
+//           transaction_date : txDate,
+//           created_by,
+//         });
+
+//         success.push({
+//           product_id,
+//           ledger_id,
+//           store_id,
+//           qty_deducted   : deductQty,
+//           balance_before : current_balance,
+//           balance_after  : new_balance,
+//         });
+
+//       } catch (innerErr) {
+//         failed.push({
+//           product_id,
+//           qty_to_deduct: deductQty,
+//           reason: innerErr.message,
+//         });
+//       }
+//     }
+
+//     return res.status(201).json({
+//       success : true,
+//       message : `Bulk deduction complete. Processed: ${success.length}, Failed: ${failed.length}`,
+//       data    : {
+//         project_id,
+//         site_id,
+//         dpr_id,
+//         transaction_date : txDate,
+//         processed        : success,
+//         failed,
+//       },
+//     });
+
+//   } catch (err) {
+//     console.error("[deductStockBulk]", err);
+//     return res.status(500).json({ success: false, message: err.message });
+//   }
+// }
+
+
 async deductStockBulk(req, res) {
   try {
     const {
@@ -2107,7 +2522,6 @@ async deductStockBulk(req, res) {
       products      = [],
     } = req.body;
 
-    // ── Validation ──
     if (!project_id || !site_id || !products.length) {
       return res.status(400).json({
         success: false,
@@ -2119,7 +2533,6 @@ async deductStockBulk(req, res) {
     const success = [];
     const failed  = [];
 
-    // ── Process each product ──
     for (const item of products) {
       const { product_id, qty_to_deduct } = item;
       const deductQty = parseFloat(qty_to_deduct || 0);
@@ -2134,7 +2547,7 @@ async deductStockBulk(req, res) {
       }
 
       try {
-        // Get current balance + store_id for this product at project+site
+        // ── Get current balance + store_id (unchanged) ──
         const balanceRow = await customSelectSqlQuery2(
           `SELECT
              COALESCE(SUM(qty_in) - SUM(qty_out), 0) AS current_balance,
@@ -2172,17 +2585,34 @@ async deductStockBulk(req, res) {
           continue;
         }
 
+        // ── ✅ NEW: Fetch latest purchase_id & invoice_no for this product ──
+        const prevRow = await customSelectSqlQuery2(
+          `SELECT purchase_id, invoice_no
+           FROM tx_store_stock_ledger
+           WHERE project_id  = ?
+             AND site_id     = ?
+             AND product_id  = ?
+             AND purchase_id IS NOT NULL
+           ORDER BY ledger_id DESC
+           LIMIT 1`,
+          [project_id, site_id, product_id],
+          false
+        );
+
+        const purchase_id = prevRow?.purchase_id ?? null;
+        const invoice_no  = prevRow?.invoice_no  ?? null;
+        // ── end new block ──
+
         const new_balance = current_balance - deductQty;
 
-        // Insert DPR_ISSUE row
         const ledger_id = await insertData("tx_store_stock_ledger", {
           store_id,
           project_id,
           site_id,
           product_id,
 
-          purchase_id      : null,
-          invoice_no       : null,
+          purchase_id,        // ✅ now carried forward from previous row
+          invoice_no,         // ✅ now carried forward from previous row
 
           from_store_id    : store_id,
           from_project_id  : project_id,
@@ -2210,6 +2640,8 @@ async deductStockBulk(req, res) {
           qty_deducted   : deductQty,
           balance_before : current_balance,
           balance_after  : new_balance,
+          purchase_id,    // optional: useful for debugging
+          invoice_no,
         });
 
       } catch (innerErr) {
@@ -2240,26 +2672,151 @@ async deductStockBulk(req, res) {
   }
 }
 
-
 ///////////////////////////////////
+
+
+// async getStoreProjectSiteStock(req, res) {
+//   try {
+//    // const { store_id, project_id, site_id } = req.params;
+
+//    const { store_id, project_id, site_id } = req.body;
+
+//     const sql = `
+//       SELECT
+//         a.store_id,
+//         s.store_name,
+//         a.project_id,
+//         a.site_id,
+//         a.product_id,
+//         p.product_name,
+//         a.balance_qty AS current_balance
+//       FROM tx_store_stock_ledger a
+//       INNER JOIN (
+//         SELECT 
+//           product_id,
+//           MAX(ledger_id) AS last_ledger_id
+//         FROM tx_store_stock_ledger
+//         WHERE store_id = ${store_id}
+//           AND project_id = ${project_id}
+//           AND site_id = ${site_id}
+//         GROUP BY product_id
+//       ) b ON a.ledger_id = b.last_ledger_id
+//       LEFT JOIN md_store s ON s.store_id = a.store_id
+//       LEFT JOIN md_product p ON p.product_id = a.product_id
+//       ORDER BY a.product_id
+//     `;
+//     const rows = await customSelectSqlQuery(sql);
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Store project site stock",
+//       data: rows,
+//     });
+
+//   } catch (err) {
+//     console.error("[getStoreProjectSiteStock]", err);
+//     return res.status(500).json({
+//       success: false,
+//       message: err.message,
+//     });
+//   }
+// }
+
+
+
+// async getStoreProjectSiteStock(req, res) {
+//   try {
+
+//     const { store_id, project_id, site_id } = req.body;
+
+//     const sql = `
+//       SELECT
+//         a.store_id,
+//         s.store_name,
+
+//         a.project_id,
+//         pr.project_name,
+
+//         a.site_id,
+//         ps.project_site_name,
+
+//         a.product_id,
+//         p.product_name,
+//         a.balance_qty AS current_balance
+
+//       FROM tx_store_stock_ledger a
+
+//       INNER JOIN (
+//         SELECT 
+//           product_id,
+//           MAX(ledger_id) AS last_ledger_id
+//         FROM tx_store_stock_ledger
+//         WHERE store_id = ${store_id}
+//           AND project_id = ${project_id}
+//           AND site_id = ${site_id}
+//         GROUP BY product_id
+//       ) b ON a.ledger_id = b.last_ledger_id
+
+//       LEFT JOIN md_store s 
+//         ON s.store_id = a.store_id
+
+//       LEFT JOIN md_product p 
+//         ON p.product_id = a.product_id
+
+//       LEFT JOIN md_project pr 
+//         ON pr.project_id = a.project_id
+
+//       LEFT JOIN md_project_site ps 
+//         ON ps.project_site_id = a.site_id
+
+//       ORDER BY a.product_id
+//     `;
+
+//     const rows = await customSelectSqlQuery(sql);
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Store project site stock",
+//       data: rows,
+//     });
+
+//   } catch (err) {
+//     console.error("[getStoreProjectSiteStock]", err);
+//     return res.status(500).json({
+//       success: false,
+//       message: err.message,
+//     });
+//   }
+// }
+
 
 
 async getStoreProjectSiteStock(req, res) {
   try {
-   // const { store_id, project_id, site_id } = req.params;
 
-   const { store_id, project_id, site_id } = req.body;
+    const { store_id, project_id, site_id } = req.body;
 
     const sql = `
       SELECT
         a.store_id,
         s.store_name,
+
         a.project_id,
+        pr.project_name,
+
         a.site_id,
+        ps.project_site_name,
+
         a.product_id,
         p.product_name,
+
+        a.purchase_id,
+        a.invoice_no,
+
         a.balance_qty AS current_balance
+
       FROM tx_store_stock_ledger a
+
       INNER JOIN (
         SELECT 
           product_id,
@@ -2270,8 +2827,19 @@ async getStoreProjectSiteStock(req, res) {
           AND site_id = ${site_id}
         GROUP BY product_id
       ) b ON a.ledger_id = b.last_ledger_id
-      LEFT JOIN md_store s ON s.store_id = a.store_id
-      LEFT JOIN md_product p ON p.product_id = a.product_id
+
+      LEFT JOIN md_store s 
+        ON s.store_id = a.store_id
+
+      LEFT JOIN md_product p 
+        ON p.product_id = a.product_id
+
+      LEFT JOIN md_project pr 
+        ON pr.project_id = a.project_id
+
+      LEFT JOIN md_project_site ps 
+        ON ps.project_site_id = a.site_id
+
       ORDER BY a.product_id
     `;
 
@@ -2291,9 +2859,6 @@ async getStoreProjectSiteStock(req, res) {
     });
   }
 }
-
-
-
 
 
 

@@ -26,7 +26,7 @@ router.delete("/api/delete_stor/:id",authcheck, storController.deleteStore);
 router.post("/api/purchase-entry-store-stock",  storeStockController.addPurchaseEntry);
 router.post("/dpr-issue",  storeStockController.addDprIssueEntry);
 
-router.post("/api/transfer-stock-from-store-to-store-project-to-project",   storeStockController.transferStock);
+router.post("/api/transfer-stock-from-store-to-store-project-to-project",  authcheck, storeStockController.transferStock);
 
 // ---------- READ / REPORTS ----------
 router.get("/available",              storeStockController.getAvailableStock);
@@ -41,12 +41,12 @@ router.get("/api/get-store-fulldetails/:store_id",storeStockController.getStoreF
 
 router.post("/api/stock-ledger/deduct",      storeStockController.deductStockByProjectSite);
 
-router.post("/api/stock-ledger/deduct-bulk", storeStockController.deductStockBulk);
+router.post("/api/stock-ledger/deduct-bulk", storeStockController.deductStockBulk);////
 
 //router.get( "/api/store-stock/:store_id/:project_id/:site_id",    storeStockController.getStoreProjectSiteStock);
 
 
-router.get("/api/get-current-stock-as-per-store-project-site",        storeStockController.getStoreProjectSiteStock);
+router.post("/api/get-current-stock-as-per-store-project-site",        storeStockController.getStoreProjectSiteStock);
 
 router.get("/api/store-projects/:store_id", storeStockController.getProjectsUnderStore);
 

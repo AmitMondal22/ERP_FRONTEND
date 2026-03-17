@@ -51,7 +51,7 @@ async function generateDocumentGroupId() {
   // console.log("🔍 Query Result:", last);
   // console.log("🔍 Type of result:", typeof last);
   // console.log("🔍 Is array?", Array.isArray(last));
-
+ 
   if (!last) {
     console.log("✅ No previous record, returning:", `${today}/1`);
     return `${today}/1`;
