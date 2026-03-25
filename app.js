@@ -41,7 +41,9 @@ const claimTypeRoutes= require('./router/claimTypeRoutes');
 
 const claimTypeReimbursementRoutes= require('./router/claimTypeReimbursementRoutes');
 
-const clientRoutes = require("./router/clientRoutes")
+const clientRoutes = require("./router/clientRoutes");
+
+const ProjectSiteStatusRoutes = require("./router/projectSiteStatusRoutes")
 
 
 
@@ -105,7 +107,8 @@ app.use('/',claimDamageProductRoutes);
 app.use('/',uploadFileRoutes);
 app.use('/',claimTypeRoutes);
 app.use('/',claimTypeReimbursementRoutes);
-app.use('/',clientRoutes)
+app.use('/',clientRoutes);
+app.use('/',ProjectSiteStatusRoutes);
 
 
 

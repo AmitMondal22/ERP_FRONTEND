@@ -26,6 +26,8 @@ router.post("/api/update_project_site_employee/:id",authcheck, ProjectSiteEmploy
 router.get("/api/get_project_site_employee/:id",authcheck, ProjectSiteEmployeeAssignmentController.getProjectSiteEmployeeAssignmentById);
 router.delete("/api/delete_project_site_employee/:id",authcheck, ProjectSiteEmployeeAssignmentController.deleteProjectSiteEmployeeAssignment);
 
+router.get("/api/project-site/site-in-charge/:site_id", ProjectSiteEmployeeAssignmentController.getSiteInChargeBySiteId);
+
 
 
 

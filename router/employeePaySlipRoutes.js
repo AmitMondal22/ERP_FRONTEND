@@ -11,6 +11,10 @@ router.get("/api/getallpayslips",authcheck, payslipController.generateAllMonthly
 
  router.get("/api/getpayslipbyid/:payslip_id",authcheck, payslipController.getPayslipById);//
 
+
+router.post("/api/my-payslip", authcheck,  payslipController.getMyPayslipByMonth);
+
+
  router.delete("/api/payslips/:payslip_id",authcheck,payslipController.deletePayslipById);
 
  router.post("/api/updatepayslip/:payslip_id",authcheck,payslipController.updatePayslipById);

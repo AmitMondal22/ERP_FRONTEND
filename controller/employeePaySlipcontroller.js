@@ -845,7 +845,7 @@ async generateAllMonthlyPayslips(req, res) {
           damage_penalty_deduction: +salary.damage_penalty_deduction || 0
         };
 
-        // 🏢 Employer contributions (NO salary impact)
+        //  Employer contributions (NO salary impact)
         const employerContributions = {
           epf_employer_contribution: +salary.epf_employer_contribution || 0,
           esi_employer_contribution: +salary.esi_employer_contribution || 0
@@ -1220,8 +1220,146 @@ async getPayslipById(req, res) {
 }
 
 /////////
+async getMyPayslipByMonth(req, res) {
+  try {
+    // ✅ Extract user id from token (set by authcheck middleware)
+    const user_id = req.user?.id;
 
+    if (!user_id) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized: No user ID found in token"
+      });
+    }
 
+    const { month } = req.body;
+
+    if (!month) {
+      return res.status(400).json({
+        success: false,
+        message: "month is required (format: MM/YYYY)"
+      });
+    }
+
+    // Parse month
+    let parsedMonth = dayjs(month, "MM/YYYY", true);
+    if (!parsedMonth.isValid()) {
+      parsedMonth = dayjs(month, "YYYY-MM", true);
+    }
+
+    if (!parsedMonth.isValid()) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid month format. Use MM/YYYY or YYYY-MM"
+      });
+    }
+
+    const monthDate = parsedMonth.startOf("month").format("YYYY-MM-DD");
+
+    // ✅ Find employee using user_id from users table
+    const employee = await selectOneData(
+      "em_employees",
+      "employee_id",
+      `user_id = ${user_id}`
+    );
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "No employee record found for this user"
+      });
+    }
+
+    const employee_id = employee.employee_id;
+
+    // Fetch payslip with full details
+    const data = await customSelectSqlQuery2(
+      `
+      SELECT
+        -- PAYSLIP CORE
+        ps.payslip_id,
+        ps.employee_id,
+        ps.month_date,
+        ps.total_present_in_months,
+        ps.total_absent_in_month,
+        ps.month_ctc_amount,
+        ps.lop_amount,
+        ps.month_deducted_amount,
+        ps.salary_in_hand,
+
+        -- DEDUCTIONS
+        pd.epf_employee_contribution,
+        pd.esi_employee_contribution,
+        pd.epf_employer_contribution,
+        pd.esi_employer_contribution,
+        pd.professional_tax,
+        pd.labour_welfare_fund,
+        pd.income_tax_tds,
+        pd.loan_deduction,
+        pd.advance_salary_recovery,
+        pd.meal_deduction,
+        pd.insurance_premium_employee,
+        pd.late_coming_lop,
+        pd.notice_period_recovery,
+        pd.damage_penalty_deduction,
+        pd.total_deducted_amount,
+
+        -- EMPLOYEE DETAILS
+        e.employee_id,
+        e.first_name,
+        e.middle_name,
+        e.last_name,
+        CONCAT(e.first_name, ' ', COALESCE(e.middle_name, ''), ' ', e.last_name) AS employee_name,
+        e.email,
+        e.phone,
+        e.hire_date,
+        e.department,
+        e.job_title,
+        e.em_id,
+        e.employee_dob,
+        e.employee_address,
+        e.date_of_joining,
+
+        -- BANK DETAILS
+        e.bank_name,
+        e.bank_account_no,
+        e.ifsc_no,
+        e.pf_account_no
+
+      FROM em_payslips ps
+      LEFT JOIN em_payslip_deductions pd
+        ON ps.payslip_id = pd.payslip_id
+      LEFT JOIN em_employees e
+        ON ps.employee_id = e.employee_id
+      WHERE ps.employee_id = ?
+        AND ps.month_date = ?
+      `,
+      [employee_id, monthDate],
+      false
+    );
+
+    if (!data) {
+      return res.status(404).json({
+        success: false,
+        message: `No payslip found for ${parsedMonth.format("MMMM YYYY")}`
+      });
+    }
+
+    return res.json({
+      success: true,
+      data
+    });
+
+  } catch (err) {
+    console.error("❌ getMyPayslipByMonth:", err);
+    return res.status(500).json({
+      success: false,
+      message: err.message
+    });
+  }
+}
+
+////
 
 async deletePayslipById(req, res) {
   try {

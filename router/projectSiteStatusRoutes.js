@@ -1,10 +1,8 @@
-// routes/projectSiteStatus.routes.js
-
 
 const express    = require("express");
 const router     = express.Router();
 const authcheck  = require("../middleware/auth");
-const controller = require("../controller/projectSiteController");
+const controller = require("../controller/projectSiteStatusController");
 const FileUploader = require("../helper/fileUpload");
 
 /* =========================
@@ -43,7 +41,7 @@ router.post(
  * GET /api/project-site-status
  */
 router.get(
-  "/api/project-site-status",
+  "/api/get-all-project-site-status",
   authcheck,
   controller.getAllStatuses
 );
@@ -99,5 +97,18 @@ router.delete(
   authcheck,
   controller.deleteImage
 );
+
+
+
+/**
+ * GET STATUSES BY FILTER (project_id, site_id, date)
+ * GET /api/project-site-status/filter?project_id=1&site_id=2&date=2025-07-10
+ */
+router.get(
+  "/api/project-site-status/status/filter",
+  authcheck,
+  controller.getStatusByFilter
+);
+
 
 module.exports = router;
