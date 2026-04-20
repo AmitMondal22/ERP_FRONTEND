@@ -11,7 +11,7 @@ class ProjectController {
   // Create Project
   createProject = async (req, res) => {
     try {
-      const { project_name, city_id } = req.body; 
+      const { project_name, city_id,recipient } = req.body; 
       if (!project_name || !city_id) {
         return res.status(400).json({ success: false, message: "Missing required fields" });
       }
@@ -24,6 +24,7 @@ class ProjectController {
         city_id,
         create_by: req.user.id,
         created_at,
+        recipient,
       };
 
       const insertedId = await insertData("md_project", insertValues);
@@ -71,13 +72,14 @@ class ProjectController {
   updateProject = async (req, res) => {
     try {
       const { id } = req.params;
-      const { project_name, city_id } = req.body;
+      const { project_name, city_id,recipient  } = req.body;
 
       const updated_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
       const setValues = {};
       if (project_name !== undefined) setValues.project_name = project_name;
       if (city_id !== undefined) setValues.city_id = city_id;
+      if (recipient !== undefined) setValues.recipient = recipient;
 
       // Use token to set the updater (optional, if you track who updates)
       setValues.create_by = req.user.id;
@@ -170,6 +172,7 @@ getPurchaseByProjectSiteAndDate = async (req, res) => {
 
         p.project_id,
         pr.project_name,
+        pr.recipient,
 
         p.site_id,
         ps.project_site_name,

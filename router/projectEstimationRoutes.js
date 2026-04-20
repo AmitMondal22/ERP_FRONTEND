@@ -9,6 +9,11 @@ router.post("/api/create-or-update-projectestimation",authcheck,ProjectEstimatio
 // GET ALL
 router.get("/api/getallestimation",authcheck,ProjectEstimationController.getAllProjectEstimations);
 
+router.delete("/api/delete-projectestimation/:id",authcheck,ProjectEstimationController.deleteProjectEstimation);
+
+router.post("/api/decrease-rep-task",authcheck, ProjectEstimationController.decreaseRepTask);
+
+
 // // GET ONE using composite key
 // router.get("/:project_id/:site_id/:bom_id",authcheck, ProjectEstimationController.getProjectEstimation);
 
@@ -19,9 +24,14 @@ router.get("/api/getallestimation",authcheck,ProjectEstimationController.getAllP
 // FULL BOM DETAILS (aggregated)
 router.get("/api/getallbomdetails",authcheck,ProjectEstimationController.getAllBomFullDetails);
 
-//fetchAll datas from bomdetailsbyprojectsiteid
 
+
+
+////
+//fetchAll datas from bomdetailsbyprojectsiteid
 router.post("/api/getallbomdetailsbyprojectsiteid",authcheck,ProjectEstimationController.getBomFullDetailsByProjectAndSite);
+
+
 
 router.post('/estimation/get-billing-id',authcheck, ProjectEstimationController.getBillingIdByProjectAndBom);
 

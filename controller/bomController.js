@@ -10,7 +10,7 @@ class BomController {
 
 createOrUpdateBom = async (req, res) => {
   try {
-    const { bom_id, bom_name } = req.body;
+    const { bom_id, bom_name,unit } = req.body;
 
     if (!bom_name) {
       return res.status(400).json({ success: false, message: "BOM name is required" });
@@ -23,6 +23,7 @@ createOrUpdateBom = async (req, res) => {
       const setValues = { 
         bom_name,
         updated_at: timestamp,
+        unit,
         // updated_by: req.user.id   // use this if you add column "updated_by"
       };
 
@@ -47,6 +48,7 @@ createOrUpdateBom = async (req, res) => {
       //  CREATE new BOM
       const insertValues = {
         bom_name,
+        unit,
         create_by: req.user.id,
         created_at: timestamp,
       };
@@ -163,6 +165,7 @@ createOrUpdateBom = async (req, res) => {
     const select = `
       b.bom_id, 
       b.bom_name,
+      b.unit,
       p.bom_progress_id,
       p.bom_progress_name,
       p.sl_number,
@@ -199,6 +202,8 @@ createOrUpdateBom = async (req, res) => {
       if (!bomData.bom_id) {
         bomData.bom_id = row.bom_id;
         bomData.bom_name = row.bom_name;
+        bomData.unit = row.unit; 
+
       }
 
       if (row.bom_progress_id && !progressMap.has(row.bom_progress_id)) {
@@ -252,6 +257,7 @@ createOrUpdateBom = async (req, res) => {
     try {
       const select= `b.bom_id,
         b.bom_name,
+        b.unit,
         b.create_by,
         b.created_at,
         b.updated_at,
@@ -295,7 +301,7 @@ createOrUpdateBom = async (req, res) => {
       SELECT 
         b.bom_id,
         b.bom_name,
-
+        b.unit, 
         p.bom_progress_id,
         p.bom_progress_name,
 
@@ -325,6 +331,7 @@ createOrUpdateBom = async (req, res) => {
         bomMap.set(row.bom_id, {
           bom_id: row.bom_id,
           bom_name: row.bom_name,
+          unit: row.unit,
           progresses: new Map()
         });
       }

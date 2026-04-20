@@ -26,6 +26,7 @@ router.post("/api/get-work-progress-details-for-comparison", controller.getBomIt
 
 router.post("/api/getallworkprogressbyprojectandsiteid",authcheck,controller.getWorkProgressfulldatafromprojectandsiteId)
 
+////////
 
 // UPDATE
 router.post("/api/update", controller.updateWorkProgress);

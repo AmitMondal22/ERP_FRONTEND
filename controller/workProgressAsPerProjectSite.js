@@ -419,7 +419,7 @@ const expenseRows = consumed_products.map(item => ({
     console.error("CREATE WORK PROGRESS ERROR:", err);
     return res.status(500).json({
       success: false,
-      message: "Unable to create work progress"
+      message: `Unable to create work progress ${err}`
     });
   }
 };
@@ -1492,7 +1492,7 @@ getWorkProgressByProjectAndSite = async (req, res) => {
         message: "project_id and project_site_id are required",
       });
     }
-
+ 
     const sql = `
       SELECT DISTINCT
           w.work_progress_site_id,

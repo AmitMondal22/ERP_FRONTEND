@@ -440,92 +440,221 @@ class ProjectEstimationController {
   // ====================================================== 
   // CREATE or UPDATE project_estimation
   // ======================================================
-  createOrUpdateProjectEstimation = async (req, res) => {
-    try {
-      const {
-        project_id,
-        site_id,
-        bom_id,
-        bom_name,
-        rep_task,
-        billing_id
-      } = req.body;
+  // createOrUpdateProjectEstimation = async (req, res) => {
+  //   try {
+  //     const {
+  //       project_id,
+  //       site_id,
+  //       bom_id,
+  //       bom_name,
+  //       rep_task,
+  //       billing_id
+  //     } = req.body;
 
-      if (!project_id || !site_id || !bom_id || !rep_task) {
-        return res.status(400).json({
-          success: false,
-          message: "project_id, site_id, bom_id & rep_task are required"
-        });
+  //     if (!project_id || !site_id || !bom_id || !rep_task) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "project_id, site_id, bom_id & rep_task are required"
+  //       });
+  //     }
+
+  //     const timestamp = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+  //     const checkSql = `
+  //       SELECT *
+  //       FROM tx_project_details_with_estimation
+  //       WHERE project_id = ${project_id}
+  //       AND site_id = ${site_id}
+  //       AND bom_id = ${bom_id}
+  //     `;
+
+  //     const existing = await customSelectSqlQuery(checkSql, false);
+
+  //     if (existing) {
+  //       const setValues = {
+  //         bom_name,
+  //         rep_task,
+  //         updated_at: timestamp
+  //       };
+
+  //       if (billing_id !== undefined && billing_id !== null) {
+  //         setValues.billing_id = billing_id;
+  //       }
+
+  //       const condition = `
+  //         project_id = ${project_id}
+  //         AND site_id = ${site_id}
+  //         AND bom_id = ${bom_id}
+  //       `;
+
+  //       await updateData("tx_project_details_with_estimation", setValues, condition);
+
+  //       return res.status(200).json({
+  //         success: true,
+  //         message: "Estimation updated successfully"
+  //       });
+  //     }
+
+  //     const insertValues = {
+  //       project_id,
+  //       site_id,
+  //       bom_id,
+  //       bom_name,
+  //       rep_task,
+  //       created_by: req.user.id,
+  //       created_at: timestamp
+  //     };
+
+  //     if (billing_id !== undefined && billing_id !== null) {
+  //       insertValues.billing_id = billing_id;
+  //     }
+
+  //     await insertData("tx_project_details_with_estimation", insertValues);
+
+  //     return res.status(201).json({
+  //       success: true,
+  //       message: "Estimation created successfully"
+  //     });
+
+  //   } catch (err) {
+  //     console.error(err);
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Unable to create/update estimation"
+  //     });
+  //   }
+  // };
+
+
+
+  createOrUpdateProjectEstimation = async (req, res) => {
+  try {
+    const {
+      project_id,
+      site_id,
+      bom_id,
+      bom_name,
+      rep_task,
+      billing_id
+    } = req.body;
+
+    //Validation
+    if (!project_id || !site_id || !bom_id || rep_task === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "project_id, site_id, bom_id & rep_task are required"
+      });
+    }
+
+    const timestamp = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+    //Check existing record
+    const checkSql = `
+      SELECT *
+      FROM tx_project_details_with_estimation
+      WHERE project_id = ${project_id}
+      AND site_id = ${site_id}
+      AND bom_id = ${bom_id}
+    `;
+
+    const existingData = await customSelectSqlQuery(checkSql, false);
+    const existing = Array.isArray(existingData)
+      ? existingData[0]
+      : existingData;
+
+    // =====================================================
+    // ✅ UPDATE CASE (ACCUMULATE rep_task)
+    // =====================================================
+    if (existing) {
+      const previousRepTask = Number(existing.rep_task) || 0;
+      const newRepTask = Number(rep_task) || 0;
+
+      const updatedRepTask = previousRepTask + newRepTask;
+
+      const setValues = {
+        bom_name,
+        rep_task: updatedRepTask, //accumulated value
+        updated_at: timestamp
+      };
+
+      if (billing_id !== undefined && billing_id !== null) {
+        setValues.billing_id = billing_id;
       }
 
-      const timestamp = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
-
-      const checkSql = `
-        SELECT *
-        FROM tx_project_details_with_estimation
-        WHERE project_id = ${project_id}
+      const condition = `
+        project_id = ${project_id}
         AND site_id = ${site_id}
         AND bom_id = ${bom_id}
       `;
 
-      const existing = await customSelectSqlQuery(checkSql, false);
+      await updateData(
+        "tx_project_details_with_estimation",
+        setValues,
+        condition
+      );
 
-      if (existing) {
-        const setValues = {
-          bom_name,
-          rep_task,
-          updated_at: timestamp
-        };
+        // console.log("Updating with:", setValues);
+       // console.log("Condition:", condition);
 
-        if (billing_id !== undefined && billing_id !== null) {
-          setValues.billing_id = billing_id;
-        }
-
-        const condition = `
-          project_id = ${project_id}
-          AND site_id = ${site_id}
-          AND bom_id = ${bom_id}
-        `;
-
-        await updateData("tx_project_details_with_estimation", setValues, condition);
-
-        return res.status(200).json({
-          success: true,
-          message: "Estimation updated successfully"
-        });
-      }
-
-      const insertValues = {
-        project_id,
-        site_id,
-        bom_id,
-        bom_name,
-        rep_task,
-        created_by: req.user.id,
-        created_at: timestamp
-      };
-
-      if (billing_id !== undefined && billing_id !== null) {
-        insertValues.billing_id = billing_id;
-      }
-
-      await insertData("tx_project_details_with_estimation", insertValues);
-
-      return res.status(201).json({
+      return res.status(200).json({
         success: true,
-        message: "Estimation created successfully"
-      });
-
-    } catch (err) {
-      console.error(err);
-      return res.status(500).json({
-        success: false,
-        message: "Unable to create/update estimation"
+        message: "Estimation updated successfully (rep_task accumulated)",
+        data: {
+          previousRepTask,
+          addedRepTask: newRepTask,
+          finalRepTask: updatedRepTask
+        }
       });
     }
-  };
 
+    // =====================================================
+    // ✅ INSERT CASE
+    // =====================================================
+    const insertValues = {
+      project_id,
+      site_id,
+      bom_id,
+      bom_name,
+      rep_task: Number(rep_task) || 0,
+      created_by: req.user.id,
+      created_at: timestamp
+    };
+
+    if (billing_id !== undefined && billing_id !== null) {
+      insertValues.billing_id = billing_id;
+    }
+
+    await insertData(
+      "tx_project_details_with_estimation",
+      insertValues
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: "Estimation created successfully",
+      data: {
+        finalRepTask: Number(rep_task) || 0
+      }
+    });
+
+  } catch (err) {
+    console.error("Error in createOrUpdateProjectEstimation:", err);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to create/update estimation"
+    });
+  }
+};
   
+
+
+
+
+
+
+
+
 
   // ======================================================
   // GET ONE by ID
@@ -612,6 +741,95 @@ class ProjectEstimationController {
     }
   };
 
+//========================================
+//  decreaseRepTask
+//========================================
+
+decreaseRepTask = async (req, res) => {
+  try {
+    const { project_id, site_id, bom_id } = req.body;
+
+    //  Validation
+    if (!project_id || !site_id || !bom_id) {
+      return res.status(400).json({
+        success: false,
+        message: "project_id, site_id, bom_id are required"
+      });
+    }
+
+    //  Check existing record
+    const checkSql = `
+      SELECT *
+      FROM tx_project_details_with_estimation
+      WHERE project_id = ${project_id}
+      AND site_id = ${site_id}
+      AND bom_id = ${bom_id}
+    `;
+
+    const existingData = await customSelectSqlQuery(checkSql, false);
+    const existing = Array.isArray(existingData)
+      ? existingData[0]
+      : existingData;
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: "Estimation not found"
+      });
+    }
+
+    const currentRepTask = Number(existing.rep_task) || 0;
+
+    //  Prevent negative values
+    if (currentRepTask <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "rep_task is already 0, cannot decrease further"
+      });
+    }
+
+    const updatedRepTask = currentRepTask - 1;
+
+    const timestamp = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+    //  Update DB
+    const setValues = {
+      rep_task: updatedRepTask,
+      updated_at: timestamp
+    };
+
+    const condition = `
+      project_id = ${project_id}
+      AND site_id = ${site_id}
+      AND bom_id = ${bom_id}
+    `;
+
+    await updateData(
+      "tx_project_details_with_estimation",
+      setValues,
+      condition
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "rep_task decreased successfully",
+      data: {
+        previousRepTask: currentRepTask,
+        finalRepTask: updatedRepTask
+      }
+    });
+
+  } catch (err) {
+    console.error("Error in decreaseRepTask:", err);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to decrease rep_task"
+    });
+  }
+};
+
+
   // ======================================================
   // FULL DETAILS WITH AGGREGATION
   // ======================================================
@@ -697,6 +915,7 @@ class ProjectEstimationController {
             product_id: row.product_id,
             qty: row.per_unit_qty,
             total_qty: row.total_qty,
+
             product: {
               product_id: row.product_id,
               product_name: row.product_name,
@@ -729,8 +948,9 @@ class ProjectEstimationController {
 
   // ======================================================
   // GET BOM DETAILS BY PROJECT AND SITE
-  // ✅ FIXED: Now properly JOINs with unit table
+  // FIXED: Now properly JOINs with unit table
   // ======================================================
+
  getBomFullDetailsByProjectAndSite = async (req, res) => {
   try {
     const { project_id, project_site_id } = req.body;  
@@ -756,11 +976,11 @@ class ProjectEstimationController {
         t.billing_id,
 
         billing.project_work_description,
-        billing.unit AS billing_unit,           -- ✅ Additional field
-        billing.quantity AS billing_quantity,   -- ✅ Additional field
-        billing.rate AS billing_rate,           -- ✅ Additional field
-        billing.amount AS billing_amount,       -- ✅ Additional field
-        billing.remarks AS billing_remarks,     -- ✅ Additional field
+        billing.unit AS billing_unit,           --  Additional field
+        billing.quantity AS billing_quantity,   --  Additional field
+        billing.rate AS billing_rate,           --  Additional field
+        billing.amount AS billing_amount,       --  Additional field
+        billing.remarks AS billing_remarks,     --  Additional field
 
         bp.bom_progress_id,
         bp.bom_progress_name,
@@ -817,7 +1037,7 @@ class ProjectEstimationController {
           rep_task: row.rep_task,
           billing_id: row.billing_id,
           project_work_description: row.project_work_description,
-          // ✅ Add additional billing fields if you need them
+          // Add additional billing fields if you need them
           billing_unit: row.billing_unit,
           billing_quantity: row.billing_quantity,
           billing_rate: row.billing_rate,
@@ -838,20 +1058,45 @@ class ProjectEstimationController {
         });
       }
 
-      if (row.bom_item_id && row.bom_progress_id) {
-        est.progresses.get(row.bom_progress_id).items.push({
-          bom_item_id: row.bom_item_id,
-          product_id: row.product_id,
-          qty: row.per_unit_qty,
-          total_qty: row.total_qty,
-          product: {
-            product_id: row.product_id,
-            product_name: row.product_name,
-            unit: row.unit || 'Pc',
-            product_type_id: row.product_type_id
-          }
-        });
-      }
+      // if (row.bom_item_id && row.bom_progress_id) {
+      //   est.progresses.get(row.bom_progress_id).items.push({
+      //     bom_item_id: row.bom_item_id,
+      //     product_id: row.product_id,
+      //     qty: row.per_unit_qty,
+      //     total_qty: row.total_qty,
+      //     product: {
+      //       product_id: row.product_id,
+      //       product_name: row.product_name,
+      //       unit: row.unit || 'Pc',
+      //       product_type_id: row.product_type_id
+      //     }
+
+          
+      //   });
+      // }
+
+if (row.bom_item_id && row.bom_progress_id) {
+  est.progresses.get(row.bom_progress_id).items.push({
+    bom_item_id: row.bom_item_id,
+    product_id: row.product_id,
+    qty: row.per_unit_qty,
+    total_qty: row.total_qty,
+
+    //  ADD THIS FIELD ONLY (no logic disturbed)
+    total_Material_required_for_bom_quantity: (
+      parseFloat(row.total_qty || 0) * parseFloat(row.rep_task || 1)
+    ).toFixed(2),
+
+    product: {
+      product_id: row.product_id,
+      product_name: row.product_name,
+      unit: row.unit || 'Pc',
+      product_type_id: row.product_type_id
+    }
+  });
+}
+
+
     }
 
     const result = [];
