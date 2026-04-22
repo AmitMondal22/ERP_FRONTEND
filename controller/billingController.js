@@ -571,6 +571,7 @@ getBillingDataFullinDetails = async (req, res) => {
         t.bom_name,
         t.rep_task,
         t.billing_id,
+        b.unit AS bom_unit,
 
         billing.project_work_description,
         billing.unit AS billing_unit,
@@ -603,6 +604,7 @@ getBillingDataFullinDetails = async (req, res) => {
        AND t.bom_id = bi.bom_id
       LEFT JOIN md_product pr ON bi.product_id = pr.product_id
       LEFT JOIN md_unit uom ON pr.unit_id = uom.unit_id
+      LEFT JOIN md_bom b ON t.bom_id = b.bom_id
 
       WHERE t.project_id = ${project_id}
         AND t.site_id = ${project_site_id}
@@ -691,6 +693,7 @@ getBillingDataFullinDetails = async (req, res) => {
           project_estimation_id: row.project_estimation_id,
           bom_id: row.bom_id,
           bom_name: row.bom_name,
+          bom_unit: row.bom_unit || null, 
           rep_task: row.rep_task,
           progresses: new Map()
         });
@@ -767,6 +770,11 @@ getBillingDataFullinDetails = async (req, res) => {
     });
   }
 };
+
+
+
+
+
 
 }
 

@@ -23,9 +23,16 @@ createOrUpdateBom = async (req, res) => {
       const setValues = { 
         bom_name,
         updated_at: timestamp,
-        unit,
+        unit ,
         // updated_by: req.user.id   // use this if you add column "updated_by"
       };
+
+
+     // ✅ ADD THIS BLOCK
+  if (unit !== undefined && unit !== null && unit !== "") {
+    setValues.unit = unit;
+  }
+
 
       const condition = `bom_id = ${Number(bom_id)}`;
       const updatedRows = await updateData("md_bom", setValues, condition);
@@ -52,6 +59,10 @@ createOrUpdateBom = async (req, res) => {
         create_by: req.user.id,
         created_at: timestamp,
       };
+
+      if (unit !== undefined && unit !== null && unit !== "") {
+  insertValues.unit = unit;
+}
 
       const insertedId = await insertData("md_bom", insertValues);
 

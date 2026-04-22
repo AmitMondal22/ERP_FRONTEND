@@ -25,7 +25,8 @@ router.post("/api/decrease-rep-task",authcheck, ProjectEstimationController.decr
 router.get("/api/getallbomdetails",authcheck,ProjectEstimationController.getAllBomFullDetails);
 
 
-
+//////new////
+router.post("/api/estimation/update-direct",authcheck, ProjectEstimationController.updateEstimationDirect);
 
 ////
 //fetchAll datas from bomdetailsbyprojectsiteid

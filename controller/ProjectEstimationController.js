@@ -535,8 +535,14 @@ class ProjectEstimationController {
       bom_id,
       bom_name,
       rep_task,
-      billing_id
+      billing_id,
+
+      bom_price,       
+      bom_unit,                                  
+      bom_value_unit 
     } = req.body;
+
+
 
     //Validation
     if (!project_id || !site_id || !bom_id || rep_task === undefined) {
@@ -563,7 +569,7 @@ class ProjectEstimationController {
       : existingData;
 
     // =====================================================
-    // ✅ UPDATE CASE (ACCUMULATE rep_task)
+    //  UPDATE CASE (ACCUMULATE rep_task)
     // =====================================================
     if (existing) {
       const previousRepTask = Number(existing.rep_task) || 0;
@@ -574,7 +580,10 @@ class ProjectEstimationController {
       const setValues = {
         bom_name,
         rep_task: updatedRepTask, //accumulated value
-        updated_at: timestamp
+        updated_at: timestamp,
+        bom_price: Number(bom_price),   // ✅ ADD THIS
+    bom_unit,                        // ✅ ADD THIS
+    bom_value_unit,  
       };
 
       if (billing_id !== undefined && billing_id !== null) {
@@ -595,6 +604,7 @@ class ProjectEstimationController {
 
         // console.log("Updating with:", setValues);
        // console.log("Condition:", condition);
+           console.log(">>>>>>>>>>",res)
 
       return res.status(200).json({
         success: true,
@@ -616,6 +626,9 @@ class ProjectEstimationController {
       bom_id,
       bom_name,
       rep_task: Number(rep_task) || 0,
+      bom_price: Number(bom_price),
+      bom_unit,
+      bom_value_unit,
       created_by: req.user.id,
       created_at: timestamp
     };
@@ -629,6 +642,8 @@ class ProjectEstimationController {
       insertValues
     );
 
+
+    console.log(">>>>>>>>>>",res)
     return res.status(201).json({
       success: true,
       message: "Estimation created successfully",
@@ -652,7 +667,35 @@ class ProjectEstimationController {
 
 
 
+// Add this new method in ProjectEstimationController
+updateEstimationDirect = async (req, res) => {
+  try {
+    const { project_estimation_id, rep_task, bom_price, bom_unit, bom_value_unit } = req.body;
 
+    if (!project_estimation_id) {
+      return res.status(400).json({ success: false, message: "project_estimation_id is required" });
+    }
+
+    const timestamp = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+    const setValues = {
+      rep_task: Number(rep_task),
+      bom_price: Number(bom_price),
+      bom_unit,
+      bom_value_unit,
+      updated_at: timestamp
+    };
+
+    const condition = `project_estimation_id = ${Number(project_estimation_id)}`;
+    await updateData("tx_project_details_with_estimation", setValues, condition);
+
+    return res.status(200).json({ success: true, message: "Estimation updated successfully" });
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: "Unable to update estimation" });
+  }
+};
 
 
 
@@ -688,7 +731,10 @@ class ProjectEstimationController {
           s.project_site_name,
           b.bom_name AS original_bom_name,
           billing.billing_id,
-          billing.project_work_description
+          billing.project_work_description,
+          t.bom_price,
+          t.bom_unit,
+          t.bom_value_unit,
         FROM tx_project_details_with_estimation t
         LEFT JOIN md_project p ON t.project_id = p.project_id
         LEFT JOIN md_project_site s ON t.site_id = s.project_site_id
@@ -847,6 +893,10 @@ decreaseRepTask = async (req, res) => {
           t.bom_name,
           t.rep_task,
           t.billing_id,
+          t.bom_price,
+          t.bom_unit,
+          t.bom_value_unit,
+          
 
           billing.project_work_description,
 
@@ -892,6 +942,9 @@ decreaseRepTask = async (req, res) => {
             bom_id: row.bom_id,
             bom_name: row.bom_name,
             rep_task: row.rep_task,
+            bom_price: row.bom_price,
+            bom_unit: row.bom_unit,
+            bom_value_unit: row.bom_value_unit,
             billing_id: row.billing_id,
             project_work_description: row.project_work_description,
             progresses: new Map()
@@ -974,6 +1027,9 @@ decreaseRepTask = async (req, res) => {
         t.bom_name,
         t.rep_task,
         t.billing_id,
+        t.bom_price,
+        t.bom_unit,
+        t.bom_value_unit,
 
         billing.project_work_description,
         billing.unit AS billing_unit,           --  Additional field
@@ -1038,6 +1094,11 @@ decreaseRepTask = async (req, res) => {
           billing_id: row.billing_id,
           project_work_description: row.project_work_description,
           // Add additional billing fields if you need them
+
+          bom_price: row.bom_price,
+          bom_unit: row.bom_unit,
+          bom_value_unit: row.bom_value_unit,
+
           billing_unit: row.billing_unit,
           billing_quantity: row.billing_quantity,
           billing_rate: row.billing_rate,
@@ -1150,6 +1211,9 @@ getBillingIdByProjectAndBom = async (req, res) => {
           t.bom_id,
           t.bom_name,
           t.rep_task,
+          t.bom_price,
+          t.bom_unit,
+          t.bom_value_unit,
           billing.billing_id,
           billing.project_work_description,
           billing.unit,
@@ -1217,6 +1281,9 @@ getBillingIdByProjectAndBom = async (req, res) => {
         t.bom_name,
         t.rep_task,
         t.billing_id,
+        t.bom_price,
+        t.bom_unit,
+        t.bom_value_unit,
 
         billing.project_work_description,
         billing.unit AS billing_unit,
