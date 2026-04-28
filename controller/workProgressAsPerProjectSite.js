@@ -303,6 +303,10 @@ class WorkProgressAsPerProjectSiteController {
 
 
 
+
+
+
+
 createWorkProgress = async (req, res) => {
   try {
     const {
@@ -392,16 +396,15 @@ const expenseRows = consumed_products.map(item => ({
 
       // quantity_of_product,--->Atc_total  same 
       const columns = `
-  expenses_of_project_site_id,
-  work_progress_site_id,
-  product_id,      
-  bom_product_qty,
-  Atc_total,
-  Act_Qty,
-  created_at,
-  updated_at
-`;
-
+      expenses_of_project_site_id,
+      work_progress_site_id,
+      product_id,      
+      bom_product_qty,
+      Atc_total,
+      Act_Qty,
+      created_at,
+     updated_at
+     `;
 
       await batchInsertData("tx_site_used_items", columns, expenseRows);
 
@@ -423,6 +426,17 @@ const expenseRows = consumed_products.map(item => ({
     });
   }
 };
+
+
+
+
+
+
+
+
+
+
+
 
 
 

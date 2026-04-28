@@ -8,8 +8,10 @@ const billingController = require("../controller/billingController");
 
 router.post("/api/createbillinginvoice",authcheck, billingController.createInvoice);
 router.get("/api/getallbillinginvoice",authcheck, billingController.getAllInvoices);
-
+   
 router.post("/api/billingdatafullindetails",billingController.getBillingDataFullinDetails);
+ 
+router.post("/api/billing/get-billable-boms", billingController.getBillableBoms)
 
 // router.get("/invoice/:invoice_item_id", billingController.getInvoiceById);
 // router.put("/invoice/:invoice_item_id", billingController.updateInvoice);
