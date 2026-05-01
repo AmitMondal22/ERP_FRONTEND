@@ -11,7 +11,10 @@ router.get("/api/getallbillinginvoice",authcheck, billingController.getAllInvoic
    
 router.post("/api/billingdatafullindetails",billingController.getBillingDataFullinDetails);
  
-router.post("/api/billing/get-billable-boms", billingController.getBillableBoms)
+router.post("/api/billing/get-billable-boms", billingController.getBillableBoms);
+
+router.post("/api/update-work-progress-status",billingController.updateWorkProgressBillingStatus)
+
 
 // router.get("/invoice/:invoice_item_id", billingController.getInvoiceById);
 // router.put("/invoice/:invoice_item_id", billingController.updateInvoice);

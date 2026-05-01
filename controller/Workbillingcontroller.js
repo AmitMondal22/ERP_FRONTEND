@@ -36,144 +36,173 @@ class WorkBillingController {
   //          boms_completed_count, billing_status, invoice_date, remarks,
   //          material_details: [...] }
   // ─────────────────────────────────────────────
-  create = async (req, res) => {
-    try {
-      const {
-        project_id,
-        project_site_id,
-        work_description,
-        billing_unit,
-        billing_qty,
-        billing_rate,
-        billing_amount,
-        boms_completed_count = 0,
-        billing_status = "pending",
-        invoice_date,
-        remarks,
-        material_details, // array
-      } = req.body;
 
-      // ── Validate required parent fields ──
-      if (
-        !project_id ||
-        !project_site_id ||
-        !work_description ||
-        !billing_unit ||
-        billing_qty == null ||
-        billing_rate == null ||
-        billing_amount == null ||
-        !invoice_date
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Required fields missing: project_id, project_site_id, work_description, billing_unit, billing_qty, billing_rate, billing_amount, invoice_date",
-        });
-      }
 
-      if (!Array.isArray(material_details) || material_details.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: "material_details array is required and must not be empty",
-        });
-      }
 
-      const invoice_no   = await this.#generateInvoiceNo(invoice_date);
-      const now          = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
-      const created_by   = req.user?.id || null;
 
-      // ── Insert parent ──
-      const work_billing_order_id = await insertData("work_billing_order", {
-        invoice_no,
-        project_id,
-        project_site_id,
-        work_description,
-        billing_unit,
-        billing_qty,
-        billing_rate,
-        billing_amount,
-        boms_completed_count,
-        billing_status,
-        invoice_date,
-        remarks: remarks || null,
-        created_by:req.user.id, 
-        // created_at: now,
-        // updated_at: now,
-      });
+createWorkBilling = async (req, res) => {
+  try {
+    const {
+      project_id,
+      project_site_id,
+      work_description,
+      billing_unit,
+      billing_qty,
+      billing_rate,
+      billing_amount,
+      boms_completed_count = 0,
+      billing_status = "pending",
+      invoice_date,
+      remarks,
+      bomUnitOfLength,
+      material_details,
+    } = req.body;
 
-      if (!work_billing_order_id) throw new Error("Failed to create billing order");
-
-      // ── Validate each detail row has required fields ──
-      const requiredDetailFields = [
-        "bom_name", "bom_unit", "bom_qty", "bom_price", "bom_amount",
-        "progress_step_name", "step_sl_number",
-        "product_id", "product_name", "hsn_code", "unit",
-        "qty_per_bom", "required_qty", "used_qty",
-      ];
-
-      for (let i = 0; i < material_details.length; i++) {
-        const row = material_details[i];
-        const missing = requiredDetailFields.filter(
-          (f) => row[f] == null || row[f] === ""
-        );
-        if (missing.length > 0) {
-          return res.status(400).json({
-            success: false,
-            message: `material_details[${i}] is missing: ${missing.join(", ")}`,
-          });
-        }
-      }
-
-      // ── Build flat columns string once ──
-      const detailCols =
-        "work_billing_order_id, bom_name, bom_unit, bom_qty, bom_price, bom_amount, " +
-        "progress_step_name, step_sl_number, product_id, product_name, hsn_code, unit, " +
-        "qty_per_bom, required_qty, used_qty, created_at, updated_at";
-
-      // ── Build rows without map — use index loop ──
-      const detailRows = [];
-      for (let i = 0; i < material_details.length; i++) {
-        const d = material_details[i];
-        detailRows.push({
-          work_billing_order_id,
-          bom_name:            d.bom_name,
-          bom_unit:            d.bom_unit,
-          bom_qty:             d.bom_qty,
-          bom_price:           d.bom_price,
-          bom_amount:          d.bom_amount,
-          progress_step_name:  d.progress_step_name,
-          step_sl_number:      d.step_sl_number,
-          product_id:          d.product_id,
-          product_name:        d.product_name,
-          hsn_code:            d.hsn_code,
-          unit:                d.unit,
-          qty_per_bom:         d.qty_per_bom,
-          required_qty:        d.required_qty,
-          used_qty:            d.used_qty,
-          created_at:          now,
-          updated_at:          now,
-        });
-      }
-
-      await batchInsertData("billing_material_detail", detailCols, detailRows);
-
-      return res.status(201).json({
-        success: true,
-        message: "Work billing order created successfully",
-        data: { work_billing_order_id, invoice_no },
-      });
-
-    } catch (error) {
-      console.error("Error in WorkBilling.create:", error.message);
-      return res.status(500).json({
+    // ── Validate top-level fields ──────────────────────────────────────
+    if (
+      !project_id ||
+      !project_site_id ||
+      !work_description ||
+      !billing_unit ||
+      billing_qty == null ||
+      billing_rate == null ||
+      billing_amount == null ||
+      !invoice_date
+    ) {
+      return res.status(400).json({
         success: false,
-        message: "Unable to create work billing order",
-        error: error.message,
+        message: "Required fields missing",
       });
     }
-  };
 
+    if (!Array.isArray(material_details) || material_details.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "material_details array is required and must not be empty",
+      });
+    }
 
+    // ── Parse bomUnitOfLength ──────────────────────────────────────────
+    const parsedBomUnitOfLength =
+      bomUnitOfLength != null && bomUnitOfLength !== ""
+        ? parseFloat(bomUnitOfLength)
+        : null;
+
+    if (parsedBomUnitOfLength !== null && isNaN(parsedBomUnitOfLength)) {
+      return res.status(400).json({
+        success: false,
+        message: "bomUnitOfLength must be a valid number",
+      });
+    }
+
+    // ── Generate invoice_no & insert work_billing_order ───────────────
+    const invoice_no = await this.#generateInvoiceNo(invoice_date);
+    const now = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+    const created_by = req.user?.id || null;
+
+    const work_billing_order_id = await insertData("work_billing_order", {
+      invoice_no,
+      project_id: Number(project_id),
+      project_site_id: Number(project_site_id),
+      work_description,
+      billing_unit,
+      billing_qty: parseFloat(billing_qty),
+      billing_rate: parseFloat(billing_rate),
+      billing_amount: parseFloat(billing_amount),
+      boms_completed_count: parseFloat(boms_completed_count || 0),
+      billing_status,
+      invoice_date,
+      remarks: remarks || null,
+      created_by,
+      created_at: now,
+      updated_at: now,
+    });
+
+    if (!work_billing_order_id) {
+      throw new Error("Failed to create billing order");
+    }
+
+    // ── Validate required fields per detail row ───────────────────────
+    const requiredDetailFields = [
+      "bom_id", "bom_unit", "bom_qty", "bom_price", "bom_amount",
+      "progress_step_name", "step_sl_number", "product_id",
+      "product_name", "hsn_code", "unit", "qty_per_bom",
+      "required_qty",
+    ];
+
+    for (let i = 0; i < material_details.length; i++) {
+      const row = material_details[i];
+      const missing = requiredDetailFields.filter(
+        (f) => row[f] == null || row[f] === ""
+      );
+      if (missing.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `material_details[${i}] is missing: ${missing.join(", ")}`,
+        });
+      }
+    }
+
+    // ── Build detail rows — one row per material_detail item ──────────
+    // ✅ No expansion needed — frontend already sent one row per consumption
+    const detailCols =
+      "work_billing_order_id, work_progress_site_id, bom_id, bomUnitOfLength, " +
+      "bom_unit, bom_qty, bom_price, bom_amount, progress_step_name, step_sl_number, " +
+      "product_id, product_name, hsn_code, unit, qty_per_bom, required_qty, " +
+      "used_qty, created_at, updated_at";
+
+    const detailRows = material_details.map((d) => {
+      const rowBomUnitOfLength =
+        d.bomUnitOfLength != null && d.bomUnitOfLength !== ""
+          ? parseFloat(d.bomUnitOfLength)
+          : parsedBomUnitOfLength;
+
+      return {
+        work_billing_order_id,
+        work_progress_site_id:
+          d.work_progress_site_id != null
+            ? Number(d.work_progress_site_id)
+            : null,                                    // ✅ single value, not array
+        bom_id: d.bom_id,
+        bomUnitOfLength:
+          rowBomUnitOfLength !== null && !isNaN(rowBomUnitOfLength)
+            ? rowBomUnitOfLength
+            : null,
+        bom_unit: d.bom_unit,
+        bom_qty: parseFloat(d.bom_qty),
+        bom_price: parseFloat(d.bom_price),
+        bom_amount: parseFloat(d.bom_amount),
+        progress_step_name: d.progress_step_name,
+        step_sl_number: parseFloat(d.step_sl_number),
+        product_id: Number(d.product_id),
+        product_name: d.product_name,
+        hsn_code: d.hsn_code,
+        unit: d.unit,
+        qty_per_bom: parseFloat(d.qty_per_bom),
+        required_qty: parseFloat(d.required_qty),
+        used_qty: parseFloat(d.used_qty || 0),         // ✅ per-site used_qty
+        created_at: now,
+        updated_at: now,
+      };
+    });
+
+    await batchInsertData("billing_material_detail", detailCols, detailRows);
+
+    return res.status(201).json({
+      success: true,
+      message: "Work billing order created successfully",
+      data: { work_billing_order_id, invoice_no },
+    });
+
+  } catch (error) {
+    console.error("ERROR in createWorkBilling:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to create work billing order",
+      error: error.message,
+    });
+  }
+};
   // ─────────────────────────────────────────────
   //  GET ALL   GET /work-billing
   //  Optional query: ?project_id=&project_site_id=&billing_status=

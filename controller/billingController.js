@@ -44,69 +44,6 @@ class BillingController {
      CREATE Invoice
   --------------------------------------------------- */
 
-  // createInvoice = async (req, res) => {
-  //   try {
-  //     const {
-  //       terms_and_condition,
-  //       remarks,
-  //       bill_to_id,
-  //       shift_to_id,
-  //       irn,
-  //       ack_no,
-  //       ack_date,
-  //       bill_status = "N",
-  //       date,
-  //       client_id,
-  //       work_progress_id,
-  //       create_by,
-  //     } = req.body;
-
-  //     // if (!client_id || !work_progress_id) {
-  //     //   return res.status(400).json({
-  //     //     success: false,
-  //     //     message: "client_id and work_progress_id are required",
-  //     //   });
-  //     // }
-
-  //     const invoice_no = await this.generateInvoiceNo();
-
-  //     const payload = {
-  //       invoice_no,
-  //       terms_and_condition,
-  //       remarks,
-  //       bill_to_id,
-  //       shift_to_id,
-  //       irn,
-  //       ack_no,
-  //       ack_date,
-  //       bill_status,
-  //       date: date || dayjs().format("YYYY-MM-DD"),
-  //       client_id,
-  //       work_progress_id,
-  //       create_by,
-  //       created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
-  //     };
-
-  //     const insertId = await insertData("tx_invoice_item", payload);
-
-  //     res.status(201).json({
-  //       success: true,
-  //       message: "Invoice created successfully",
-  //       data: {
-  //         invoice_item_id: insertId,
-  //         invoice_no,
-  //       },
-  //     });
-
-  //   } catch (err) {
-  //     console.error("Create Invoice Error:", err);
-  //     res.status(500).json({
-  //       success: false,
-  //       message: "Failed to create invoice",
-  //     });
-  //   }
-  // };
-
 
 
 
@@ -333,901 +270,8 @@ class BillingController {
 
 
 
-// getBillingDataFullinDetails = async (req, res) => {
-//   try {
-//     const { project_id, project_site_id } = req.body;
 
-//     if (!project_id || !project_site_id) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "project_id and project_site_id are required"
-//       });
-//     }
-//     /* ===============================
-//        1. FETCH BOM DATA
-//     =============================== */
-//     const bomSql = `
-//       SELECT 
-//         t.project_estimation_id,
-//         t.project_id,
-//         p.project_name,
-//         t.site_id,
-//         s.project_site_name,
-//         t.bom_id,
-//         t.bom_name,
-//         t.rep_task,
-//         t.billing_id,
-//         b.unit AS bom_unit,
 
-//         billing.project_work_description,
-//         billing.unit AS billing_unit,
-//         billing.quantity AS billing_quantity,
-//         billing.rate AS billing_rate,
-//         billing.amount AS billing_amount,
-//         billing.remarks AS billing_remarks,
-
-//         bp.bom_progress_id,
-//         bp.bom_progress_name,
-//         bp.sl_number,
-
-//         bi.bom_item_id,
-//         bi.product_id,
-//         bi.qty AS per_unit_qty,
-//         bi.total_qty,
-
-//         pr.product_name,
-//         pr.product_type_id,
-//         pr.hsn_code,
-//         uom.unit_name AS unit
-
-//       FROM tx_project_details_with_estimation t
-//       LEFT JOIN md_project p ON t.project_id = p.project_id
-//       LEFT JOIN md_project_site s ON t.site_id = s.project_site_id
-//       LEFT JOIN md_project_billing billing ON t.billing_id = billing.billing_id
-//       LEFT JOIN md_bom_progress bp ON t.bom_id = bp.bom_id
-//       LEFT JOIN md_bom_item bi 
-//         ON bp.bom_progress_id = bi.bom_progress_id 
-//        AND t.bom_id = bi.bom_id
-//       LEFT JOIN md_product pr ON bi.product_id = pr.product_id
-//       LEFT JOIN md_unit uom ON pr.unit_id = uom.unit_id
-//       LEFT JOIN md_bom b ON t.bom_id = b.bom_id
-
-//       WHERE t.project_id = ${project_id}
-//         AND t.site_id = ${project_site_id}
-
-//       ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
-//     `;
-
-//     const bomRows = await customSelectSqlQuery(bomSql);
-
-//     /* ===============================
-//        2. FETCH WORK PROGRESS
-//     =============================== */
-//     const workSql = `
-//       SELECT
-//         w.bom_id,
-//         w.bom_progress_id,
-//         bi.product_id,
-//         SUM(w.total_qty_of_material_used) AS total_material_used,
-//         SUM(w.total_progress) AS actual_quantity_done
-
-//       FROM tx_work_progress w
-//       LEFT JOIN md_bom_item bi 
-//         ON bi.bom_id = w.bom_id 
-//        AND bi.bom_progress_id = w.bom_progress_id
-
-//       WHERE w.project_id = ${project_id}
-//         AND w.project_site_id = ${project_site_id}
-//         AND (w.billing_status IS NULL OR w.billing_status != 'Y')
-
-//       GROUP BY w.bom_id, w.bom_progress_id, bi.product_id
-//     `;
-
-//     const workRows = await customSelectSqlQuery(workSql);
-
-//     /* ===============================
-//        3. CREATE WORK MAP
-//     =============================== */
-//     const workMap = new Map();
-
-//     workRows.forEach(row => {
-//       if (!row.product_id) return;
-
-//       const key = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
-
-//       workMap.set(key, {
-//         used: parseFloat(row.total_material_used || 0),
-//         done: parseFloat(row.actual_quantity_done || 0)
-//       });
-//     });
-
-//     /* ===============================
-//        4. BUILD FINAL RESPONSE
-//        Structure:
-//          billing_id (grouped by work_description)
-//            └── boms[]
-//                  └── progresses[]
-//                        └── items[]
-//     =============================== */
-//     const billingMap = new Map();
-
-//     for (const row of bomRows) {
-
-//       // ── Level 1: Billing Group (same billing_id = same work description) ──
-//       if (!billingMap.has(row.billing_id)) {
-//         billingMap.set(row.billing_id, {
-//           billing_id: row.billing_id,
-//           project_id: row.project_id,
-//           project_name: row.project_name,
-//           site_id: row.site_id,
-//           site_name: row.project_site_name,
-//           project_work_description: row.project_work_description,
-//           billing_unit: row.billing_unit,
-//           billing_quantity: row.billing_quantity,
-//           billing_rate: row.billing_rate,
-//           billing_amount: row.billing_amount,
-//           billing_remarks: row.billing_remarks,
-//           boms: new Map()
-//         });
-//       }
-
-//       const billing = billingMap.get(row.billing_id);
-
-//       // ── Level 2: BOM (nested inside billing group) ──
-//       if (!billing.boms.has(row.project_estimation_id)) {
-//         billing.boms.set(row.project_estimation_id, {
-//           project_estimation_id: row.project_estimation_id,
-//           bom_id: row.bom_id,
-//           bom_name: row.bom_name,
-//           bom_unit: row.bom_unit || null, 
-//           rep_task: row.rep_task,
-//           progresses: new Map()
-//         });
-//       }
-
-//       const bom = billing.boms.get(row.project_estimation_id);
-
-//       // ── Level 3: Progress (nested inside BOM) ──
-//       if (row.bom_progress_id && !bom.progresses.has(row.bom_progress_id)) {
-//         bom.progresses.set(row.bom_progress_id, {
-//           bom_progress_id: row.bom_progress_id,
-//           bom_progress_name: row.bom_progress_name,
-//           sl_number: row.sl_number,
-//           items: []
-//         });
-//       }
-
-//       // ── Level 4: Items (nested inside Progress) ──
-//       if (row.bom_item_id && row.bom_progress_id) {
-
-//         const totalQty  = parseFloat(row.total_qty || 0);
-//         const repTask   = parseFloat(row.rep_task  || 1);
-//         const requiredQty = totalQty * repTask;
-
-//         const key      = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
-//         const workData = workMap.get(key) || { used: 0, done: 0 };
-
-//         bom.progresses.get(row.bom_progress_id).items.push({
-//           bom_item_id: row.bom_item_id,
-//           product_id:  row.product_id,
-//           qty:         row.per_unit_qty,
-//           total_qty:   row.total_qty,
-//           total_Material_required_for_all_bom_quantity: requiredQty.toFixed(2),
-//           total_material_used_in_site: workData.used.toFixed(2),
-//           actual_quantity_done:        workData.done.toFixed(2),
-//           product: {
-//             product_id:      row.product_id,
-//             product_name:    row.product_name,
-//             unit:            row.unit || 'Pc',
-//             product_type_id: row.product_type_id,
-//             hsn_code:        row.hsn_code,
-//           }
-//         });
-//       }
-//     }
-
-//     /* ===============================
-//        5. CONVERT MAPS → ARRAYS
-//     =============================== */
-//     const result = [];
-
-//     for (const billing of billingMap.values()) {
-//       const bomsArray = [];
-
-//       for (const bom of billing.boms.values()) {
-//         bom.progresses = Array.from(bom.progresses.values());
-//         bomsArray.push(bom);
-//       }
-
-//       billing.boms = bomsArray;
-//       result.push(billing);
-//     }
-
-//     return res.status(200).json({
-//       success: true,
-//       data: result
-//     });
-
-//   } catch (err) {
-//     console.error(err);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Billing generation failed"
-//     });
-//   }
-// };
-
-
-
-//------------------------------------------------------------------//
-
-
-
-
-
-// getBillingDataFullinDetails = async (req, res) => {
-//   try {
-//     const { project_id, project_site_id } = req.body;
-
-//     if (!project_id || !project_site_id) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "project_id and project_site_id are required"
-//       });
-//     }
-
-//     /* ===============================
-//        1. FETCH BOM DATA
-//     =============================== */
-//     const bomSql = `
-//       SELECT 
-//         t.project_estimation_id,
-//         t.project_id,
-//         p.project_name,
-//         t.site_id,
-//         s.project_site_name,
-//         t.bom_id,
-//         t.bom_name,
-//         t.rep_task,
-//         t.billing_id,
-//         t.bom_price,
-//         t.bom_unit,
-//         t.bom_value_unit,
-
-//         billing.project_work_description,
-//         billing.unit AS billing_unit,
-//         billing.quantity AS billing_quantity,
-//         billing.rate AS billing_rate,
-//         billing.amount AS billing_amount,
-//         billing.remarks AS billing_remarks,
-
-//         bp.bom_progress_id,
-//         bp.bom_progress_name,
-//         bp.sl_number,
-
-//         bi.bom_item_id,
-//         bi.product_id,
-//         bi.qty AS per_unit_qty,
-//         bi.total_qty,
-
-//         pr.product_name,
-//         pr.product_type_id,
-//         pr.hsn_code,
-//         uom.unit_name AS unit
-
-//       FROM tx_project_details_with_estimation t
-//       LEFT JOIN md_project p ON t.project_id = p.project_id
-//       LEFT JOIN md_project_site s ON t.site_id = s.project_site_id
-//       LEFT JOIN md_project_billing billing ON t.billing_id = billing.billing_id
-//       LEFT JOIN md_bom_progress bp ON t.bom_id = bp.bom_id
-//       LEFT JOIN md_bom_item bi 
-//         ON bp.bom_progress_id = bi.bom_progress_id 
-//        AND t.bom_id = bi.bom_id
-//       LEFT JOIN md_product pr ON bi.product_id = pr.product_id
-//       LEFT JOIN md_unit uom ON pr.unit_id = uom.unit_id
-
-//       WHERE t.project_id = ${project_id}
-//         AND t.site_id = ${project_site_id}
-
-//       ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
-//     `;
-
-//     const bomRows = await customSelectSqlQuery(bomSql);
-
-//     /* ===============================
-//        2. FETCH WORK PROGRESS
-//        ✅ FIX: Removed JOIN to md_bom_item since tx_work_progress
-//        has no product_id column. Group only by bom_id + bom_progress_id.
-//     =============================== */
-//     const workSql = `
-//       SELECT
-//         w.bom_id,
-//         w.bom_progress_id,
-//         SUM(w.total_qty_of_material_used) AS total_material_used,
-//         SUM(w.total_progress)             AS actual_quantity_done
-
-//       FROM tx_work_progress w
-
-//       WHERE w.project_id      = ${project_id}
-//         AND w.project_site_id = ${project_site_id}
-//         AND (w.billing_status IS NULL OR w.billing_status != 'Y')
-
-//       GROUP BY w.bom_id, w.bom_progress_id
-//     `;
-
-//     const workRows = await customSelectSqlQuery(workSql);
-
-//     /* ===============================
-//        3. CREATE WORK MAP
-//        ✅ FIX: Key is bom_id + bom_progress_id only.
-//        No product_id — it does not exist on tx_work_progress.
-//        Previously the JOIN was multiplying rows per product causing
-//        SUM() to double/triple count the material used.
-//     =============================== */
-//     const workMap = new Map();
-
-//     workRows.forEach(row => {
-//       const key = `${row.bom_id}_${row.bom_progress_id}`;
-
-//       workMap.set(key, {
-//         used: parseFloat(row.total_material_used || 0),
-//         done: parseFloat(row.actual_quantity_done || 0)
-//       });
-//     });
-
-//     /* ===============================
-//        4. BUILD FINAL RESPONSE
-//        Structure:
-//          billing_id (grouped by work_description)
-//            └── boms[]
-//                  └── progresses[]
-//                        └── items[]
-//     =============================== */
-//     const billingMap = new Map();
-
-//     for (const row of bomRows) {
-
-//       // ── Level 1: Billing Group ──
-//       if (!billingMap.has(row.billing_id)) {
-//         billingMap.set(row.billing_id, {
-//           billing_id: row.billing_id,
-//           project_id: row.project_id,
-//           project_name: row.project_name,
-//           site_id: row.site_id,
-//           site_name: row.project_site_name,
-//           project_work_description: row.project_work_description,
-//           billing_unit: row.billing_unit,
-//           billing_quantity: row.billing_quantity,
-//           billing_rate: row.billing_rate,
-//           billing_amount: row.billing_amount,
-//           billing_remarks: row.billing_remarks,
-//           boms: new Map()
-//         });
-//       }
-
-//       const billing = billingMap.get(row.billing_id);
-
-//       // ── Level 2: BOM ──
-//       if (!billing.boms.has(row.project_estimation_id)) {
-//         billing.boms.set(row.project_estimation_id, {
-//           project_estimation_id: row.project_estimation_id,
-//           bom_id: row.bom_id,
-//           bom_name: row.bom_name,
-//           rep_task: row.rep_task,
-//           bom_price: row.bom_price,
-//           bom_unit: row.bom_unit || null,
-//           bom_value_unit: row.bom_value_unit,
-//           progresses: new Map()
-//         });
-//       }
-
-//       const bom = billing.boms.get(row.project_estimation_id);
-
-//       // ── Level 3: Progress ──
-//       if (row.bom_progress_id && !bom.progresses.has(row.bom_progress_id)) {
-//         bom.progresses.set(row.bom_progress_id, {
-//           bom_progress_id: row.bom_progress_id,
-//           bom_progress_name: row.bom_progress_name,
-//           sl_number: row.sl_number,
-//           items: []
-//         });
-//       }
-
-//       // ── Level 4: Items ──
-//       if (row.bom_item_id && row.bom_progress_id) {
-
-//         const totalQty    = parseFloat(row.total_qty || 0);
-//         const repTask     = parseFloat(row.rep_task  || 1);
-//         const requiredQty = totalQty * repTask;
-
-//         // ✅ FIX: Key uses only bom_id + bom_progress_id (no product_id)
-//         // All items under the same progress step share the same
-//         // work progress data since tx_work_progress tracks per step,
-//         // not per individual material/product.
-//         const key      = `${row.bom_id}_${row.bom_progress_id}`;
-//         const workData = workMap.get(key) || { used: 0, done: 0 };
-
-//         bom.progresses.get(row.bom_progress_id).items.push({
-//           bom_item_id: row.bom_item_id,
-//           product_id:  row.product_id,
-//           qty:         row.per_unit_qty,
-//           total_qty:   row.total_qty,
-//           total_Material_required_for_bom_quantity: requiredQty.toFixed(2),
-//           total_material_used_in_site: workData.used.toFixed(2),  // ✅ now correct
-//           actual_quantity_done:        workData.done.toFixed(2),  // ✅ now correct
-//           product: {
-//             product_id:      row.product_id,
-//             product_name:    row.product_name,
-//             unit:            row.unit || 'Pc',
-//             product_type_id: row.product_type_id,
-//             hsn_code:        row.hsn_code,
-//           }
-//         });
-//       }
-//     }
-
-//     /* ===============================
-//        5. CONVERT MAPS → ARRAYS
-//     =============================== */
-//     const result = [];
-
-//     for (const billing of billingMap.values()) {
-//       const bomsArray = [];
-
-//       for (const bom of billing.boms.values()) {
-//         bom.progresses = Array.from(bom.progresses.values());
-//         bomsArray.push(bom);
-//       }
-
-//       billing.boms = bomsArray;
-//       result.push(billing);
-//     }
-
-//     return res.status(200).json({
-//       success: true,
-//       data: result
-//     });
-
-//   } catch (err) {
-//     console.error(err);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Billing generation failed"
-//     });
-//   }
-// };
-
-
-
-
-
-//  getBillingDataFullinDetails = async (req, res) => {
-//   try {
-//     const project_id = parseInt(req.body.project_id, 10);
-//     const project_site_id = parseInt(req.body.project_site_id, 10);
-
-//     if (!project_id || !project_site_id || isNaN(project_id) || isNaN(project_site_id)) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "project_id and project_site_id are required and must be valid integers"
-//       });
-//     }
-
-//     const bomSql = `
-//       SELECT
-//         t.project_estimation_id,
-//         t.project_id,
-//         p.project_name,
-//         t.site_id,
-//         s.project_site_name,
-//         t.bom_id,
-//         t.bom_name,
-//         t.rep_task,
-//         t.billing_id,
-//         t.bom_price,
-//         t.bom_unit,
-//         t.bom_value_unit,
-
-//         billing.project_work_description,
-//         billing.unit AS billing_unit,
-//         billing.quantity AS billing_quantity,
-//         billing.rate AS billing_rate,
-//         billing.amount AS billing_amount,
-//         billing.remarks AS billing_remarks,
-
-//         bp.bom_progress_id,
-//         bp.bom_progress_name,
-//         bp.sl_number,
-
-//         bi.bom_item_id,
-//         bi.product_id,
-//         bi.qty AS per_unit_qty,
-//         bi.total_qty,
-
-//         pr.product_name,
-//         pr.product_type_id,
-//         pr.hsn_code,
-//         uom.unit_name AS unit
-
-//       FROM tx_project_details_with_estimation t
-//       LEFT JOIN md_project p
-//         ON t.project_id = p.project_id
-//       LEFT JOIN md_project_site s
-//         ON t.site_id = s.project_site_id
-//       LEFT JOIN md_project_billing billing
-//         ON t.billing_id = billing.billing_id
-//       LEFT JOIN md_bom_progress bp
-//         ON t.bom_id = bp.bom_id
-//       LEFT JOIN md_bom_item bi
-//         ON bp.bom_progress_id = bi.bom_progress_id
-//        AND t.bom_id = bi.bom_id
-//       LEFT JOIN md_product pr
-//         ON bi.product_id = pr.product_id
-//       LEFT JOIN md_unit uom
-//         ON pr.unit_id = uom.unit_id
-//       WHERE t.project_id = ?
-//         AND t.site_id = ?
-//       ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
-//     `;
-
-//     /*
-//       Updated logic:
-//       - Join tx_work_progress -> tx_site_used_items by work_progress_site_id
-//       - Filter same project + site
-//       - Sum only Act_Qty
-//       - Restrict only product_id = 8
-//       - Group at bom + progress + product level
-//     */
-//     const materialSql = `
-//       SELECT
-//         w.bom_id,
-//         w.bom_progress_id,
-//         si.product_id,
-//         SUM(COALESCE(si.Act_Qty, 0)) AS total_material_used
-//       FROM tx_work_progress w
-//       INNER JOIN tx_site_used_items si
-//         ON si.work_progress_site_id = w.work_progress_site_id
-//       WHERE w.project_id = ?
-//         AND w.project_site_id = ?
-//         AND si.product_id = 8
-//       GROUP BY
-//         w.bom_id,
-//         w.bom_progress_id,
-//         si.product_id
-//     `;
-
-//     const [bomRows, materialRows] = await Promise.all([
-//       customSelectSqlQuery2(bomSql, [project_id, project_site_id]),
-//       customSelectSqlQuery2(materialSql, [project_id, project_site_id])
-//     ]);
-
-//     if (!bomRows || bomRows.length === 0) {
-//       return res.status(200).json({
-//         success: true,
-//         message: "No billing data found for this project and site",
-//         data: []
-//       });
-//     }
-
-//     const workMap = new Map();
-
-//     if (materialRows && materialRows.length > 0) {
-//       for (const row of materialRows) {
-//         if (!row.bom_id || !row.bom_progress_id || !row.product_id) continue;
-
-//         const key = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
-//         workMap.set(key, parseFloat(row.total_material_used || 0));
-//       }
-//     }
-
-//     const billingMap = new Map();
-
-//     for (const row of bomRows) {
-//       if (!billingMap.has(row.billing_id)) {
-//         billingMap.set(row.billing_id, {
-//           billing_id: row.billing_id,
-//           project_id: row.project_id,
-//           project_name: row.project_name,
-//           site_id: row.site_id,
-//           site_name: row.project_site_name,
-//           project_work_description: row.project_work_description,
-//           billing_unit: row.billing_unit,
-//           billing_quantity: row.billing_quantity,
-//           billing_rate: row.billing_rate,
-//           billing_amount: row.billing_amount,
-//           billing_remarks: row.billing_remarks,
-//           boms: new Map()
-//         });
-//       }
-
-//       const billing = billingMap.get(row.billing_id);
-
-//       if (!billing.boms.has(row.project_estimation_id)) {
-//         billing.boms.set(row.project_estimation_id, {
-//           project_estimation_id: row.project_estimation_id,
-//           bom_id: row.bom_id,
-//           bom_name: row.bom_name,
-//           rep_task: row.rep_task,
-//           bom_price: row.bom_price,
-//           bom_unit: row.bom_unit || null,
-//           bom_value_unit: row.bom_value_unit,
-//           progresses: new Map()
-//         });
-//       }
-
-//       const bom = billing.boms.get(row.project_estimation_id);
-
-//       if (row.bom_progress_id && !bom.progresses.has(row.bom_progress_id)) {
-//         bom.progresses.set(row.bom_progress_id, {
-//           bom_progress_id: row.bom_progress_id,
-//           bom_progress_name: row.bom_progress_name,
-//           sl_number: row.sl_number,
-//           items: []
-//         });
-//       }
-
-//       if (!row.bom_item_id || !row.bom_progress_id) continue;
-
-//       const totalQty = parseFloat(row.total_qty || 0);
-//       const repTask = parseFloat(row.rep_task || 1);
-//       const requiredQty = totalQty * repTask;
-
-//       const key = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
-//       const used = workMap.get(key) || 0;
-
-//       bom.progresses.get(row.bom_progress_id).items.push({
-//         bom_item_id: row.bom_item_id,
-//         product_id: row.product_id,
-//         qty: row.per_unit_qty,
-//         total_qty: row.total_qty,
-//         total_Material_required_for_bom_quantity: requiredQty.toFixed(2),
-//         total_material_used_in_site: used.toFixed(2),
-//         product: {
-//           product_id: row.product_id,
-//           product_name: row.product_name,
-//           unit: row.unit || "Pc",
-//           product_type_id: row.product_type_id,
-//           hsn_code: row.hsn_code
-//         }
-//       });
-//     }
-
-//     const result = [];
-
-//     for (const billing of billingMap.values()) {
-//       const bomsArray = [];
-
-//       for (const bom of billing.boms.values()) {
-//         bom.progresses = Array.from(bom.progresses.values());
-//         bomsArray.push(bom);
-//       }
-
-//       billing.boms = bomsArray;
-//       result.push(billing);
-//     }
-
-//     return res.status(200).json({
-//       success: true,
-//       data: result
-//     });
-
-//   } catch (err) {
-//     console.error("[getBillingDataFullinDetails] ERROR:", {
-//       message: err.message,
-//       stack: err.stack,
-//       body: req.body
-//     });
-
-//     return res.status(500).json({
-//       success: false,
-//       message: "Billing data fetch failed. Please try again."
-//     });
-//   }
-// };
-
-
-
-getBillingDataFullinDetails = async (req, res) => {
-  try {
-    const project_id = parseInt(req.body.project_id, 10);
-    const project_site_id = parseInt(req.body.project_site_id, 10);
-
-    if (!project_id || !project_site_id || isNaN(project_id) || isNaN(project_site_id)) {
-      return res.status(400).json({
-        success: false,
-        message: "project_id and project_site_id are required and must be valid integers"
-      });
-    }
-
-    const bomSql = `
-      SELECT
-        t.project_estimation_id,
-        t.project_id,
-        p.project_name,
-        t.site_id,
-        s.project_site_name,
-        t.bom_id,
-        t.bom_name,
-        t.rep_task,
-        t.billing_id,
-        t.bom_price,
-        t.bom_unit,
-        t.bom_value_unit,
-        billing.project_work_description,
-        billing.unit AS billing_unit,
-        billing.quantity AS billing_quantity,
-        billing.rate AS billing_rate,
-        billing.amount AS billing_amount,
-        billing.remarks AS billing_remarks,
-        bp.bom_progress_id,
-        bp.bom_progress_name,
-        bp.sl_number,
-        bi.bom_item_id,
-        bi.product_id,
-        bi.qty AS per_unit_qty,
-        bi.total_qty,
-        pr.product_name,
-        pr.product_type_id,
-        pr.hsn_code,
-        uom.unit_name AS unit
-      FROM tx_project_details_with_estimation t
-      LEFT JOIN md_project p
-        ON t.project_id = p.project_id
-      LEFT JOIN md_project_site s
-        ON t.site_id = s.project_site_id
-      LEFT JOIN md_project_billing billing
-        ON t.billing_id = billing.billing_id
-      LEFT JOIN md_bom_progress bp
-        ON t.bom_id = bp.bom_id
-      LEFT JOIN md_bom_item bi
-        ON bp.bom_progress_id = bi.bom_progress_id
-       AND t.bom_id = bi.bom_id
-      LEFT JOIN md_product pr
-        ON bi.product_id = pr.product_id
-      LEFT JOIN md_unit uom
-        ON pr.unit_id = uom.unit_id
-      WHERE t.project_id = ?
-        AND t.site_id = ?
-      ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
-    `;
-
-    const materialSql = `
-      SELECT
-        w.bom_id,
-        w.bom_progress_id,
-        si.product_id,
-        SUM(COALESCE(si.Act_Qty, 0)) AS total_material_used
-      FROM tx_work_progress w
-      INNER JOIN tx_site_used_items si
-        ON si.work_progress_site_id = w.work_progress_site_id
-      WHERE w.project_id = ?
-        AND w.project_site_id = ?
-      GROUP BY
-        w.bom_id,
-        w.bom_progress_id,
-        si.product_id
-    `;
-
-    const [bomRows, materialRows] = await Promise.all([
-      customSelectSqlQuery2(bomSql, [project_id, project_site_id]),
-      customSelectSqlQuery2(materialSql, [project_id, project_site_id])
-    ]);
-
-    if (!bomRows || bomRows.length === 0) {
-      return res.status(200).json({
-        success: true,
-        message: "No billing data found for this project and site",
-        data: []
-      });
-    }
-
-    const workMap = new Map();
-    for (const row of materialRows || []) {
-      if (!row.bom_id || !row.bom_progress_id || !row.product_id) continue;
-      const key = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
-      workMap.set(key, parseFloat(row.total_material_used || 0));
-    }
-
-    const billingMap = new Map();
-
-    for (const row of bomRows) {
-      if (!billingMap.has(row.billing_id)) {
-        billingMap.set(row.billing_id, {
-          billing_id: row.billing_id,
-          project_id: row.project_id,
-          project_name: row.project_name,
-          site_id: row.site_id,
-          site_name: row.project_site_name,
-          project_work_description: row.project_work_description,
-          billing_unit: row.billing_unit,
-          billing_quantity: row.billing_quantity,
-          billing_rate: row.billing_rate,
-          billing_amount: row.billing_amount,
-          billing_remarks: row.billing_remarks,
-          boms: new Map()
-        });
-      }
-
-      const billing = billingMap.get(row.billing_id);
-
-      if (!billing.boms.has(row.project_estimation_id)) {
-        billing.boms.set(row.project_estimation_id, {
-          project_estimation_id: row.project_estimation_id,
-          bom_id: row.bom_id,
-          bom_name: row.bom_name,
-          rep_task: row.rep_task,
-          bom_price: row.bom_price,
-          bom_unit: row.bom_unit || null,
-          bom_value_unit: row.bom_value_unit,
-          progresses: new Map()
-        });
-      }
-
-      const bom = billing.boms.get(row.project_estimation_id);
-
-      if (row.bom_progress_id && !bom.progresses.has(row.bom_progress_id)) {
-        bom.progresses.set(row.bom_progress_id, {
-          bom_progress_id: row.bom_progress_id,
-          bom_progress_name: row.bom_progress_name,
-          sl_number: row.sl_number,
-          items: []
-        });
-      }
-
-      if (!row.bom_item_id || !row.bom_progress_id) continue;
-
-      const totalQty = parseFloat(row.total_qty || 0);
-      const repTask = parseFloat(row.rep_task || 1);
-      const requiredQty = totalQty * repTask;
-
-      const key = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
-      const used = workMap.get(key) || 0;
-
-      bom.progresses.get(row.bom_progress_id).items.push({
-        bom_item_id: row.bom_item_id,
-        product_id: row.product_id,
-        qty: row.per_unit_qty,
-        total_qty: row.total_qty,
-        total_Material_required_for_bom_quantity: requiredQty.toFixed(2),
-        total_material_used_in_site: used.toFixed(2),
-        product: {
-          product_id: row.product_id,
-          product_name: row.product_name,
-          unit: row.unit || "Pc",
-          product_type_id: row.product_type_id,
-          hsn_code: row.hsn_code
-        }
-      });
-    }
-
-    const result = [];
-    for (const billing of billingMap.values()) {
-      const bomsArray = [];
-      for (const bom of billing.boms.values()) {
-        bom.progresses = Array.from(bom.progresses.values());
-        bomsArray.push(bom);
-      }
-      billing.boms = bomsArray;
-      result.push(billing);
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: result
-    });
-  } catch (err) {
-    console.error("[getBillingDataFullinDetails] ERROR:", {
-      message: err.message,
-      stack: err.stack,
-      body: req.body
-    });
-
-    return res.status(500).json({
-      success: false,
-      message: "Billing data fetch failed. Please try again."
-    });
-  }
-};
 
 
 
@@ -1362,6 +406,352 @@ getBillableBoms = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to generate billing"
+    });
+  }
+};
+
+///////////////////////////////////////////////////////
+
+
+
+getBillingDataFullinDetails = async (req, res) => {
+  try {
+    const project_id = parseInt(req.body.project_id, 10);
+    const project_site_id = parseInt(req.body.project_site_id, 10);
+
+    if (!project_id || !project_site_id || isNaN(project_id) || isNaN(project_site_id)) {
+      return res.status(400).json({
+        success: false,
+        message: "project_id and project_site_id are required and must be valid integers"
+      });
+    }
+
+    /* ---------------- BOM DATA ---------------- */
+    const bomSql = `
+      SELECT
+        t.project_estimation_id,
+        t.project_id,
+        p.project_name,
+        t.site_id,
+        s.project_site_name,
+        t.bom_id,
+        t.bom_name,
+        t.rep_task,
+        t.billing_id,
+        t.bom_price,
+        t.bom_unit,
+        t.bom_value_unit,
+        billing.project_work_description,
+        billing.unit AS billing_unit,
+        billing.quantity AS billing_quantity,
+        billing.rate AS billing_rate,
+        billing.amount AS billing_amount,
+        billing.remarks AS billing_remarks,
+        bp.bom_progress_id,
+        bp.bom_progress_name,
+        bp.sl_number,
+        bi.bom_item_id,
+        bi.product_id,
+        bi.qty AS per_unit_qty,
+        bi.total_qty,
+        pr.product_name,
+        pr.product_type_id,
+        pr.hsn_code,
+        uom.unit_name AS unit
+      FROM tx_project_details_with_estimation t
+      LEFT JOIN md_project p ON t.project_id = p.project_id
+      LEFT JOIN md_project_site s ON t.site_id = s.project_site_id
+      LEFT JOIN md_project_billing billing ON t.billing_id = billing.billing_id
+      LEFT JOIN md_bom_progress bp ON t.bom_id = bp.bom_id
+      LEFT JOIN md_bom_item bi 
+        ON bp.bom_progress_id = bi.bom_progress_id
+       AND t.bom_id = bi.bom_id
+      LEFT JOIN md_product pr ON bi.product_id = pr.product_id
+      LEFT JOIN md_unit uom ON pr.unit_id = uom.unit_id
+      WHERE t.project_id = ?
+        AND t.site_id = ?
+      ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
+    `;
+
+    /* ---------------- 🔥 MATERIAL USED (ONLY PENDING DPR) ---------------- */
+    const materialSql = `
+      SELECT
+        w.work_progress_site_id,
+        w.bom_id,
+        w.bom_progress_id,
+        si.product_id,
+        SUM(COALESCE(si.Act_Qty, 0)) AS total_material_used
+      FROM tx_work_progress w
+      INNER JOIN tx_site_used_items si
+        ON si.work_progress_site_id = w.work_progress_site_id
+      WHERE w.project_id = ?
+        AND w.project_site_id = ?
+        AND w.billing_status = 'PENDING'
+      GROUP BY
+        w.work_progress_site_id,
+        w.bom_id,
+        w.bom_progress_id,
+        si.product_id
+    `;
+
+    const [bomRows, materialRows] = await Promise.all([
+      customSelectSqlQuery2(bomSql, [project_id, project_site_id]),
+      customSelectSqlQuery2(materialSql, [project_id, project_site_id])
+    ]);
+
+    if (!bomRows || bomRows.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "No billing data found",
+        data: []
+      });
+    }
+
+    /* ---------------- 🔥 BUILD WORK MAP (MULTIPLE DPR SUPPORT) ---------------- */
+    const workMap = new Map();
+
+    for (const row of materialRows || []) {
+      if (!row.bom_id || !row.bom_progress_id || !row.product_id) continue;
+
+      const key = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
+
+      if (!workMap.has(key)) {
+        workMap.set(key, []);
+      }
+
+      workMap.get(key).push({
+        work_progress_site_id: row.work_progress_site_id,
+        used: parseFloat(row.total_material_used || 0)
+      });
+    }
+
+    /* ---------------- BUILD FINAL STRUCTURE ---------------- */
+    const billingMap = new Map();
+
+    for (const row of bomRows) {
+
+      if (!billingMap.has(row.billing_id)) {
+        billingMap.set(row.billing_id, {
+          billing_id: row.billing_id,
+          project_id: row.project_id,
+          project_name: row.project_name,
+          site_id: row.site_id,
+          site_name: row.project_site_name,
+          project_work_description: row.project_work_description,
+          billing_unit: row.billing_unit,
+          billing_quantity: row.billing_quantity,
+          billing_rate: row.billing_rate,
+          billing_amount: row.billing_amount,
+          billing_remarks: row.billing_remarks,
+          boms: new Map()
+        });
+      }
+
+      const billing = billingMap.get(row.billing_id);
+
+      if (!billing.boms.has(row.project_estimation_id)) {
+        billing.boms.set(row.project_estimation_id, {
+          project_estimation_id: row.project_estimation_id,
+          bom_id: row.bom_id,
+          bom_name: row.bom_name,
+          rep_task: row.rep_task,
+          bom_price: row.bom_price,
+          bom_unit: row.bom_unit || null,
+          bom_value_unit: row.bom_value_unit,
+          progresses: new Map()
+        });
+      }
+
+      const bom = billing.boms.get(row.project_estimation_id);
+
+      if (row.bom_progress_id && !bom.progresses.has(row.bom_progress_id)) {
+        bom.progresses.set(row.bom_progress_id, {
+          bom_progress_id: row.bom_progress_id,
+          bom_progress_name: row.bom_progress_name,
+          sl_number: row.sl_number,
+          items: []
+        });
+      }
+
+      if (!row.bom_item_id || !row.bom_progress_id) continue;
+
+      const totalQty = parseFloat(row.total_qty || 0);
+      const repTask = parseFloat(row.rep_task || 1);
+      const requiredQty = totalQty * repTask;
+
+      const key = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
+      const workEntries = workMap.get(key) || [];
+
+      const totalUsed = workEntries.reduce((sum, w) => sum + w.used, 0);
+
+      const work_progress_site_ids = workEntries.map(w => w.work_progress_site_id);
+
+      const consumption_details = workEntries.map(w => ({
+        work_progress_site_id: w.work_progress_site_id,
+        used_qty: w.used
+      }));
+
+      bom.progresses.get(row.bom_progress_id).items.push({
+        bom_item_id: row.bom_item_id,
+        product_id: row.product_id,
+        qty: row.per_unit_qty,
+        total_qty: row.total_qty,
+
+        total_Material_required_for_bom_quantity: requiredQty.toFixed(2),
+
+        total_material_used_in_site: totalUsed.toFixed(2),
+
+        work_progress_site_ids,        // ✅ MULTIPLE DPR IDs
+        consumption_details,           // ✅ BEST FOR BILLING UI
+
+        product: {
+          product_id: row.product_id,
+          product_name: row.product_name,
+          unit: row.unit || "Pc",
+          product_type_id: row.product_type_id,
+          hsn_code: row.hsn_code
+        }
+      });
+    }
+
+    /* ---------------- FINAL FORMAT ---------------- */
+    const result = [];
+
+    for (const billing of billingMap.values()) {
+      const bomsArray = [];
+
+      for (const bom of billing.boms.values()) {
+        bom.progresses = Array.from(bom.progresses.values());
+        bomsArray.push(bom);
+      }
+
+      billing.boms = bomsArray;
+      result.push(billing);
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result
+    });
+
+  } catch (err) {
+    console.error("[getBillingDataFullinDetails] ERROR:", err);
+
+    return res.status(500).json({
+      success: false,
+      message: "Billing data fetch failed"
+    });
+  }
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+
+// updateWorkProgressBillingStatus = async (req, res) => {
+//   try {
+//     const { work_progress_site_id, project_id } = req.body;
+
+//     // 1. Validation
+//     if (!work_progress_site_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "work_progress_site_id is required",
+//       });
+//     }
+
+//     if (!project_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id is required",
+//       });
+//     }
+
+//     // 2. Payload
+//     const payload = {
+//       billing_status: "BILLED",
+//       updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
+//     };
+
+//     // 3. Condition (NO IN, just direct match)
+//     const condition = `
+//       work_progress_site_id = ${Number(work_progress_site_id)} 
+//       AND project_id = ${Number(project_id)}
+//     `;
+
+//     // 4. Update
+//     const affectedRows = await updateData(
+//       "tx_work_progress",
+//       payload,
+//       condition
+//     );
+
+//     // 5. Response
+//     res.status(200).json({
+//       success: true,
+//       message: `Successfully marked ${affectedRows} record as BILLED`,
+//       data: {
+//         updated_count: affectedRows,
+//       },
+//     });
+
+//   } catch (err) {
+//     console.error("Update Billing Status Error:", err);
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to update work progress status",
+//     });
+//   }
+// };
+
+updateWorkProgressBillingStatus = async (req, res) => {
+  try {
+    const { work_progress_site_ids, project_id } = req.body;
+
+    if (!Array.isArray(work_progress_site_ids) || work_progress_site_ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "work_progress_site_ids must be a non-empty array",
+      });
+    }
+
+    if (!project_id) {
+      return res.status(400).json({
+        success: false,
+        message: "project_id is required",
+      });
+    }
+
+    const payload = {
+      billing_status: "BILLED",
+      updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
+    };
+
+    // ✅ Build IN clause
+    const ids = work_progress_site_ids.map(id => Number(id)).join(",");
+
+    const condition = `
+      work_progress_site_id IN (${ids})
+      AND project_id = ${Number(project_id)}
+    `;
+
+    const affectedRows = await updateData(
+      "tx_work_progress",
+      payload,
+      condition
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully marked ${affectedRows} records as BILLED`,
+      data: { updated_count: affectedRows },
+    });
+
+  } catch (err) {
+    console.error("Update Billing Status Error:", err);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to update work progress status",
     });
   }
 };

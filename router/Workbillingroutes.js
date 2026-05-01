@@ -6,10 +6,16 @@ const authcheck= require('../middleware/auth')
 
 
 // POST   /work-billing              → create new billing order + details
-router.post(   "/api/create-Work-billing-order",        authcheck,       WorkBillingController.create);
+router.post(   "/api/create-Work-billing-order",        authcheck,       WorkBillingController.createWorkBilling);
 
 // GET    /work-billing              → get all (filter: ?project_id=&project_site_id=&billing_status=)
 router.get(    "/api/getAllWorkBillingDetails",               WorkBillingController.getAll);
+
+
+//POST for Updating Work-progress Status
+// router.post("/api/update-work-progress-status",authcheck,WorkBillingController.updateWorkProgressBillingStatus)
+
+
 
 // GET    /work-billing/:id          → get one by PK (with detail rows)
 router.get(    "/:id",            WorkBillingController.getById);
