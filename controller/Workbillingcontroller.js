@@ -40,6 +40,178 @@ class WorkBillingController {
 
 
 
+// createWorkBilling = async (req, res) => {
+//   try {
+//     const {
+//       project_id,
+//       project_site_id,
+//       work_description,
+//       billing_unit,
+//       billing_qty,
+//       billing_rate,
+//       billing_amount,
+//       boms_completed_count = 0,
+//       billing_status = "pending",
+//       invoice_date,
+//       remarks,
+//       bomUnitOfLength,
+//       material_details,
+//     } = req.body;
+
+//     // ── Validate top-level fields ──────────────────────────────────────
+//     if (
+//       !project_id ||
+//       !project_site_id ||
+//       !work_description ||
+//       !billing_unit ||
+//       billing_qty == null ||
+//       billing_rate == null ||
+//       billing_amount == null ||
+//       !invoice_date
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Required fields missing",
+//       });
+//     }
+
+//     if (!Array.isArray(material_details) || material_details.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "material_details array is required and must not be empty",
+//       });
+//     }
+
+//       // 🚫 Block if BOM completed count is less than 1
+//      if (Number(boms_completed_count) < 1) {
+//       return res.status(400).json({
+//        success: false,
+//        message: `Cannot create billing — BOM completed count is ${boms_completed_count}, which is less than 1. At least one BOM must be fully completed before billing.`,
+//      });
+//    }
+
+//     // ── Parse bomUnitOfLength ──────────────────────────────────────────
+//     const parsedBomUnitOfLength =
+//       bomUnitOfLength != null && bomUnitOfLength !== ""
+//         ? parseFloat(bomUnitOfLength)
+//         : null;
+
+//     if (parsedBomUnitOfLength !== null && isNaN(parsedBomUnitOfLength)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "bomUnitOfLength must be a valid number",
+//       });
+//     }
+
+//     // ── Generate invoice_no & insert work_billing_order ───────────────
+//     const invoice_no = await this.#generateInvoiceNo(invoice_date);
+//     const now = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+//     const created_by = req.user?.id || null;
+
+//     const work_billing_order_id = await insertData("work_billing_order", {
+//       invoice_no,
+//       project_id: Number(project_id),
+//       project_site_id: Number(project_site_id),
+//       work_description,
+//       billing_unit,
+//       billing_qty: parseFloat(billing_qty),
+//       billing_rate: parseFloat(billing_rate),
+//       billing_amount: parseFloat(billing_amount),
+//       boms_completed_count: parseFloat(boms_completed_count || 0),
+//       billing_status,
+//       invoice_date,
+//       remarks: remarks || null,
+//       created_by,
+//       created_at: now,
+//       updated_at: now,
+//     });
+
+//     if (!work_billing_order_id) {
+//       throw new Error("Failed to create billing order");
+//     }
+
+//     // ── Validate required fields per detail row ───────────────────────
+//     const requiredDetailFields = [
+//       "bom_id", "bom_unit", "bom_qty", "bom_price", "bom_amount",
+//       "progress_step_name", "step_sl_number", "product_id",
+//       "product_name", "hsn_code", "unit", "qty_per_bom",
+//       "required_qty",
+//     ];
+
+//     for (let i = 0; i < material_details.length; i++) {
+//       const row = material_details[i];
+//       const missing = requiredDetailFields.filter(
+//         (f) => row[f] == null || row[f] === ""
+//       );
+//       if (missing.length > 0) {
+//         return res.status(400).json({
+//           success: false,
+//           message: `material_details[${i}] is missing: ${missing.join(", ")}`,
+//         });
+//       }
+//     }
+
+//     // ── Build detail rows — one row per material_detail item ──────────
+//     // ✅ No expansion needed — frontend already sent one row per consumption
+//     const detailCols =
+//       "work_billing_order_id, work_progress_site_id, bom_id, bomUnitOfLength, " +
+//       "bom_unit, bom_qty, bom_price, bom_amount, progress_step_name, step_sl_number, " +
+//       "product_id, product_name, hsn_code, unit, qty_per_bom, required_qty, " +
+//       "used_qty, created_at, updated_at";
+
+//     const detailRows = material_details.map((d) => {
+//       const rowBomUnitOfLength =
+//         d.bomUnitOfLength != null && d.bomUnitOfLength !== ""
+//           ? parseFloat(d.bomUnitOfLength)
+//           : parsedBomUnitOfLength;
+
+//       return {
+//         work_billing_order_id,
+//         work_progress_site_id:
+//           d.work_progress_site_id != null
+//             ? Number(d.work_progress_site_id)
+//             : null,                                    // ✅ single value, not array
+//         bom_id: d.bom_id,
+//         bomUnitOfLength:
+//           rowBomUnitOfLength !== null && !isNaN(rowBomUnitOfLength)
+//             ? rowBomUnitOfLength
+//             : null,
+//         bom_unit: d.bom_unit,
+//         bom_qty: parseFloat(d.bom_qty),
+//         bom_price: parseFloat(d.bom_price),
+//         bom_amount: parseFloat(d.bom_amount),
+//         progress_step_name: d.progress_step_name,
+//         step_sl_number: parseFloat(d.step_sl_number),
+//         product_id: Number(d.product_id),
+//         product_name: d.product_name,
+//         hsn_code: d.hsn_code,
+//         unit: d.unit,
+//         qty_per_bom: parseFloat(d.qty_per_bom),
+//         required_qty: parseFloat(d.required_qty),
+//         used_qty: parseFloat(d.used_qty || 0),         // ✅ per-site used_qty
+//         created_at: now,
+//         updated_at: now,
+//       };
+//     });
+
+//     await batchInsertData("billing_material_detail", detailCols, detailRows);
+
+//     return res.status(201).json({
+//       success: true,
+//       message: "Work billing order created successfully",
+//       data: { work_billing_order_id, invoice_no },
+//     });
+
+//   } catch (error) {
+//     console.error("ERROR in createWorkBilling:", error.message);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Unable to create work billing order",
+//       error: error.message,
+//     });
+//   }
+// };
+
 createWorkBilling = async (req, res) => {
   try {
     const {
@@ -56,6 +228,9 @@ createWorkBilling = async (req, res) => {
       remarks,
       bomUnitOfLength,
       material_details,
+      cgst_amt = 0,
+      sgst_amt = 0,
+      igst_amt = 0,
     } = req.body;
 
     // ── Validate top-level fields ──────────────────────────────────────
@@ -82,6 +257,14 @@ createWorkBilling = async (req, res) => {
       });
     }
 
+    // 🚫 Block if BOM completed count is less than 1
+    if (Number(boms_completed_count) < 1) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot create billing — BOM completed count is ${boms_completed_count}, which is less than 1.`,
+      });
+    }
+
     // ── Parse bomUnitOfLength ──────────────────────────────────────────
     const parsedBomUnitOfLength =
       bomUnitOfLength != null && bomUnitOfLength !== ""
@@ -95,24 +278,63 @@ createWorkBilling = async (req, res) => {
       });
     }
 
+    // ── Calculate this_bill_quantity & this_bill_amount ────────────────
+    // Each BOM represents `bomUnitOfLength` units (e.g. 3 mt per BOM)
+    // this_bill_quantity = boms_completed_count × bomUnitOfLength
+    // this_bill_amount   = this_bill_quantity   × billing_rate
+    const bomsCompleted   = parseFloat(boms_completed_count);
+    const unitOfLength    = parsedBomUnitOfLength ?? 1; // fallback to 1 if not provided
+
+    const this_bill_quantity = bomsCompleted * unitOfLength;
+    const this_bill_amount   = this_bill_quantity * parseFloat(billing_rate);
+
+    // ── Fetch previous cumulative totals for same project + work_description
+    // Looks at all prior approved/pending billing orders for the same
+    // project_id and work_description to compute running totals
+    const prevRows = await customSelectSqlQuery2(
+  `SELECT 
+     COALESCE(SUM(this_bill_quantity), 0) AS prev_qty,
+     COALESCE(SUM(this_bill_amount),   0) AS prev_amt
+   FROM work_billing_order
+   WHERE project_id       = ?
+     AND work_description = ?`,
+  [Number(project_id), work_description],
+  true
+);
+
+    const previous_quantity  = parseFloat(prevRows[0]?.prev_qty ?? 0);
+    const previous_amount    = parseFloat(prevRows[0]?.prev_amt ?? 0);
+    const cumulative_quantity = previous_quantity + this_bill_quantity;
+    const cumulative_amount   = previous_amount   + this_bill_amount;
+
     // ── Generate invoice_no & insert work_billing_order ───────────────
-    const invoice_no = await this.#generateInvoiceNo(invoice_date);
-    const now = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
-    const created_by = req.user?.id || null;
+    const invoice_no  = await this.#generateInvoiceNo(invoice_date);
+    const now         = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+    const created_by  = req.user?.id || null;
 
     const work_billing_order_id = await insertData("work_billing_order", {
       invoice_no,
-      project_id: Number(project_id),
-      project_site_id: Number(project_site_id),
+      project_id:           Number(project_id),
+      project_site_id:      Number(project_site_id),
       work_description,
       billing_unit,
-      billing_qty: parseFloat(billing_qty),
-      billing_rate: parseFloat(billing_rate),
-      billing_amount: parseFloat(billing_amount),
-      boms_completed_count: parseFloat(boms_completed_count || 0),
+      billing_qty:          parseFloat(billing_qty),
+      billing_rate:         parseFloat(billing_rate),
+      billing_amount:       parseFloat(billing_amount),
+      boms_completed_count: bomsCompleted,
       billing_status,
       invoice_date,
-      remarks: remarks || null,
+      // ── new running-total columns ──
+      previous_quantity,
+      this_bill_quantity,
+      cumulative_quantity,
+      previous_amount,
+      this_bill_amount,
+      cumulative_amount,
+      cgst_amt:  parseFloat(cgst_amt  || 0),
+      sgst_amt:  parseFloat(sgst_amt  || 0),
+      igst_amt:  parseFloat(igst_amt  || 0),
+      remarks:   remarks || null,
       created_by,
       created_at: now,
       updated_at: now,
@@ -126,12 +348,11 @@ createWorkBilling = async (req, res) => {
     const requiredDetailFields = [
       "bom_id", "bom_unit", "bom_qty", "bom_price", "bom_amount",
       "progress_step_name", "step_sl_number", "product_id",
-      "product_name", "hsn_code", "unit", "qty_per_bom",
-      "required_qty",
+      "product_name", "hsn_code", "unit", "qty_per_bom", "required_qty",
     ];
 
     for (let i = 0; i < material_details.length; i++) {
-      const row = material_details[i];
+      const row     = material_details[i];
       const missing = requiredDetailFields.filter(
         (f) => row[f] == null || row[f] === ""
       );
@@ -143,8 +364,7 @@ createWorkBilling = async (req, res) => {
       }
     }
 
-    // ── Build detail rows — one row per material_detail item ──────────
-    // ✅ No expansion needed — frontend already sent one row per consumption
+    // ── Build & insert detail rows ────────────────────────────────────
     const detailCols =
       "work_billing_order_id, work_progress_site_id, bom_id, bomUnitOfLength, " +
       "bom_unit, bom_qty, bom_price, bom_amount, progress_step_name, step_sl_number, " +
@@ -162,27 +382,27 @@ createWorkBilling = async (req, res) => {
         work_progress_site_id:
           d.work_progress_site_id != null
             ? Number(d.work_progress_site_id)
-            : null,                                    // ✅ single value, not array
+            : null,
         bom_id: d.bom_id,
         bomUnitOfLength:
           rowBomUnitOfLength !== null && !isNaN(rowBomUnitOfLength)
             ? rowBomUnitOfLength
             : null,
-        bom_unit: d.bom_unit,
-        bom_qty: parseFloat(d.bom_qty),
-        bom_price: parseFloat(d.bom_price),
-        bom_amount: parseFloat(d.bom_amount),
-        progress_step_name: d.progress_step_name,
-        step_sl_number: parseFloat(d.step_sl_number),
-        product_id: Number(d.product_id),
-        product_name: d.product_name,
-        hsn_code: d.hsn_code,
-        unit: d.unit,
-        qty_per_bom: parseFloat(d.qty_per_bom),
-        required_qty: parseFloat(d.required_qty),
-        used_qty: parseFloat(d.used_qty || 0),         // ✅ per-site used_qty
-        created_at: now,
-        updated_at: now,
+        bom_unit:             d.bom_unit,
+        bom_qty:              parseFloat(d.bom_qty),
+        bom_price:            parseFloat(d.bom_price),
+        bom_amount:           parseFloat(d.bom_amount),
+        progress_step_name:   d.progress_step_name,
+        step_sl_number:       parseFloat(d.step_sl_number),
+        product_id:           Number(d.product_id),
+        product_name:         d.product_name,
+        hsn_code:             d.hsn_code,
+        unit:                 d.unit,
+        qty_per_bom:          parseFloat(d.qty_per_bom),
+        required_qty:         parseFloat(d.required_qty),
+        used_qty:             parseFloat(d.used_qty || 0),
+        created_at:           now,
+        updated_at:           now,
       };
     });
 
@@ -191,7 +411,16 @@ createWorkBilling = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: "Work billing order created successfully",
-      data: { work_billing_order_id, invoice_no },
+      data: {
+        work_billing_order_id,
+        invoice_no,
+        this_bill_quantity,
+        this_bill_amount,
+        previous_quantity,
+        previous_amount,
+        cumulative_quantity,
+        cumulative_amount,
+      },
     });
 
   } catch (error) {
@@ -203,6 +432,11 @@ createWorkBilling = async (req, res) => {
     });
   }
 };
+
+
+
+
+
   // ─────────────────────────────────────────────
   //  GET ALL   GET /work-billing
   //  Optional query: ?project_id=&project_site_id=&billing_status=
@@ -623,6 +857,421 @@ createWorkBilling = async (req, res) => {
 //  Body: { project_id }
 //  Returns all data from work_billing_order + billing_material_detail
 // ─────────────────────────────────────────────
+// getAllWorkBillingByProjectId = async (req, res) => {
+//   try {
+//     const { project_id } = req.body;
+
+//     if (!project_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id is required in request body",
+//       });
+//     }
+
+//     const sql = `
+//       SELECT
+//         wbo.*,
+//         bmd.billing_material_detail_id,
+//         bmd.bom_name,
+//         bmd.bom_unit,
+//         bmd.bom_qty,
+//         bmd.bom_price,
+//         bmd.bom_amount,
+//         bmd.progress_step_name,
+//         bmd.step_sl_number,
+//         bmd.product_id,
+//         bmd.product_name,
+//         bmd.hsn_code,
+//         bmd.unit,
+//         bmd.qty_per_bom,
+//         bmd.required_qty,
+//         bmd.used_qty
+//       FROM work_billing_order AS wbo
+//       LEFT JOIN billing_material_detail AS bmd
+//         ON wbo.work_billing_order_id = bmd.work_billing_order_id
+//       WHERE wbo.project_id = ?
+//       ORDER BY wbo.work_billing_order_id DESC, bmd.step_sl_number ASC
+//     `;
+
+//     const rows = await customSelectSqlQuery2(sql, [project_id], true);
+
+//     if (!rows || rows.length === 0) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "No billing orders found for this project",
+//       });
+//     }
+
+//     // ── Group detail rows under each billing order ──
+//     const resultMap = {};
+//     const resultOrder = [];
+
+//     for (let i = 0; i < rows.length; i++) {
+//       const row = rows[i];
+//       const key = row.work_billing_order_id;
+
+//       if (!resultMap[key]) {
+//         resultMap[key] = {
+//           work_billing_order_id:   row.work_billing_order_id,
+//           invoice_no:              row.invoice_no,
+//           project_id:              row.project_id,
+//           project_site_id:         row.project_site_id,
+//           work_description:        row.work_description,
+//           billing_unit:            row.billing_unit,
+//           billing_qty:             row.billing_qty,
+//           billing_rate:            row.billing_rate,
+//           billing_amount:          row.billing_amount,
+//           previous_billing_amount: row.previous_billing_amount,
+//           boms_completed_count:    row.boms_completed_count,
+//           billing_status:          row.billing_status,
+//           invoice_date:            row.invoice_date,
+//           remarks:                 row.remarks,
+//           parent_billing_id:       row.parent_billing_id,
+//           created_by:              row.created_by,
+//           created_at:              row.created_at,
+//           updated_at:              row.updated_at,
+//           material_details:        [],
+//         };
+//         resultOrder.push(key);
+//       }
+
+//       // ── Only push detail if it actually exists (LEFT JOIN) ──
+//       if (row.billing_material_detail_id) {
+//         resultMap[key].material_details.push({
+//           billing_material_detail_id: row.billing_material_detail_id,
+//           bom_name:                   row.bom_name,
+//           bom_unit:                   row.bom_unit,
+//           bom_qty:                    row.bom_qty,
+//           bom_price:                  row.bom_price,
+//           bom_amount:                 row.bom_amount,
+//           progress_step_name:         row.progress_step_name,
+//           step_sl_number:             row.step_sl_number,
+//           product_id:                 row.product_id,
+//           product_name:               row.product_name,
+//           hsn_code:                   row.hsn_code,
+//           unit:                       row.unit,
+//           qty_per_bom:                row.qty_per_bom,
+//           required_qty:               row.required_qty,
+//           used_qty:                   row.used_qty,
+//         });
+//       }
+//     }
+
+//     // ── Build final array using resultOrder index loop ──
+//     const result = [];
+//     for (let i = 0; i < resultOrder.length; i++) {
+//       result.push(resultMap[resultOrder[i]]);
+//     }
+
+//     return res.status(200).json({
+//       success: true,
+//       total: result.length,
+//       data: result,
+//     });
+
+//   } catch (error) {
+//     console.error("Error in WorkBilling.getByProjectId:", error.message);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Unable to fetch billing orders for project",
+//       error: error.message,
+//     });
+//   }
+// };
+
+
+
+// getAllWorkBillingByProjectId = async (req, res) => {
+//   try {
+//     const { project_id } = req.body;
+
+//     if (!project_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id is required in request body",
+//       });
+//     }
+
+//     // ── Fetch all billing orders with material details + BOQ info ──────
+//     const sql = `
+//   SELECT
+//     wbo.work_billing_order_id,
+//     wbo.invoice_no,
+//     wbo.project_id,
+//     wbo.project_site_id,
+//     wbo.work_description,
+//     wbo.billing_unit,
+//     wbo.billing_qty,
+//     wbo.billing_rate,
+//     wbo.billing_amount,
+//     wbo.boms_completed_count,
+//     wbo.billing_status,
+//     wbo.invoice_date,
+//     wbo.remarks,
+//     wbo.created_by,
+//     wbo.created_at,
+//     wbo.updated_at,
+
+//     -- BOQ reference data from md_project_billing
+//     mpb.quantity                AS boq_qty,
+//     mpb.rate                    AS boq_rate,
+//     mpb.amount                  AS boq_amount,
+//     mpb.hsn_code                AS boq_hsn_code,
+
+//     -- Material detail columns
+//     bmd.billing_material_detail_id,
+//     bmd.work_progress_site_id,
+//     bmd.bom_id,
+//     bmd.bomUnitOfLength         AS detail_bom_unit_of_length,
+//     bmd.bom_unit,
+//     bmd.bom_qty,
+//     bmd.bom_price,
+//     bmd.bom_amount,
+//     bmd.progress_step_name,
+//     bmd.step_sl_number,
+//     bmd.product_id,
+//     bmd.product_name,
+//     bmd.hsn_code,
+//     bmd.unit,
+//     bmd.qty_per_bom,
+//     bmd.required_qty,
+//     bmd.used_qty
+
+//   FROM work_billing_order AS wbo
+
+//   LEFT JOIN md_project_billing AS mpb
+//     ON  mpb.project_id               = wbo.project_id
+//     AND mpb.project_work_description = wbo.work_description
+
+//   LEFT JOIN billing_material_detail AS bmd
+//     ON bmd.work_billing_order_id = wbo.work_billing_order_id
+
+//   WHERE wbo.project_id = ?
+//   ORDER BY
+//     wbo.work_description ASC,
+//     wbo.work_billing_order_id ASC,
+//     bmd.step_sl_number ASC
+// `;
+
+//     const rows = await customSelectSqlQuery2(sql, [project_id], true);
+
+//     if (!rows || rows.length === 0) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "No billing orders found for this project",
+//       });
+//     }
+
+//     // ── STEP 1: Build a map of billing orders ─────────────────────────
+//     // Structure: orderMap[work_billing_order_id] = { ...order, material_details[] }
+//     const orderMap   = {};   // work_billing_order_id → order object
+//     const orderIndex = [];   // insertion order
+
+//     for (let i = 0; i < rows.length; i++) {
+//       const row = rows[i];
+//       const orderId = row.work_billing_order_id;
+
+//       if (!orderMap[orderId]) {
+//         // ── Calculate this_bill_qty and this_bill_amount ────────────
+//         const bomUnitOfLength    = parseFloat(row.bom_unit_of_length || 0);
+//         const bomsCompletedCount = parseFloat(row.boms_completed_count || 0);
+//         const boqRate            = parseFloat(row.boq_rate || row.billing_rate || 0);
+//         const boqQty             = parseFloat(row.boq_qty || row.billing_qty || 0);
+
+//         const this_bill_qty    = bomUnitOfLength * bomsCompletedCount;
+//         const this_bill_amount = this_bill_qty * boqRate;
+
+//         orderMap[orderId] = {
+//           work_billing_order_id: orderId,
+//           invoice_no:            row.invoice_no,
+//           project_id:            row.project_id,
+//           project_site_id:       row.project_site_id,
+//           work_description:      row.work_description,
+//           billing_unit:          row.billing_unit,
+//           bom_unit_of_length:    bomUnitOfLength,
+//           boms_completed_count:  bomsCompletedCount,
+
+//           // BOQ master data
+//           boq_qty:    boqQty,
+//           boq_rate:   boqRate,
+//           boq_amount: parseFloat(row.boq_amount || 0),
+//           boq_hsn:    row.boq_hsn_code || "",
+
+//           // This bill calculated values
+//           this_bill_qty,
+//           this_bill_amount,
+
+//           // Previous / cumulative filled in STEP 2
+//           previous_qty:    0,
+//           previous_amount: 0,
+//           cumulative_qty:  0,
+//           cumulative_amount: 0,
+
+//           billing_status: row.billing_status,
+//           invoice_date:   row.invoice_date,
+//           remarks:        row.remarks,
+//           created_by:     row.created_by,
+//           created_at:     row.created_at,
+//           updated_at:     row.updated_at,
+
+//           material_details: [],
+//         };
+//         orderIndex.push(orderId);
+//       }
+
+//       // ── Push material detail row ──────────────────────────────────
+//       if (row.billing_material_detail_id) {
+//         orderMap[orderId].material_details.push({
+//           billing_material_detail_id: row.billing_material_detail_id,
+//           work_progress_site_id:      row.work_progress_site_id,
+//           bom_id:                     row.bom_id,
+//           bom_unit_of_length:         row.detail_bom_unit_of_length,
+//           bom_unit:                   row.bom_unit,
+//           bom_qty:                    row.bom_qty,
+//           bom_price:                  row.bom_price,
+//           bom_amount:                 row.bom_amount,
+//           progress_step_name:         row.progress_step_name,
+//           step_sl_number:             row.step_sl_number,
+//           product_id:                 row.product_id,
+//           product_name:               row.product_name,
+//           hsn_code:                   row.hsn_code,
+//           unit:                       row.unit,
+//           qty_per_bom:                row.qty_per_bom,
+//           required_qty:               row.required_qty,
+//           used_qty:                   row.used_qty,
+//         });
+//       }
+//     }
+
+//     // ── STEP 2: Group by work_description → compute previous/cumulative ──
+//     // Group structure: descMap[work_description] = { boq info, bills[] }
+//     const descMap   = {};
+//     const descOrder = [];
+
+//     for (let i = 0; i < orderIndex.length; i++) {
+//       const order = orderMap[orderIndex[i]];
+//       const desc  = order.work_description;
+
+//       if (!descMap[desc]) {
+//         descMap[desc] = {
+//           work_description: desc,
+//           billing_unit:     order.billing_unit,
+//           boq_qty:          order.boq_qty,
+//           boq_rate:         order.boq_rate,
+//           boq_amount:       order.boq_amount,
+//           boq_hsn:          order.boq_hsn,
+//           bills:            [],
+
+//           // Totals across all bills — filled below
+//           total_this_bill_qty:    0,
+//           total_this_bill_amount: 0,
+//           cumulative_qty:         0,
+//           cumulative_amount:      0,
+//         };
+//         descOrder.push(desc);
+//       }
+
+//       descMap[desc].bills.push(order);
+//     }
+
+//     // ── STEP 3: For each work_description group, compute running totals ──
+//     for (let i = 0; i < rows.length; i++) {
+//   const row = rows[i];
+//   const orderId = row.work_billing_order_id;
+
+//   if (!orderMap[orderId]) {
+//     const bomsCompletedCount = parseFloat(row.boms_completed_count || 0);
+//     const boqRate            = parseFloat(row.boq_rate || row.billing_rate || 0);
+//     const boqQty             = parseFloat(row.boq_qty  || row.billing_qty  || 0);
+
+//     // bomUnitOfLength comes from first bmd row — grab it now if available
+//     // (row already has bmd columns since it's a JOIN result)
+//     const bomUnitOfLength = parseFloat(row.detail_bom_unit_of_length || 0);
+
+//     const this_bill_qty    = bomUnitOfLength * bomsCompletedCount;
+//     const this_bill_amount = this_bill_qty * boqRate;
+
+//     orderMap[orderId] = {
+//       work_billing_order_id: orderId,
+//       invoice_no:            row.invoice_no,
+//       project_id:            row.project_id,
+//       project_site_id:       row.project_site_id,
+//       work_description:      row.work_description,
+//       billing_unit:          row.billing_unit,
+//       boms_completed_count:  bomsCompletedCount,
+//       bom_unit_of_length:    bomUnitOfLength,   // ✅ from bmd
+
+//       boq_qty:    boqQty,
+//       boq_rate:   boqRate,
+//       boq_amount: parseFloat(row.boq_amount || 0),
+//       boq_hsn:    row.boq_hsn_code || "",
+
+//       this_bill_qty,
+//       this_bill_amount,
+
+//       previous_qty:      0,
+//       previous_amount:   0,
+//       cumulative_qty:    0,
+//       cumulative_amount: 0,
+
+//       billing_status: row.billing_status,
+//       invoice_date:   row.invoice_date,
+//       remarks:        row.remarks,
+//       created_by:     row.created_by,
+//       created_at:     row.created_at,
+//       updated_at:     row.updated_at,
+
+//       material_details: [],
+//     };
+//     orderIndex.push(orderId);
+//   }
+
+//   // Push material detail
+//   if (row.billing_material_detail_id) {
+//     orderMap[orderId].material_details.push({
+//       billing_material_detail_id: row.billing_material_detail_id,
+//       work_progress_site_id:      row.work_progress_site_id,
+//       bom_id:                     row.bom_id,
+//       bom_unit_of_length:         row.detail_bom_unit_of_length,
+//       bom_unit:                   row.bom_unit,
+//       bom_qty:                    row.bom_qty,
+//       bom_price:                  row.bom_price,
+//       bom_amount:                 row.bom_amount,
+//       progress_step_name:         row.progress_step_name,
+//       step_sl_number:             row.step_sl_number,
+//       product_id:                 row.product_id,
+//       product_name:               row.product_name,
+//       hsn_code:                   row.hsn_code,
+//       unit:                       row.unit,
+//       qty_per_bom:                row.qty_per_bom,
+//       required_qty:               row.required_qty,
+//       used_qty:                   row.used_qty,
+//     });
+//   }
+// }
+//     // ── STEP 4: Build final response array ────────────────────────────
+//     const result = [];
+//     for (let i = 0; i < descOrder.length; i++) {
+//       result.push(descMap[descOrder[i]]);
+//     }
+
+//     return res.status(200).json({
+//       success: true,
+//       total: result.length,
+//       data:  result,
+//     });
+
+//   } catch (error) {
+//     console.error("Error in WorkBilling.getByProjectId:", error.message);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Unable to fetch billing orders for project",
+//       error: error.message,
+//     });
+//   }
+// };
+
+
 getAllWorkBillingByProjectId = async (req, res) => {
   try {
     const { project_id } = req.body;
@@ -634,15 +1283,52 @@ getAllWorkBillingByProjectId = async (req, res) => {
       });
     }
 
+    // ── Fetch all billing orders with material details + BOQ info ──────
     const sql = `
       SELECT
-        wbo.*,
+        wbo.work_billing_order_id,
+        wbo.invoice_no,
+        wbo.project_id,
+        wbo.project_site_id,
+        wbo.work_description,
+        wbo.billing_unit,
+        wbo.billing_qty,
+        wbo.billing_rate,
+        wbo.billing_amount,
+        wbo.boms_completed_count,
+        wbo.billing_status,
+        wbo.invoice_date,
+        wbo.remarks,
+        wbo.created_by,
+        wbo.created_at,
+        wbo.updated_at,
+
+        -- ✅ Read stored running-total columns directly — no recalculation
+        wbo.previous_quantity,
+        wbo.this_bill_quantity,
+        wbo.cumulative_quantity,
+        wbo.previous_amount,
+        wbo.this_bill_amount,
+        wbo.cumulative_amount,
+        wbo.cgst_amt,
+        wbo.sgst_amt,
+        wbo.igst_amt,
+
+        -- BOQ reference data
+        mpb.quantity   AS boq_qty,
+        mpb.rate       AS boq_rate,
+        mpb.amount     AS boq_amount,
+        mpb.hsn_code   AS boq_hsn_code,
+
+        -- Material detail columns
         bmd.billing_material_detail_id,
-        bmd.bom_name,
+        bmd.work_progress_site_id,
+        bmd.bom_id,
+        bmd.bomUnitOfLength     AS detail_bom_unit_of_length,
         bmd.bom_unit,
         bmd.bom_qty,
         bmd.bom_price,
-        bmd.bom_amount,
+        bmd.bom_amount          AS detail_bom_amount,
         bmd.progress_step_name,
         bmd.step_sl_number,
         bmd.product_id,
@@ -652,11 +1338,21 @@ getAllWorkBillingByProjectId = async (req, res) => {
         bmd.qty_per_bom,
         bmd.required_qty,
         bmd.used_qty
+
       FROM work_billing_order AS wbo
+
+      LEFT JOIN md_project_billing AS mpb
+        ON  mpb.project_id               = wbo.project_id
+        AND mpb.project_work_description = wbo.work_description
+
       LEFT JOIN billing_material_detail AS bmd
-        ON wbo.work_billing_order_id = bmd.work_billing_order_id
+        ON bmd.work_billing_order_id = wbo.work_billing_order_id
+
       WHERE wbo.project_id = ?
-      ORDER BY wbo.work_billing_order_id DESC, bmd.step_sl_number ASC
+      ORDER BY
+        wbo.work_description      ASC,
+        wbo.work_billing_order_id ASC,
+        bmd.step_sl_number        ASC
     `;
 
     const rows = await customSelectSqlQuery2(sql, [project_id], true);
@@ -668,85 +1364,159 @@ getAllWorkBillingByProjectId = async (req, res) => {
       });
     }
 
-    // ── Group detail rows under each billing order ──
-    const resultMap = {};
-    const resultOrder = [];
+    // ── STEP 1: Build orderMap — one entry per work_billing_order_id ──
+    const orderMap   = {};
+    const orderIndex = [];
 
     for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const key = row.work_billing_order_id;
+      const row     = rows[i];
+      const orderId = row.work_billing_order_id;
 
-      if (!resultMap[key]) {
-        resultMap[key] = {
-          work_billing_order_id:   row.work_billing_order_id,
-          invoice_no:              row.invoice_no,
-          project_id:              row.project_id,
-          project_site_id:         row.project_site_id,
-          work_description:        row.work_description,
-          billing_unit:            row.billing_unit,
-          billing_qty:             row.billing_qty,
-          billing_rate:            row.billing_rate,
-          billing_amount:          row.billing_amount,
-          previous_billing_amount: row.previous_billing_amount,
-          boms_completed_count:    row.boms_completed_count,
-          billing_status:          row.billing_status,
-          invoice_date:            row.invoice_date,
-          remarks:                 row.remarks,
-          parent_billing_id:       row.parent_billing_id,
-          created_by:              row.created_by,
-          created_at:              row.created_at,
-          updated_at:              row.updated_at,
-          material_details:        [],
+      if (!orderMap[orderId]) {
+        orderMap[orderId] = {
+          work_billing_order_id: orderId,
+          invoice_no:            row.invoice_no,
+          project_id:            row.project_id,
+          project_site_id:       row.project_site_id,
+          work_description:      row.work_description,
+          billing_unit:          row.billing_unit,
+          billing_qty:           parseFloat(row.billing_qty   || 0),
+          billing_rate:          parseFloat(row.billing_rate  || 0),
+          billing_amount:        parseFloat(row.billing_amount || 0),
+          boms_completed_count:  parseFloat(row.boms_completed_count || 0),
+          billing_status:        row.billing_status,
+          invoice_date:          row.invoice_date,
+          remarks:               row.remarks || "",
+
+          // ✅ Stored running-total columns — read directly, no math here
+          previous_quantity:   parseFloat(row.previous_quantity   || 0),
+          this_bill_quantity:  parseFloat(row.this_bill_quantity   || 0),
+          cumulative_quantity: parseFloat(row.cumulative_quantity  || 0),
+          previous_amount:     parseFloat(row.previous_amount     || 0),
+          this_bill_amount:    parseFloat(row.this_bill_amount     || 0),
+          cumulative_amount:   parseFloat(row.cumulative_amount    || 0),
+
+          cgst_amt: parseFloat(row.cgst_amt || 0),
+          sgst_amt: parseFloat(row.sgst_amt || 0),
+          igst_amt: parseFloat(row.igst_amt || 0),
+
+          // BOQ master
+          boq_qty:    parseFloat(row.boq_qty    || 0),
+          boq_rate:   parseFloat(row.boq_rate   || 0),
+          boq_amount: parseFloat(row.boq_amount || 0),
+          boq_hsn:    row.boq_hsn_code || "",
+
+          created_by: row.created_by,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+
+          material_details: [],
         };
-        resultOrder.push(key);
+        orderIndex.push(orderId);
       }
 
-      // ── Only push detail if it actually exists (LEFT JOIN) ──
+      // ── Attach material detail row ──────────────────────────────────
       if (row.billing_material_detail_id) {
-        resultMap[key].material_details.push({
+        orderMap[orderId].material_details.push({
           billing_material_detail_id: row.billing_material_detail_id,
-          bom_name:                   row.bom_name,
+          work_progress_site_id:      row.work_progress_site_id,
+          bom_id:                     row.bom_id,
+          bom_unit_of_length:         parseFloat(row.detail_bom_unit_of_length || 0),
           bom_unit:                   row.bom_unit,
-          bom_qty:                    row.bom_qty,
-          bom_price:                  row.bom_price,
-          bom_amount:                 row.bom_amount,
+          bom_qty:                    parseFloat(row.bom_qty        || 0),
+          bom_price:                  parseFloat(row.bom_price      || 0),
+          bom_amount:                 parseFloat(row.detail_bom_amount || 0),
           progress_step_name:         row.progress_step_name,
           step_sl_number:             row.step_sl_number,
           product_id:                 row.product_id,
           product_name:               row.product_name,
           hsn_code:                   row.hsn_code,
           unit:                       row.unit,
-          qty_per_bom:                row.qty_per_bom,
-          required_qty:               row.required_qty,
-          used_qty:                   row.used_qty,
+          qty_per_bom:                parseFloat(row.qty_per_bom  || 0),
+          required_qty:               parseFloat(row.required_qty || 0),
+          used_qty:                   parseFloat(row.used_qty     || 0),
         });
       }
     }
 
-    // ── Build final array using resultOrder index loop ──
+    // ── STEP 2: Group by work_description ─────────────────────────────
+    // Each group = one Abstract Bill row
+    // "previous/this_bill/cumulative" at group level = from the LATEST bill
+    // because cumulative of latest bill is the true running total
+    const descMap   = {};
+    const descOrder = [];
+
+    for (let i = 0; i < orderIndex.length; i++) {
+      const order = orderMap[orderIndex[i]];
+      const desc  = order.work_description;
+
+      if (!descMap[desc]) {
+        descMap[desc] = {
+          work_description:    desc,
+          billing_unit:        order.billing_unit,
+          billing_rate:        order.billing_rate,
+          boq_qty:             order.boq_qty,
+          boq_rate:            order.boq_rate,
+          boq_amount:          order.boq_amount,
+          boq_hsn:             order.boq_hsn,
+
+          // These are filled below from the bills array
+          previous_quantity:   0,
+          this_bill_quantity:  0,
+          cumulative_quantity: 0,
+          previous_amount:     0,
+          this_bill_amount:    0,
+          cumulative_amount:   0,
+
+          bills: [],
+        };
+        descOrder.push(desc);
+      }
+
+      descMap[desc].bills.push(order);
+    }
+
+    // ── STEP 3: Set group-level totals from stored values ─────────────
+    // The LATEST bill's stored values are authoritative:
+    //   previous   = what was billed before this bill (stored at create time)
+    //   this_bill  = what this bill adds
+    //   cumulative = running total after this bill
+    // For the Abstract Bill table we show the LATEST bill's perspective
+    for (let i = 0; i < descOrder.length; i++) {
+      const group = descMap[descOrder[i]];
+      const bills = group.bills; // ordered by work_billing_order_id ASC
+
+      const latestBill = bills[bills.length - 1];
+
+      group.previous_quantity   = parseFloat(latestBill.previous_quantity   || 0);
+      group.this_bill_quantity  = parseFloat(latestBill.this_bill_quantity   || 0);
+      group.cumulative_quantity = parseFloat(latestBill.cumulative_quantity  || 0);
+      group.previous_amount     = parseFloat(latestBill.previous_amount     || 0);
+      group.this_bill_amount    = parseFloat(latestBill.this_bill_amount     || 0);
+      group.cumulative_amount   = parseFloat(latestBill.cumulative_amount    || 0);
+    }
+
+    // ── STEP 4: Build final response ──────────────────────────────────
     const result = [];
-    for (let i = 0; i < resultOrder.length; i++) {
-      result.push(resultMap[resultOrder[i]]);
+    for (let i = 0; i < descOrder.length; i++) {
+      result.push(descMap[descOrder[i]]);
     }
 
     return res.status(200).json({
       success: true,
-      total: result.length,
-      data: result,
+      total:   result.length,
+      data:    result,
     });
 
   } catch (error) {
-    console.error("Error in WorkBilling.getByProjectId:", error.message);
+    console.error("Error in getAllWorkBillingByProjectId:", error.message);
     return res.status(500).json({
       success: false,
       message: "Unable to fetch billing orders for project",
-      error: error.message,
+      error:   error.message,
     });
   }
 };
-
-
-
 
 }
 

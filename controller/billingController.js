@@ -414,15 +414,255 @@ getBillableBoms = async (req, res) => {
 
 
 
+// getBillingDataFullinDetails = async (req, res) => {
+//   try {
+//     const project_id = parseInt(req.body.project_id, 10);
+//     const project_site_id = parseInt(req.body.project_site_id, 10);
+
+//     if (!project_id || !project_site_id || isNaN(project_id) || isNaN(project_site_id)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id and project_site_id are required and must be valid integers"
+//       });
+//     }
+
+//     /* ---------------- BOM DATA ---------------- */
+//     const bomSql = `
+//       SELECT
+//         t.project_estimation_id,
+//         t.project_id,
+//         p.project_name,
+//         t.site_id,
+//         s.project_site_name,
+//         t.bom_id,
+//         t.bom_name,
+//         t.rep_task,
+//         t.billing_id,
+//         t.bom_price,
+//         t.bom_unit,
+//         t.bom_value_unit,
+//         billing.project_work_description,
+//         billing.unit AS billing_unit,
+//         billing.quantity AS billing_quantity,
+//         billing.rate AS billing_rate,
+//         billing.amount AS billing_amount,
+//         billing.remarks AS billing_remarks,
+//         bp.bom_progress_id,
+//         bp.bom_progress_name,
+//         bp.sl_number,
+//         bi.bom_item_id,
+//         bi.product_id,
+//         bi.qty AS per_unit_qty,
+//         bi.total_qty,
+//         pr.product_name,
+//         pr.product_type_id,
+//         pr.hsn_code,
+//         uom.unit_name AS unit
+//       FROM tx_project_details_with_estimation t
+//       LEFT JOIN md_project p ON t.project_id = p.project_id
+//       LEFT JOIN md_project_site s ON t.site_id = s.project_site_id
+//       LEFT JOIN md_project_billing billing ON t.billing_id = billing.billing_id
+//       LEFT JOIN md_bom_progress bp ON t.bom_id = bp.bom_id
+//       LEFT JOIN md_bom_item bi 
+//         ON bp.bom_progress_id = bi.bom_progress_id
+//        AND t.bom_id = bi.bom_id
+//       LEFT JOIN md_product pr ON bi.product_id = pr.product_id
+//       LEFT JOIN md_unit uom ON pr.unit_id = uom.unit_id
+//       WHERE t.project_id = ?
+//         AND t.site_id = ?
+//       ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
+//     `;
+
+//     /* ---------------- 🔥 MATERIAL USED (ONLY PENDING DPR) ---------------- */
+//     const materialSql = `
+//       SELECT
+//         w.work_progress_site_id,
+//         w.bom_id,
+//         w.bom_progress_id,
+//         si.product_id,
+//         SUM(COALESCE(si.Act_Qty, 0)) AS total_material_used
+//       FROM tx_work_progress w
+//       INNER JOIN tx_site_used_items si
+//         ON si.work_progress_site_id = w.work_progress_site_id
+//       WHERE w.project_id = ?
+//         AND w.project_site_id = ?
+//         AND w.billing_status = 'PENDING'
+//       GROUP BY
+//         w.work_progress_site_id,
+//         w.bom_id,
+//         w.bom_progress_id,
+//         si.product_id
+//     `;
+
+//     const [bomRows, materialRows] = await Promise.all([
+//       customSelectSqlQuery2(bomSql, [project_id, project_site_id]),
+//       customSelectSqlQuery2(materialSql, [project_id, project_site_id])
+//     ]);
+
+//     if (!bomRows || bomRows.length === 0) {
+//       return res.status(200).json({
+//         success: true,
+//         message: "No billing data found",
+//         data: []
+//       });
+//     }
+
+//     /* ---------------- 🔥 BUILD WORK MAP (MULTIPLE DPR SUPPORT) ---------------- */
+//     const workMap = new Map();
+
+//     for (const row of materialRows || []) {
+//       if (!row.bom_id || !row.bom_progress_id || !row.product_id) continue;
+
+//       const key = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
+
+//       if (!workMap.has(key)) {
+//         workMap.set(key, []);
+//       }
+
+//       workMap.get(key).push({
+//         work_progress_site_id: row.work_progress_site_id,
+//         used: parseFloat(row.total_material_used || 0)
+//       });
+//     }
+
+//     /* ---------------- BUILD FINAL STRUCTURE ---------------- */
+//     const billingMap = new Map();
+
+//     for (const row of bomRows) {
+
+//       if (!billingMap.has(row.billing_id)) {
+//         billingMap.set(row.billing_id, {
+//           billing_id: row.billing_id,
+//           project_id: row.project_id,
+//           project_name: row.project_name,
+//           site_id: row.site_id,
+//           site_name: row.project_site_name,
+//           project_work_description: row.project_work_description,
+//           billing_unit: row.billing_unit,
+//           billing_quantity: row.billing_quantity,
+//           billing_rate: row.billing_rate,
+//           billing_amount: row.billing_amount,
+//           billing_remarks: row.billing_remarks,
+//           boms: new Map()
+//         });
+//       }
+
+//       const billing = billingMap.get(row.billing_id);
+
+//       if (!billing.boms.has(row.project_estimation_id)) {
+//         billing.boms.set(row.project_estimation_id, {
+//           project_estimation_id: row.project_estimation_id,
+//           bom_id: row.bom_id,
+//           bom_name: row.bom_name,
+//           rep_task: row.rep_task,
+//           bom_price: row.bom_price,
+//           bom_unit: row.bom_unit || null,
+//           bom_value_unit: row.bom_value_unit,
+//           progresses: new Map()
+//         });
+//       }
+
+//       const bom = billing.boms.get(row.project_estimation_id);
+
+//       if (row.bom_progress_id && !bom.progresses.has(row.bom_progress_id)) {
+//         bom.progresses.set(row.bom_progress_id, {
+//           bom_progress_id: row.bom_progress_id,
+//           bom_progress_name: row.bom_progress_name,
+//           sl_number: row.sl_number,
+//           items: []
+//         });
+//       }
+
+//       if (!row.bom_item_id || !row.bom_progress_id) continue;
+
+//       const totalQty = parseFloat(row.total_qty || 0);
+//       const repTask = parseFloat(row.rep_task || 1);
+//       const requiredQty = totalQty * repTask;
+
+//       const key = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
+//       const workEntries = workMap.get(key) || [];
+
+//       const totalUsed = workEntries.reduce((sum, w) => sum + w.used, 0);
+
+//       const work_progress_site_ids = workEntries.map(w => w.work_progress_site_id);
+
+//       const consumption_details = workEntries.map(w => ({
+//         work_progress_site_id: w.work_progress_site_id,
+//         used_qty: w.used
+//       }));
+
+//       bom.progresses.get(row.bom_progress_id).items.push({
+//         bom_item_id: row.bom_item_id,
+//         product_id: row.product_id,
+//         qty: row.per_unit_qty,
+//         total_qty: row.total_qty,
+
+//         total_Material_required_for_bom_quantity: requiredQty.toFixed(2),
+
+//         total_material_used_in_site: totalUsed.toFixed(2),
+
+//         work_progress_site_ids,        // ✅ MULTIPLE DPR IDs
+//         consumption_details,           // ✅ BEST FOR BILLING UI
+
+//         product: {
+//           product_id: row.product_id,
+//           product_name: row.product_name,
+//           unit: row.unit || "Pc",
+//           product_type_id: row.product_type_id,
+//           hsn_code: row.hsn_code
+//         }
+//       });
+//     }
+
+//     /* ---------------- FINAL FORMAT ---------------- */
+//     const result = [];
+
+//     for (const billing of billingMap.values()) {
+//       const bomsArray = [];
+
+//       for (const bom of billing.boms.values()) {
+//         bom.progresses = Array.from(bom.progresses.values());
+//         bomsArray.push(bom);
+//       }
+
+//       billing.boms = bomsArray;
+//       result.push(billing);
+//     }
+
+//     return res.status(200).json({
+//       success: true,
+//       data: result
+//     });
+
+//   } catch (err) {
+//     console.error("[getBillingDataFullinDetails] ERROR:", err);
+
+//     return res.status(500).json({
+//       success: false,
+//       message: "Billing data fetch failed"
+//     });
+//   }
+// };
+
 getBillingDataFullinDetails = async (req, res) => {
   try {
     const project_id = parseInt(req.body.project_id, 10);
-    const project_site_id = parseInt(req.body.project_site_id, 10);
+    const project_site_id = req.body.project_site_id
+      ? parseInt(req.body.project_site_id, 10)
+      : null;
 
-    if (!project_id || !project_site_id || isNaN(project_id) || isNaN(project_site_id)) {
+    /* ---------------- VALIDATION ---------------- */
+    if (!project_id || isNaN(project_id)) {
       return res.status(400).json({
         success: false,
-        message: "project_id and project_site_id are required and must be valid integers"
+        message: "project_id is required and must be a valid integer"
+      });
+    }
+
+    if (project_site_id !== null && isNaN(project_site_id)) {
+      return res.status(400).json({
+        success: false,
+        message: "project_site_id must be a valid integer"
       });
     }
 
@@ -469,11 +709,11 @@ getBillingDataFullinDetails = async (req, res) => {
       LEFT JOIN md_product pr ON bi.product_id = pr.product_id
       LEFT JOIN md_unit uom ON pr.unit_id = uom.unit_id
       WHERE t.project_id = ?
-        AND t.site_id = ?
+        AND (? IS NULL OR t.site_id = ?)
       ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
     `;
 
-    /* ---------------- 🔥 MATERIAL USED (ONLY PENDING DPR) ---------------- */
+    /* ---------------- MATERIAL USED ---------------- */
     const materialSql = `
       SELECT
         w.work_progress_site_id,
@@ -485,7 +725,7 @@ getBillingDataFullinDetails = async (req, res) => {
       INNER JOIN tx_site_used_items si
         ON si.work_progress_site_id = w.work_progress_site_id
       WHERE w.project_id = ?
-        AND w.project_site_id = ?
+        AND (? IS NULL OR w.project_site_id = ?)
         AND w.billing_status = 'PENDING'
       GROUP BY
         w.work_progress_site_id,
@@ -494,9 +734,20 @@ getBillingDataFullinDetails = async (req, res) => {
         si.product_id
     `;
 
+    /* ---------------- PARAMS ---------------- */
+    const bomParams =
+      project_site_id !== null
+        ? [project_id, project_site_id, project_site_id]
+        : [project_id, null, null];
+
+    const materialParams =
+      project_site_id !== null
+        ? [project_id, project_site_id, project_site_id]
+        : [project_id, null, null];
+
     const [bomRows, materialRows] = await Promise.all([
-      customSelectSqlQuery2(bomSql, [project_id, project_site_id]),
-      customSelectSqlQuery2(materialSql, [project_id, project_site_id])
+      customSelectSqlQuery2(bomSql, bomParams),
+      customSelectSqlQuery2(materialSql, materialParams)
     ]);
 
     if (!bomRows || bomRows.length === 0) {
@@ -507,7 +758,7 @@ getBillingDataFullinDetails = async (req, res) => {
       });
     }
 
-    /* ---------------- 🔥 BUILD WORK MAP (MULTIPLE DPR SUPPORT) ---------------- */
+    /* ---------------- WORK MAP ---------------- */
     const workMap = new Map();
 
     for (const row of materialRows || []) {
@@ -601,8 +852,8 @@ getBillingDataFullinDetails = async (req, res) => {
 
         total_material_used_in_site: totalUsed.toFixed(2),
 
-        work_progress_site_ids,        // ✅ MULTIPLE DPR IDs
-        consumption_details,           // ✅ BEST FOR BILLING UI
+        work_progress_site_ids,
+        consumption_details,
 
         product: {
           product_id: row.product_id,
