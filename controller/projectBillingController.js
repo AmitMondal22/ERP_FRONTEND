@@ -441,22 +441,62 @@ class projectBillingController {
         });
       }
 
-      const sql = `
-        SELECT 
-          billing_id,
-          project_id,
-          project_work_description,
-          unit,
-          quantity,
-          rate,
-          amount,
-          remarks,
-          hsn_code,
-          created_at
-        FROM md_project_billing
-        WHERE project_id = ${project_id}
-        ORDER BY billing_id DESC
-      `;
+      // const sql = `
+      //   SELECT 
+      //     billing_id,
+      //     project_id,
+      //     project_work_description,
+      //     unit,
+      //     quantity,
+      //     rate,
+      //     amount,
+      //     remarks,
+      //     hsn_code,
+      //     created_at
+      //   FROM md_project_billing
+      //   WHERE project_id = ${project_id}
+      //   ORDER BY billing_id DESC
+      // `;
+
+
+
+      const sql =`SELECT 
+  pb.billing_id,
+  pb.project_id,
+  pb.project_work_description,
+  pb.unit,
+  pb.quantity,
+  pb.rate,
+  pb.amount,
+  pb.remarks,
+  pb.hsn_code,
+  pb.created_at,
+
+  pr.project_name,
+
+  -- ✅ only required client fields
+  cl.client_id,
+  cl.client_name,
+  cl.client_type,
+  cl.client_mobile,
+  cl.client_phone,
+  cl.client_email
+
+FROM md_project_billing pb
+
+LEFT JOIN md_project pr
+  ON pb.project_id = pr.project_id
+
+LEFT JOIN md_client cl
+  ON pr.client_id = cl.client_id
+
+WHERE pb.project_id = ${project_id}
+
+ORDER BY pb.billing_id DESC`
+
+
+
+
 
       const rows = await customSelectSqlQuery(sql, true);
 

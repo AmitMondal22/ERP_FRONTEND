@@ -11,7 +11,7 @@ class ProjectController {
   // Create Project
   createProject = async (req, res) => {
     try {
-      const { project_name, city_id,recipient } = req.body; 
+      const { project_name, city_id,client_id } = req.body; 
       if (!project_name || !city_id) {
         return res.status(400).json({ success: false, message: "Missing required fields" });
       }
@@ -24,7 +24,7 @@ class ProjectController {
         city_id,
         create_by: req.user.id,
         created_at,
-        recipient,
+        client_id,
       };
 
       const insertedId = await insertData("md_project", insertValues);
@@ -41,7 +41,27 @@ class ProjectController {
   getProject = async (req, res) => {
     try {
       const { id } = req.params;
-      const project = await selectOneData("md_project", "*", `project_id = ${Number(id)}`);
+
+const select = `
+  a.*, 
+  cl.client_code,
+  cl.client_name,
+  cl.client_type,
+  cl.industry_type,
+  cl.client_mobile,
+  cl.client_phone,
+  cl.client_email,
+  cl.client_website,
+  cl.client_address
+`;
+
+const table = `
+  md_project AS a
+  LEFT JOIN md_client AS cl ON a.client_id = cl.client_id
+`;
+
+const project = await selectOneData(table, select, `a.project_id = ${Number(id)}`);
+      //const project = await selectOneData("md_project", "*", `project_id = ${Number(id)}`);
 
       if (!project) return res.status(404).json({ success: false, message: "Project not found" });
 
@@ -72,14 +92,14 @@ class ProjectController {
   updateProject = async (req, res) => {
     try {
       const { id } = req.params;
-      const { project_name, city_id,recipient  } = req.body;
+      const { project_name, city_id,client_id } = req.body;
 
       const updated_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
       const setValues = {};
       if (project_name !== undefined) setValues.project_name = project_name;
       if (city_id !== undefined) setValues.city_id = city_id;
-      if (recipient !== undefined) setValues.recipient = recipient;
+      if (client_id !== undefined) setValues.client_id = client_id;
 
       // Use token to set the updater (optional, if you track who updates)
       setValues.create_by = req.user.id;
@@ -172,7 +192,16 @@ getPurchaseByProjectSiteAndDate = async (req, res) => {
 
         p.project_id,
         pr.project_name,
-        pr.recipient,
+        cl.client_id,
+        cl.client_code,
+        cl.client_name,
+        cl.client_type,
+        cl.industry_type,
+cl.client_mobile,
+cl.client_phone,
+cl.client_email,
+cl.client_website,
+cl.client_address,
 
         p.site_id,
         ps.project_site_name,
