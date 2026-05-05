@@ -172,29 +172,76 @@ class BillingController {
   /* ---------------------------------------------------
      GET All Invoices
   --------------------------------------------------- */
-  getAllInvoices = async (req, res) => {
-    try {
-      const invoices = await selectData(
-        "tx_invoice_item",
-        "*",
-        null,
-        "invoice_item_id DESC"
-      );
+  // getAllInvoices = async (req, res) => {
+  //   try {
+  //     const invoices = await selectData(
+  //       "tx_invoice_item",
+  //       "*",
+  //       null,
+  //       "invoice_item_id DESC"
+  //     );
 
-      res.json({
-        success: true,
-        data: invoices,
-      });
+  //     res.json({
+  //       success: true,
+  //       data: invoices,
+  //     });
 
-    } catch (err) {
-      console.error("Get All Invoices Error:", err);
-      res.status(500).json({
-        success: false,
-        message: "Failed to fetch invoices",
-      });
-    }
-  };
+  //   } catch (err) {
+  //     console.error("Get All Invoices Error:", err);
+  //     res.status(500).json({
+  //       success: false,
+  //       message: "Failed to fetch invoices",
+  //     });
+  //   }
+  // };
 
+
+
+ getAllInvoices = async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        wbo.*,   -- ✅ this gives ALL columns from work_billing_order
+
+        p.project_name,
+        ps.project_site_name,
+
+        c.client_name,
+        c.client_mobile,
+        c.client_email,
+        c.client_address
+
+      FROM work_billing_order wbo
+
+      LEFT JOIN md_project p 
+        ON wbo.project_id = p.project_id
+
+      LEFT JOIN md_project_site ps 
+        ON wbo.project_site_id = ps.project_site_id
+
+      LEFT JOIN md_client c 
+        ON p.client_id = c.client_id
+
+      ORDER BY wbo.created_at DESC
+    `;
+
+    const data = await customSelectSqlQuery(query);
+
+    res.json({
+      success: true,
+      total: data.length,
+      data: data
+    });
+
+  } catch (error) {
+    console.error("Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch work billing orders",
+      error: error.message
+    });
+  }
+};
 
 
   
