@@ -45,7 +45,9 @@ const clientRoutes = require("./router/clientRoutes");
 
 const ProjectSiteStatusRoutes = require("./router/projectSiteStatusRoutes")
 
-const WorkBillingRoutes= require("./router/Workbillingroutes")
+const WorkBillingRoutes= require("./router/Workbillingroutes");
+
+const dashboardRoutes= require("./router/dashboardRoutes");
 
 
 
@@ -112,6 +114,7 @@ app.use('/',claimTypeReimbursementRoutes);
 app.use('/',clientRoutes);
 app.use('/',ProjectSiteStatusRoutes);
 app.use('/',WorkBillingRoutes);
+app.use('/',dashboardRoutes)
 
 
 
