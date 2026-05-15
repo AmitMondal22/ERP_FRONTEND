@@ -2655,9 +2655,98 @@ getPurchasesByProjectSiteAndProductwithAlldetails = async (req, res) => {
 
 
 
+// getAllTypeOfPurchaseForAllTypeOfProducts = async (req, res) => {
+//   try {
+//     const { product_type_id } = req.query;
+
+//     let sql = `
+//       SELECT
+//         p.purchase_id,
+//         p.project_id,
+//         pr.project_name,
+//         ps.project_site_name,
+//         p.site_id,
+//         p.vendor_id,
+//         v.vendor_name,
+//         p.stor_id,
+//         s.store_name,
+//         p.purchase_order_id,
+//         po.po_no,
+//         p.invoice_no,
+//         p.invoice_date,
+//         p.delivery_date,
+//         p.due_date,
+//         p.invoice_image,
+//         p.transport_insurance,
+//         p.remarks,
+//         p.created_by,
+//         p.update_by,
+//         p.created_at,
+//         p.updated_at,
+
+//         -- Product details
+//         pp.purchase_product_id,
+//         pp.product_id,
+//         pn.product_name,
+//         pn.product_type_id,
+//         pt.product_type_name,
+//         pp.product_qty,
+//         pp.invoice_qty,
+//         pp.unit_rate,
+//         pp.return_id,
+//         pp.discount_rate,
+//         pp.discount_amount,
+//         pp.sgst_rate,
+//         pp.cgst_rate,
+//         pp.igst_rate,
+//         pp.sgst_amt,
+//         pp.cgst_amt,
+//         pp.igst_amt,
+//         pp.total_amount
+
+//       FROM td_purchase AS p
+//       JOIN td_purchase_product AS pp ON p.purchase_id = pp.purchase_id
+//       LEFT JOIN md_project AS pr ON p.project_id = pr.project_id
+//       LEFT JOIN md_project_site AS ps ON p.site_id = ps.project_site_id
+//       JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
+//       JOIN md_product AS pn ON pp.product_id = pn.product_id
+//       JOIN md_product_type AS pt ON pn.product_type_id = pt.product_type_id
+//       LEFT JOIN md_store AS s ON p.stor_id = s.store_id
+//       LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
+
+//       WHERE po.po_no IS NOT NULL
+//       AND po.po_no <> ''
+//       AND pr.project_name IS NOT NULL
+//       AND pr.project_name <> ''
+//     `;
+
+//     //  Optional Product Type Filter
+//     if (product_type_id) {
+//       sql += ` AND pn.product_type_id = ${product_type_id}`;
+//     }
+
+//     const result = await customSelectSqlQuery(sql);
+
+//     return res.status(200).json({
+//       status: "success",
+//       data: result,
+//     });
+
+//   } catch (error) {
+//     console.error("Error fetching purchase list:", error);
+//     res.status(500).json({
+//       status: "error",
+//       message: "Internal server error",
+//     });
+//   }
+// };
+
+
 getAllTypeOfPurchaseForAllTypeOfProducts = async (req, res) => {
   try {
     const { product_type_id } = req.query;
+
+    const params = [];
 
     let sql = `
       SELECT
@@ -2708,9 +2797,9 @@ getAllTypeOfPurchaseForAllTypeOfProducts = async (req, res) => {
       JOIN td_purchase_product AS pp ON p.purchase_id = pp.purchase_id
       LEFT JOIN md_project AS pr ON p.project_id = pr.project_id
       LEFT JOIN md_project_site AS ps ON p.site_id = ps.project_site_id
-      JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
-      JOIN md_product AS pn ON pp.product_id = pn.product_id
-      JOIN md_product_type AS pt ON pn.product_type_id = pt.product_type_id
+      LEFT JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
+      LEFT JOIN md_product AS pn ON pp.product_id = pn.product_id
+      LEFT JOIN md_product_type AS pt ON pn.product_type_id = pt.product_type_id
       LEFT JOIN md_store AS s ON p.stor_id = s.store_id
       LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
 
@@ -2720,12 +2809,12 @@ getAllTypeOfPurchaseForAllTypeOfProducts = async (req, res) => {
       AND pr.project_name <> ''
     `;
 
-    // ✅ Optional Product Type Filter
     if (product_type_id) {
-      sql += ` AND pn.product_type_id = ${product_type_id}`;
+      sql += ` AND pn.product_type_id = ?`;
+      params.push(product_type_id);
     }
 
-    const result = await customSelectSqlQuery(sql);
+    const result = await customSelectSqlQuery2(sql, params);
 
     return res.status(200).json({
       status: "success",
@@ -2736,11 +2825,11 @@ getAllTypeOfPurchaseForAllTypeOfProducts = async (req, res) => {
     console.error("Error fetching purchase list:", error);
     res.status(500).json({
       status: "error",
-      message: "Internal server error",
+      message: error.message,
+      sqlState: error.sqlState,
     });
   }
 };
-
 
 
 }
