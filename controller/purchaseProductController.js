@@ -179,7 +179,10 @@ createPurchase = async (req, res) => {
       delivery_date,
       due_date,
       invoice_image: invoice_image_path || null,
-      transport_insurance: transport_insurance || null,
+     // transport_insurance: transport_insurance || null,
+     transport_insurance:
+    transport_insurance === "Yes" ? "Y" : "N",
+
       remarks: remarks || null,
       created_by,
       update_by: created_by,
