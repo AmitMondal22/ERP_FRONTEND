@@ -2741,10 +2741,14 @@ getPurchasesByProjectSiteAndProductwithAlldetails = async (req, res) => {
 //   }
 // };
 
-
 getAllTypeOfPurchaseForAllTypeOfProducts = async (req, res) => {
+  console.log("=".repeat(60));
+  console.log("[PURCHASE] Controller hit");
+  console.log("[PURCHASE] Query params:", req.query);
+
   try {
     const { product_type_id } = req.query;
+    console.log("[PURCHASE] product_type_id:", product_type_id ?? "NOT PROVIDED");
 
     const params = [];
 
@@ -2812,25 +2816,53 @@ getAllTypeOfPurchaseForAllTypeOfProducts = async (req, res) => {
     if (product_type_id) {
       sql += ` AND pn.product_type_id = ?`;
       params.push(product_type_id);
+      console.log("[PURCHASE] Filter applied — product_type_id:", product_type_id);
+    } else {
+      console.log("[PURCHASE] No filter — fetching all product types");
     }
 
+    console.log("[PURCHASE] Final SQL:\n", sql);
+    console.log("[PURCHASE] Params:", params);
+
     const result = await customSelectSqlQuery2(sql, params);
+
+    console.log("[PURCHASE] Query executed successfully");
+    console.log("[PURCHASE] Row count:", result?.length ?? 0);
+
+    if (!result || result.length === 0) {
+      console.warn("[PURCHASE] ⚠️  Query returned 0 rows — check WHERE clause filters");
+      console.warn("[PURCHASE] Possible reasons:");
+      console.warn("  1. po.po_no is NULL or empty for all records in production");
+      console.warn("  2. pr.project_name is NULL or empty for all records in production");
+      console.warn("  3. td_purchase has no matching td_purchase_product rows (INNER JOIN)");
+      console.warn("  4. product_type_id filter matched nothing:", product_type_id);
+    }
 
     return res.status(200).json({
       status: "success",
       data: result,
+      // temp: remove before going live
+      _debug: {
+        row_count: result?.length ?? 0,
+        filter_applied: !!product_type_id,
+        product_type_id: product_type_id ?? null,
+      }
     });
 
   } catch (error) {
-    console.error("Error fetching purchase list:", error);
+    console.error("[PURCHASE] ❌ Error:", error.message);
+    console.error("[PURCHASE] SQL State:", error.sqlState ?? "N/A");
+    console.error("[PURCHASE] Error Code:", error.code ?? "N/A");
+    console.error("[PURCHASE] Full error:", error);
+
     res.status(500).json({
       status: "error",
       message: error.message,
-      sqlState: error.sqlState,
+      sqlState: error.sqlState ?? null,
+      code: error.code ?? null,
     });
   }
 };
-
 
 }
 
