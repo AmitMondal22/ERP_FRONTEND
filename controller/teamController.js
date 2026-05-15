@@ -15,9 +15,65 @@ const {
 class TeamController {
 
   // Add Vendor
+    // createTeam = async (req, res) => {
+    //     try {
+    //         const {
+    //         team_name,
+    //         date,
+    //         project_in_charge_id,
+    //         site_in_charge_id,
+    //         project_id,
+    //         project_site_id,
+    //         operator_id
+    //         } = req.body;
+
+    //         // Validate required fields
+    //         if (!team_name || !date || !project_in_charge_id || !site_in_charge_id || !project_id || !project_site_id || !operator_id) {
+    //         return res.status(400).json({
+    //             success: false,
+    //             message: "Required fields missing: team_name, date, project_in_charge_id, site_in_charge_id, project_id, project_site_id, operator_id"
+    //         });
+    //         }
+
+    //         const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+    //         const teamData = {
+    //         team_name,
+    //         date,
+    //         project_in_charge_id,
+    //         site_in_charge_id,
+    //         project_id,
+    //         project_site_id,
+    //         operator_id, 
+    //         create_by: req.user?.id || null, // logged-in user id
+    //         created_at
+    //         };
+
+    //         const team_id = await insertData("md_team", teamData);
+    //         if (!team_id) throw new Error("Failed to create team");
+
+    //         res.status(201).json({
+    //         success: true,
+    //         message: "Team created successfully",
+    //         data: {
+    //             team_id,
+    //             ...teamData
+    //         }
+    //         });
+
+    //     } catch (error) {
+    //         console.error("Error in createTeam:", error.message);
+    //         res.status(500).json({
+    //         success: false,
+    //         message: "Unable to create team",
+    //         error: error.message
+    //         });
+    //     }
+    // };
+
     createTeam = async (req, res) => {
-        try {
-            const {
+    try {
+        const {
             team_name,
             date,
             project_in_charge_id,
@@ -25,66 +81,86 @@ class TeamController {
             project_id,
             project_site_id,
             operator_id
-            } = req.body;
+        } = req.body;
 
-            // Validate required fields
-            if (!team_name || !date || !project_in_charge_id || !site_in_charge_id || !project_id || !project_site_id || !operator_id) {
+        // FIX: convert empty string to NULL
+        const final_operator_id = operator_id === "" ? null : operator_id;
+
+        // Validate required fields (ONLY operator_id logic adjusted)
+        if (
+            !team_name ||
+            !date ||
+            !project_in_charge_id ||
+            !site_in_charge_id ||
+            !project_id ||
+            !project_site_id ||
+            operator_id === undefined
+        ) {
             return res.status(400).json({
                 success: false,
-                message: "Required fields missing: team_name, date, project_in_charge_id, site_in_charge_id, project_id, project_site_id, operator_id"
+                message:
+                    "Required fields missing: team_name, date, project_in_charge_id, site_in_charge_id, project_id, project_site_id, operator_id"
             });
-            }
+        }
 
-            const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+        const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
-            const teamData = {
+        const teamData = {
             team_name,
             date,
             project_in_charge_id,
             site_in_charge_id,
             project_id,
             project_site_id,
-            operator_id,
-            create_by: req.user?.id || null, // logged-in user id
+            operator_id: final_operator_id, // FIX applied here
+            create_by: req.user?.id || null,
             created_at
-            };
+        };
 
-            const team_id = await insertData("md_team", teamData);
-            if (!team_id) throw new Error("Failed to create team");
+        const team_id = await insertData("md_team", teamData);
+        if (!team_id) throw new Error("Failed to create team");
 
-            res.status(201).json({
+        res.status(201).json({
             success: true,
             message: "Team created successfully",
             data: {
                 team_id,
                 ...teamData
             }
-            });
+        });
 
-        } catch (error) {
-            console.error("Error in createTeam:", error.message);
-            res.status(500).json({
+    } catch (error) {
+        console.error("Error in createTeam:", error.message);
+        res.status(500).json({
             success: false,
             message: "Unable to create team",
             error: error.message
-            });
-        }
-    };
-
+        });
+    }
+};
 
  
     // Get all
     getAllTeam = async (req, res) => {
         try {
             // Join md_team with projects, project sites, and operators
+            // const table = `
+            //     md_team AS t
+            //     JOIN md_project AS p ON t.project_id = p.project_id
+            //     JOIN md_project_site AS ps ON t.project_site_id = ps.project_site_id
+            //     JOIN em_employees AS o ON t.operator_id = o.employee_id
+            //     LEFT JOIN em_employees AS pic ON t.project_in_charge_id = pic.employee_id
+            //     LEFT JOIN em_employees AS sic ON t.site_in_charge_id = sic.employee_id
+            //     `;
+
             const table = `
-                md_team AS t
-                JOIN md_project AS p ON t.project_id = p.project_id
-                JOIN md_project_site AS ps ON t.project_site_id = ps.project_site_id
-                JOIN em_employees AS o ON t.operator_id = o.employee_id
-                LEFT JOIN em_employees AS pic ON t.project_in_charge_id = pic.employee_id
-                LEFT JOIN em_employees AS sic ON t.site_in_charge_id = sic.employee_id
-                `;
+    md_team AS t
+    LEFT JOIN md_project AS p ON t.project_id = p.project_id
+    LEFT JOIN md_project_site AS ps ON t.project_site_id = ps.project_site_id
+    LEFT JOIN em_employees AS o ON t.operator_id = o.employee_id
+    LEFT JOIN em_employees AS pic ON t.project_in_charge_id = pic.employee_id
+    LEFT JOIN em_employees AS sic ON t.site_in_charge_id = sic.employee_id
+`;
 
             const select = `
                 t.*,
