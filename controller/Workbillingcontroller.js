@@ -256,7 +256,6 @@ class WorkBillingController {
 // };
 
 
-
 createWorkBilling = async (req, res) => {
   try {
     const {
@@ -302,7 +301,7 @@ createWorkBilling = async (req, res) => {
       });
     }
 
-    // Block if BOM completed count is less than 1
+    //  Block if BOM completed count is less than 1
     if (Number(boms_completed_count) < 1) {
       return res.status(400).json({
         success: false,
@@ -310,27 +309,28 @@ createWorkBilling = async (req, res) => {
       });
     }
 
-    // ── Sanitize bomUnitOfLength as a plain string (varchar) ───────────
-    // It can be a unit label like "km", "RMT", or a number string like "10.5"
-    // Just store it as-is; do NOT parseFloat since it's a varchar unit field
-    const sanitizedBomUnitOfLength = (val) => {
-      if (val == null) return null;
-      const str = String(val).trim();
-      if (str === "" || str.toLowerCase() === "null" || str.toLowerCase() === "undefined") {
-        return null;
-      }
-      return str; // store as-is — it's a varchar
-    };
+    // ── Parse bomUnitOfLength ──────────────────────────────────────────
+    // Stored only in billing_material_detail (varchar) — NOT in work_billing_order
+    const parsedBomUnitOfLength =
+      bomUnitOfLength != null && bomUnitOfLength !== ""
+        ? parseFloat(bomUnitOfLength)
+        : null;
 
-    const parsedBomUnitOfLength = sanitizedBomUnitOfLength(bomUnitOfLength);
+    if (parsedBomUnitOfLength !== null && isNaN(parsedBomUnitOfLength)) {
+      return res.status(400).json({
+        success: false,
+        message: "bomUnitOfLength must be a valid number",
+      });
+    }
 
     // ── Calculate this_bill_quantity & this_bill_amount ────────────────
-    // bomUnitOfLength may be a label ("km") not a number, so use billing_qty directly
     const bomsCompleted      = parseFloat(boms_completed_count);
-    const this_bill_quantity = bomsCompleted * parseFloat(billing_qty);
+    const unitOfLength       = parsedBomUnitOfLength ?? 1;
+    const this_bill_quantity = bomsCompleted * unitOfLength;
     const this_bill_amount   = this_bill_quantity * parseFloat(billing_rate);
 
     // ── Fetch previous cumulative totals ───────────────────────────────
+    // Must match on project_id + project_site_id + work_description
     const prevRows = await customSelectSqlQuery2(
       `SELECT 
          COALESCE(SUM(this_bill_quantity), 0) AS prev_qty,
@@ -349,8 +349,6 @@ createWorkBilling = async (req, res) => {
     const cumulative_amount   = previous_amount   + this_bill_amount;
 
     // ── Generate invoice_no & insert work_billing_order ───────────────
-    // NOTE: bomUnitOfLength is NOT inserted here — that column does not
-    //       exist in work_billing_order, only in billing_material_detail
     const invoice_no  = await this.#generateInvoiceNo(invoice_date);
     const now         = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
     const created_by  = req.user?.id || null;
@@ -367,20 +365,21 @@ createWorkBilling = async (req, res) => {
       boms_completed_count: bomsCompleted,
       billing_status,
       invoice_date,
+      // ── running-total columns ──
       previous_quantity,
       this_bill_quantity,
       cumulative_quantity,
       previous_amount,
       this_bill_amount,
       cumulative_amount,
-      cgst_amt:   parseFloat(cgst_amt  || 0),
-      sgst_amt:   parseFloat(sgst_amt  || 0),
-      igst_amt:   parseFloat(igst_amt  || 0),
-      remarks:    remarks || null,
+      cgst_amt:  parseFloat(cgst_amt  || 0),
+      sgst_amt:  parseFloat(sgst_amt  || 0),
+      igst_amt:  parseFloat(igst_amt  || 0),
+      remarks:   remarks || null,
       created_by,
       created_at: now,
       updated_at: now,
-      // ✅ bomUnitOfLength is NOT included here — column doesn't exist in this table
+      // ✅ bomUnitOfLength removed — column does NOT exist in work_billing_order
     });
 
     if (!work_billing_order_id) {
@@ -408,7 +407,6 @@ createWorkBilling = async (req, res) => {
     }
 
     // ── Build & insert detail rows ────────────────────────────────────
-    // bomUnitOfLength IS stored here — column exists in billing_material_detail
     const detailCols =
       "work_billing_order_id, work_progress_site_id, bom_id, bomUnitOfLength, " +
       "bom_unit, bom_qty, bom_price, bom_amount, progress_step_name, step_sl_number, " +
@@ -416,9 +414,10 @@ createWorkBilling = async (req, res) => {
       "used_qty, created_at, updated_at";
 
     const detailRows = material_details.map((d) => {
-      // Use row-level bomUnitOfLength if present, else fall back to top-level
       const rowBomUnitOfLength =
-        sanitizedBomUnitOfLength(d.bomUnitOfLength) ?? parsedBomUnitOfLength;
+        d.bomUnitOfLength != null && d.bomUnitOfLength !== ""
+          ? parseFloat(d.bomUnitOfLength)
+          : parsedBomUnitOfLength;
 
       return {
         work_billing_order_id,
@@ -427,7 +426,10 @@ createWorkBilling = async (req, res) => {
             ? Number(d.work_progress_site_id)
             : null,
         bom_id:             d.bom_id,
-        bomUnitOfLength:    rowBomUnitOfLength, // ✅ varchar — stored as string
+        bomUnitOfLength:
+          rowBomUnitOfLength !== null && !isNaN(rowBomUnitOfLength)
+            ? rowBomUnitOfLength
+            : null,
         bom_unit:           d.bom_unit,
         bom_qty:            parseFloat(d.bom_qty),
         bom_price:          parseFloat(d.bom_price),
@@ -468,10 +470,12 @@ createWorkBilling = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Unable to create work billing order",
-      error: error.message, // keep visible until stable in production
+      error: error.message,
     });
   }
 };
+
+
 
   // ─────────────────────────────────────────────
   //  GET ALL   GET /work-billing
@@ -897,10 +901,6 @@ createWorkBilling = async (req, res) => {
 
 
 
-
-
-
-
 // getAllWorkBillingByProjectId = async (req, res) => {
 //   try {
 //     const { project_id } = req.body;
@@ -1218,6 +1218,7 @@ createWorkBilling = async (req, res) => {
 //     });
 //   }
 // };
+
 
 
 
