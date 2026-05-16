@@ -38,6 +38,223 @@ class WorkBillingController {
   // ─────────────────────────────────────────────
 
 
+// createWorkBilling = async (req, res) => {
+//   try {
+//     const {
+//       project_id,
+//       project_site_id,
+//       work_description,
+//       billing_unit,
+//       billing_qty,
+//       billing_rate,
+//       billing_amount,
+//       boms_completed_count = 0,
+//       billing_status = "pending",
+//       invoice_date,
+//       remarks,
+//       bomUnitOfLength,
+//       material_details,
+//       cgst_amt = 0,
+//       sgst_amt = 0,
+//       igst_amt = 0,
+//     } = req.body;
+
+//     // ── Validate top-level fields ──────────────────────────────────────
+//     if (
+//       !project_id ||
+//       !project_site_id ||
+//       !work_description ||
+//       !billing_unit ||
+//       billing_qty == null ||
+//       billing_rate == null ||
+//       billing_amount == null ||
+//       !invoice_date
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Required fields missing",
+//       });
+//     }
+
+//     if (!Array.isArray(material_details) || material_details.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "material_details array is required and must not be empty",
+//       });
+//     }
+
+//     //  Block if BOM completed count is less than 1
+//     if (Number(boms_completed_count) < 1) {
+//       return res.status(400).json({
+//         success: false,
+//         message: `Cannot create billing — BOM completed count is ${boms_completed_count}, which is less than 1.`,
+//       });
+//     }
+
+//     // ── Parse bomUnitOfLength ──────────────────────────────────────────
+//     const parsedBomUnitOfLength =
+//       bomUnitOfLength != null && bomUnitOfLength !== ""
+//         ? parseFloat(bomUnitOfLength)
+//         : null;
+
+//     if (parsedBomUnitOfLength !== null && isNaN(parsedBomUnitOfLength)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "bomUnitOfLength must be a valid number",
+//       });
+//     }
+
+//     // ── Calculate this_bill_quantity & this_bill_amount ────────────────
+//     const bomsCompleted      = parseFloat(boms_completed_count);
+//     const unitOfLength       = parsedBomUnitOfLength ?? 1;
+//     const this_bill_quantity = bomsCompleted * unitOfLength;
+//     const this_bill_amount   = this_bill_quantity * parseFloat(billing_rate);
+
+//     // ── Fetch previous cumulative totals ───────────────────────────────
+//     // Must match on project_id + project_site_id + work_description
+//     const prevRows = await customSelectSqlQuery2(
+//       `SELECT 
+//          COALESCE(SUM(this_bill_quantity), 0) AS prev_qty,
+//          COALESCE(SUM(this_bill_amount),   0) AS prev_amt
+//        FROM work_billing_order
+//        WHERE project_id       = ?
+//          AND project_site_id  = ?
+//          AND work_description = ?`,
+//       [Number(project_id), Number(project_site_id), work_description],
+//       true
+//     );
+
+//     const previous_quantity   = parseFloat(prevRows[0]?.prev_qty ?? 0);
+//     const previous_amount     = parseFloat(prevRows[0]?.prev_amt ?? 0);
+//     const cumulative_quantity = previous_quantity + this_bill_quantity;
+//     const cumulative_amount   = previous_amount   + this_bill_amount;
+
+//     // ── Generate invoice_no & insert work_billing_order ───────────────
+//     const invoice_no  = await this.#generateInvoiceNo(invoice_date);
+//     const now         = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+//     const created_by  = req.user?.id || null;
+
+//     const work_billing_order_id = await insertData("work_billing_order", {
+//       invoice_no,
+//       project_id:           Number(project_id),
+//       project_site_id:      Number(project_site_id),
+//       work_description,
+//       billing_unit,
+//       billing_qty:          parseFloat(billing_qty),
+//       billing_rate:         parseFloat(billing_rate),
+//       billing_amount:       parseFloat(billing_amount),
+//       boms_completed_count: bomsCompleted,
+//       billing_status,
+//       invoice_date,
+//       // ── running-total columns ──
+//       previous_quantity,
+//       this_bill_quantity,
+//       cumulative_quantity,
+//       previous_amount,
+//       this_bill_amount,
+//       cumulative_amount,
+//       cgst_amt:  parseFloat(cgst_amt  || 0),
+//       sgst_amt:  parseFloat(sgst_amt  || 0),
+//       igst_amt:  parseFloat(igst_amt  || 0),
+//       remarks:   remarks || null,
+//       created_by,
+//       created_at: now,
+//       updated_at: now,
+//     });
+
+//     if (!work_billing_order_id) {
+//       throw new Error("Failed to create billing order");
+//     }
+
+//     // ── Validate required fields per detail row ───────────────────────
+//     const requiredDetailFields = [
+//       "bom_id", "bom_unit", "bom_qty", "bom_price", "bom_amount",
+//       "progress_step_name", "step_sl_number", "product_id",
+//       "product_name", "hsn_code", "unit", "qty_per_bom", "required_qty",
+//     ];
+
+//     for (let i = 0; i < material_details.length; i++) {
+//       const row     = material_details[i];
+//       const missing = requiredDetailFields.filter(
+//         (f) => row[f] == null || row[f] === ""
+//       );
+//       if (missing.length > 0) {
+//         return res.status(400).json({
+//           success: false,
+//           message: `material_details[${i}] is missing: ${missing.join(", ")}`,
+//         });
+//       }
+//     }
+
+//     // ── Build & insert detail rows ────────────────────────────────────
+//     const detailCols =
+//       "work_billing_order_id, work_progress_site_id, bom_id, bomUnitOfLength, " +
+//       "bom_unit, bom_qty, bom_price, bom_amount, progress_step_name, step_sl_number, " +
+//       "product_id, product_name, hsn_code, unit, qty_per_bom, required_qty, " +
+//       "used_qty, created_at, updated_at";
+
+//     const detailRows = material_details.map((d) => {
+//       const rowBomUnitOfLength =
+//         d.bomUnitOfLength != null && d.bomUnitOfLength !== ""
+//           ? parseFloat(d.bomUnitOfLength)
+//           : parsedBomUnitOfLength;
+
+//       return {
+//         work_billing_order_id,
+//         work_progress_site_id:
+//           d.work_progress_site_id != null
+//             ? Number(d.work_progress_site_id)
+//             : null,
+//         bom_id:             d.bom_id,
+//         bomUnitOfLength:
+//           rowBomUnitOfLength !== null && !isNaN(rowBomUnitOfLength)
+//             ? rowBomUnitOfLength
+//             : null,
+//         bom_unit:           d.bom_unit,
+//         bom_qty:            parseFloat(d.bom_qty),
+//         bom_price:          parseFloat(d.bom_price),
+//         bom_amount:         parseFloat(d.bom_amount),
+//         progress_step_name: d.progress_step_name,
+//         step_sl_number:     parseFloat(d.step_sl_number),
+//         product_id:         Number(d.product_id),
+//         product_name:       d.product_name,
+//         hsn_code:           d.hsn_code,
+//         unit:               d.unit,
+//         qty_per_bom:        parseFloat(d.qty_per_bom),
+//         required_qty:       parseFloat(d.required_qty),
+//         used_qty:           parseFloat(d.used_qty || 0),
+//         created_at:         now,
+//         updated_at:         now,
+//       };
+//     });
+
+//     await batchInsertData("billing_material_detail", detailCols, detailRows);
+
+//     return res.status(201).json({
+//       success: true,
+//       message: "Work billing order created successfully",
+//       data: {
+//         work_billing_order_id,
+//         invoice_no,
+//         previous_quantity,
+//         this_bill_quantity,
+//         cumulative_quantity,
+//         previous_amount,
+//         this_bill_amount,
+//         cumulative_amount,
+//       },
+//     });
+
+//   } catch (error) {
+//     console.error("ERROR in createWorkBilling:", error.message);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Unable to create work billing order",
+//       error: error.message,
+//     });
+//   }
+// };
+
 createWorkBilling = async (req, res) => {
   try {
     const {
@@ -83,7 +300,7 @@ createWorkBilling = async (req, res) => {
       });
     }
 
-    //  Block if BOM completed count is less than 1
+    // Block if BOM completed count is less than 1
     if (Number(boms_completed_count) < 1) {
       return res.status(400).json({
         success: false,
@@ -91,18 +308,19 @@ createWorkBilling = async (req, res) => {
       });
     }
 
-    // ── Parse bomUnitOfLength ──────────────────────────────────────────
-    const parsedBomUnitOfLength =
-      bomUnitOfLength != null && bomUnitOfLength !== ""
-        ? parseFloat(bomUnitOfLength)
-        : null;
+    // ── Robust bomUnitOfLength parser ──────────────────────────────────
+    // Handles: null, undefined, "null", "undefined", "", "0", "10.5", 10.5
+    const sanitizeBomUnitOfLength = (val) => {
+      if (val == null) return null;
+      const str = String(val).trim();
+      if (str === "" || str.toLowerCase() === "null" || str.toLowerCase() === "undefined") {
+        return null;
+      }
+      const parsed = parseFloat(str);
+      return isNaN(parsed) ? null : parsed;
+    };
 
-    if (parsedBomUnitOfLength !== null && isNaN(parsedBomUnitOfLength)) {
-      return res.status(400).json({
-        success: false,
-        message: "bomUnitOfLength must be a valid number",
-      });
-    }
+    const parsedBomUnitOfLength = sanitizeBomUnitOfLength(bomUnitOfLength);
 
     // ── Calculate this_bill_quantity & this_bill_amount ────────────────
     const bomsCompleted      = parseFloat(boms_completed_count);
@@ -111,7 +329,6 @@ createWorkBilling = async (req, res) => {
     const this_bill_amount   = this_bill_quantity * parseFloat(billing_rate);
 
     // ── Fetch previous cumulative totals ───────────────────────────────
-    // Must match on project_id + project_site_id + work_description
     const prevRows = await customSelectSqlQuery2(
       `SELECT 
          COALESCE(SUM(this_bill_quantity), 0) AS prev_qty,
@@ -146,7 +363,6 @@ createWorkBilling = async (req, res) => {
       boms_completed_count: bomsCompleted,
       billing_status,
       invoice_date,
-      // ── running-total columns ──
       previous_quantity,
       this_bill_quantity,
       cumulative_quantity,
@@ -156,6 +372,8 @@ createWorkBilling = async (req, res) => {
       cgst_amt:  parseFloat(cgst_amt  || 0),
       sgst_amt:  parseFloat(sgst_amt  || 0),
       igst_amt:  parseFloat(igst_amt  || 0),
+      // Store as string since column is varchar, store null if not provided
+      bomUnitOfLength: parsedBomUnitOfLength !== null ? String(parsedBomUnitOfLength) : null,
       remarks:   remarks || null,
       created_by,
       created_at: now,
@@ -194,10 +412,7 @@ createWorkBilling = async (req, res) => {
       "used_qty, created_at, updated_at";
 
     const detailRows = material_details.map((d) => {
-      const rowBomUnitOfLength =
-        d.bomUnitOfLength != null && d.bomUnitOfLength !== ""
-          ? parseFloat(d.bomUnitOfLength)
-          : parsedBomUnitOfLength;
+      const rowBomUnitOfLength = sanitizeBomUnitOfLength(d.bomUnitOfLength) ?? parsedBomUnitOfLength;
 
       return {
         work_billing_order_id,
@@ -206,10 +421,8 @@ createWorkBilling = async (req, res) => {
             ? Number(d.work_progress_site_id)
             : null,
         bom_id:             d.bom_id,
-        bomUnitOfLength:
-          rowBomUnitOfLength !== null && !isNaN(rowBomUnitOfLength)
-            ? rowBomUnitOfLength
-            : null,
+        // Store as string since column is varchar, store null if not provided
+        bomUnitOfLength:    rowBomUnitOfLength !== null ? String(rowBomUnitOfLength) : null,
         bom_unit:           d.bom_unit,
         bom_qty:            parseFloat(d.bom_qty),
         bom_price:          parseFloat(d.bom_price),
@@ -250,11 +463,10 @@ createWorkBilling = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Unable to create work billing order",
-      error: error.message,
+      ...(process.env.NODE_ENV !== "production" && { error: error.message }),
     });
   }
 };
-
 
   // ─────────────────────────────────────────────
   //  GET ALL   GET /work-billing
