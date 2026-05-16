@@ -311,21 +311,30 @@ createWorkBilling = async (req, res) => {
 
     // ── Parse bomUnitOfLength ──────────────────────────────────────────
     // Stored only in billing_material_detail (varchar) — NOT in work_billing_order
-    const parsedBomUnitOfLength =
-      bomUnitOfLength != null && bomUnitOfLength !== ""
-        ? parseFloat(bomUnitOfLength)
-        : null;
+    // const parsedBomUnitOfLength =
+    //   bomUnitOfLength != null && bomUnitOfLength !== ""
+    //     ? parseFloat(bomUnitOfLength)
+    //     : null;
 
-    if (parsedBomUnitOfLength !== null && isNaN(parsedBomUnitOfLength)) {
-      return res.status(400).json({
-        success: false,
-        message: "bomUnitOfLength must be a valid number",
-      });
-    }
+    // if (parsedBomUnitOfLength !== null && isNaN(parsedBomUnitOfLength)) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "bomUnitOfLength must be a valid number",
+    //   });
+    // }
+
+
+    // ── Store bomUnitOfLength as VARCHAR/String ───────────────────────
+const parsedBomUnitOfLength =
+  bomUnitOfLength != null && bomUnitOfLength !== ""
+    ? String(bomUnitOfLength)
+    : null;
+
 
     // ── Calculate this_bill_quantity & this_bill_amount ────────────────
     const bomsCompleted      = parseFloat(boms_completed_count);
-    const unitOfLength       = parsedBomUnitOfLength ?? 1;
+    //const unitOfLength       = parsedBomUnitOfLength ?? 1;
+    const unitOfLength = parseFloat(parsedBomUnitOfLength || 1);
     const this_bill_quantity = bomsCompleted * unitOfLength;
     const this_bill_amount   = this_bill_quantity * parseFloat(billing_rate);
 
@@ -414,11 +423,13 @@ createWorkBilling = async (req, res) => {
       "used_qty, created_at, updated_at";
 
     const detailRows = material_details.map((d) => {
-      const rowBomUnitOfLength =
-        d.bomUnitOfLength != null && d.bomUnitOfLength !== ""
-          ? parseFloat(d.bomUnitOfLength)
-          : parsedBomUnitOfLength;
 
+
+     const rowBomUnitOfLength =
+  d.bomUnitOfLength != null && d.bomUnitOfLength !== ""
+    ? String(d.bomUnitOfLength)
+    : parsedBomUnitOfLength;
+    
       return {
         work_billing_order_id,
         work_progress_site_id:
@@ -426,10 +437,12 @@ createWorkBilling = async (req, res) => {
             ? Number(d.work_progress_site_id)
             : null,
         bom_id:             d.bom_id,
-        bomUnitOfLength:
-          rowBomUnitOfLength !== null && !isNaN(rowBomUnitOfLength)
-            ? rowBomUnitOfLength
-            : null,
+        // bomUnitOfLength:
+        //   rowBomUnitOfLength !== null && !isNaN(rowBomUnitOfLength)
+        //     ? rowBomUnitOfLength
+        //     : null,
+
+        bomUnitOfLength: rowBomUnitOfLength || null,
         bom_unit:           d.bom_unit,
         bom_qty:            parseFloat(d.bom_qty),
         bom_price:          parseFloat(d.bom_price),
