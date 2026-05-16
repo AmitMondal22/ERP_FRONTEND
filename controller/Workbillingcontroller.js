@@ -255,6 +255,8 @@ class WorkBillingController {
 //   }
 // };
 
+
+
 createWorkBilling = async (req, res) => {
   try {
     const {
@@ -308,24 +310,24 @@ createWorkBilling = async (req, res) => {
       });
     }
 
-    // ── Robust bomUnitOfLength parser ──────────────────────────────────
-    // Handles: null, undefined, "null", "undefined", "", "0", "10.5", 10.5
-    const sanitizeBomUnitOfLength = (val) => {
+    // ── Sanitize bomUnitOfLength as a plain string (varchar) ───────────
+    // It can be a unit label like "km", "RMT", or a number string like "10.5"
+    // Just store it as-is; do NOT parseFloat since it's a varchar unit field
+    const sanitizedBomUnitOfLength = (val) => {
       if (val == null) return null;
       const str = String(val).trim();
       if (str === "" || str.toLowerCase() === "null" || str.toLowerCase() === "undefined") {
         return null;
       }
-      const parsed = parseFloat(str);
-      return isNaN(parsed) ? null : parsed;
+      return str; // store as-is — it's a varchar
     };
 
-    const parsedBomUnitOfLength = sanitizeBomUnitOfLength(bomUnitOfLength);
+    const parsedBomUnitOfLength = sanitizedBomUnitOfLength(bomUnitOfLength);
 
     // ── Calculate this_bill_quantity & this_bill_amount ────────────────
+    // bomUnitOfLength may be a label ("km") not a number, so use billing_qty directly
     const bomsCompleted      = parseFloat(boms_completed_count);
-    const unitOfLength       = parsedBomUnitOfLength ?? 1;
-    const this_bill_quantity = bomsCompleted * unitOfLength;
+    const this_bill_quantity = bomsCompleted * parseFloat(billing_qty);
     const this_bill_amount   = this_bill_quantity * parseFloat(billing_rate);
 
     // ── Fetch previous cumulative totals ───────────────────────────────
@@ -347,6 +349,8 @@ createWorkBilling = async (req, res) => {
     const cumulative_amount   = previous_amount   + this_bill_amount;
 
     // ── Generate invoice_no & insert work_billing_order ───────────────
+    // NOTE: bomUnitOfLength is NOT inserted here — that column does not
+    //       exist in work_billing_order, only in billing_material_detail
     const invoice_no  = await this.#generateInvoiceNo(invoice_date);
     const now         = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
     const created_by  = req.user?.id || null;
@@ -369,15 +373,14 @@ createWorkBilling = async (req, res) => {
       previous_amount,
       this_bill_amount,
       cumulative_amount,
-      cgst_amt:  parseFloat(cgst_amt  || 0),
-      sgst_amt:  parseFloat(sgst_amt  || 0),
-      igst_amt:  parseFloat(igst_amt  || 0),
-      // Store as string since column is varchar, store null if not provided
-      bomUnitOfLength: parsedBomUnitOfLength !== null ? String(parsedBomUnitOfLength) : null,
-      remarks:   remarks || null,
+      cgst_amt:   parseFloat(cgst_amt  || 0),
+      sgst_amt:   parseFloat(sgst_amt  || 0),
+      igst_amt:   parseFloat(igst_amt  || 0),
+      remarks:    remarks || null,
       created_by,
       created_at: now,
       updated_at: now,
+      // ✅ bomUnitOfLength is NOT included here — column doesn't exist in this table
     });
 
     if (!work_billing_order_id) {
@@ -405,6 +408,7 @@ createWorkBilling = async (req, res) => {
     }
 
     // ── Build & insert detail rows ────────────────────────────────────
+    // bomUnitOfLength IS stored here — column exists in billing_material_detail
     const detailCols =
       "work_billing_order_id, work_progress_site_id, bom_id, bomUnitOfLength, " +
       "bom_unit, bom_qty, bom_price, bom_amount, progress_step_name, step_sl_number, " +
@@ -412,7 +416,9 @@ createWorkBilling = async (req, res) => {
       "used_qty, created_at, updated_at";
 
     const detailRows = material_details.map((d) => {
-      const rowBomUnitOfLength = sanitizeBomUnitOfLength(d.bomUnitOfLength) ?? parsedBomUnitOfLength;
+      // Use row-level bomUnitOfLength if present, else fall back to top-level
+      const rowBomUnitOfLength =
+        sanitizedBomUnitOfLength(d.bomUnitOfLength) ?? parsedBomUnitOfLength;
 
       return {
         work_billing_order_id,
@@ -421,8 +427,7 @@ createWorkBilling = async (req, res) => {
             ? Number(d.work_progress_site_id)
             : null,
         bom_id:             d.bom_id,
-        // Store as string since column is varchar, store null if not provided
-        bomUnitOfLength:    rowBomUnitOfLength !== null ? String(rowBomUnitOfLength) : null,
+        bomUnitOfLength:    rowBomUnitOfLength, // ✅ varchar — stored as string
         bom_unit:           d.bom_unit,
         bom_qty:            parseFloat(d.bom_qty),
         bom_price:          parseFloat(d.bom_price),
@@ -463,7 +468,7 @@ createWorkBilling = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Unable to create work billing order",
-      ...(process.env.NODE_ENV !== "production" && { error: error.message }),
+      error: error.message, // keep visible until stable in production
     });
   }
 };
