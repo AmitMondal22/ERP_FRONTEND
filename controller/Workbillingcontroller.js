@@ -255,7 +255,6 @@ class WorkBillingController {
 //   }
 // };
 
-
 createWorkBilling = async (req, res) => {
   try {
     const {
@@ -277,192 +276,270 @@ createWorkBilling = async (req, res) => {
       igst_amt = 0,
     } = req.body;
 
-    // ── Validate top-level fields ──────────────────────────────────────
-    if (
-      !project_id ||
-      !project_site_id ||
-      !work_description ||
-      !billing_unit ||
-      billing_qty == null ||
-      billing_rate == null ||
-      billing_amount == null ||
-      !invoice_date
-    ) {
+    // ════════════════════════════════════════════════════════════════
+    // STEP 1 — Validate top-level required fields
+    // ════════════════════════════════════════════════════════════════
+    const missingTopFields = [];
+    if (!project_id)         missingTopFields.push("project_id");
+    if (!project_site_id)    missingTopFields.push("project_site_id");
+    if (!work_description)   missingTopFields.push("work_description");
+    if (!billing_unit)       missingTopFields.push("billing_unit");
+    if (billing_qty   == null) missingTopFields.push("billing_qty");
+    if (billing_rate  == null) missingTopFields.push("billing_rate");
+    if (billing_amount == null) missingTopFields.push("billing_amount");
+    if (!invoice_date) missingTopFields.push("invoice_date");
+
+    if (missingTopFields.length > 0) {
       return res.status(400).json({
         success: false,
-        message: "Required fields missing",
+        message: `Required fields missing: ${missingTopFields.join(", ")}`,
       });
     }
 
+    // ════════════════════════════════════════════════════════════════
+    // STEP 2 — Validate material_details array
+    // ════════════════════════════════════════════════════════════════
     if (!Array.isArray(material_details) || material_details.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "material_details array is required and must not be empty",
+        message: "material_details must be a non-empty array",
       });
     }
 
-    //  Block if BOM completed count is less than 1
-    if (Number(boms_completed_count) < 1) {
+    // ════════════════════════════════════════════════════════════════
+    // STEP 3 — Validate boms_completed_count >= 1
+    // ════════════════════════════════════════════════════════════════
+    const bomsCompleted = parseFloat(boms_completed_count);
+
+    if (isNaN(bomsCompleted) || bomsCompleted < 1) {
       return res.status(400).json({
         success: false,
-        message: `Cannot create billing — BOM completed count is ${boms_completed_count}, which is less than 1.`,
+        message: `Cannot create billing — boms_completed_count is "${boms_completed_count}", must be a number >= 1.`,
       });
     }
 
-    // ── Parse bomUnitOfLength ──────────────────────────────────────────
-    // Stored only in billing_material_detail (varchar) — NOT in work_billing_order
-    // const parsedBomUnitOfLength =
-    //   bomUnitOfLength != null && bomUnitOfLength !== ""
-    //     ? parseFloat(bomUnitOfLength)
-    //     : null;
+    // ════════════════════════════════════════════════════════════════
+    // STEP 4 — Sanitise bomUnitOfLength
+    //   It is a STRING LABEL ("km", "m", "ft") — NOT a numeric multiplier.
+    //   Stored in billing_material_detail only (no column in work_billing_order).
+    // ════════════════════════════════════════════════════════════════
+    const parsedBomUnitOfLength =
+      bomUnitOfLength != null && String(bomUnitOfLength).trim() !== ""
+        ? String(bomUnitOfLength).trim()
+        : null;
 
-    // if (parsedBomUnitOfLength !== null && isNaN(parsedBomUnitOfLength)) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: "bomUnitOfLength must be a valid number",
-    //   });
-    // }
+    // ════════════════════════════════════════════════════════════════
+    // STEP 5 — De-duplicate material_details
+    //   Root cause of double inserts:
+    //   Frontend loops boms → progresses → items → consumption_details,
+    //   so the same (bom_id + site_id + product_id + step) can appear
+    //   multiple times when several progress steps share consumptions.
+    //   We keep the FIRST occurrence; later duplicates are dropped.
+    // ════════════════════════════════════════════════════════════════
+    const seenKeys = new Set();
+    const dedupedDetails = [];
 
+    for (const d of material_details) {
+      const key = [
+        d.bom_id        ?? "?",
+        d.work_progress_site_id ?? "null",
+        d.product_id    ?? "?",
+        d.progress_step_name ?? "?",
+        d.step_sl_number ?? "?",
+      ].join("__");
 
-    // ── Store bomUnitOfLength as VARCHAR/String ───────────────────────
-const parsedBomUnitOfLength =
-  bomUnitOfLength != null && bomUnitOfLength !== ""
-    ? String(bomUnitOfLength)
-    : null;
-
-
-    // ── Calculate this_bill_quantity & this_bill_amount ────────────────
-    const bomsCompleted      = parseFloat(boms_completed_count);
-    //const unitOfLength       = parsedBomUnitOfLength ?? 1;
-    const unitOfLength = parseFloat(parsedBomUnitOfLength || 1);
-    const this_bill_quantity = bomsCompleted * unitOfLength;
-    const this_bill_amount   = this_bill_quantity * parseFloat(billing_rate);
-
-    // ── Fetch previous cumulative totals ───────────────────────────────
-    // Must match on project_id + project_site_id + work_description
-    const prevRows = await customSelectSqlQuery2(
-      `SELECT 
-         COALESCE(SUM(this_bill_quantity), 0) AS prev_qty,
-         COALESCE(SUM(this_bill_amount),   0) AS prev_amt
-       FROM work_billing_order
-       WHERE project_id       = ?
-         AND project_site_id  = ?
-         AND work_description = ?`,
-      [Number(project_id), Number(project_site_id), work_description],
-      true
-    );
-
-    const previous_quantity   = parseFloat(prevRows[0]?.prev_qty ?? 0);
-    const previous_amount     = parseFloat(prevRows[0]?.prev_amt ?? 0);
-    const cumulative_quantity = previous_quantity + this_bill_quantity;
-    const cumulative_amount   = previous_amount   + this_bill_amount;
-
-    // ── Generate invoice_no & insert work_billing_order ───────────────
-    const invoice_no  = await this.#generateInvoiceNo(invoice_date);
-    const now         = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
-    const created_by  = req.user?.id || null;
-
-    const work_billing_order_id = await insertData("work_billing_order", {
-      invoice_no,
-      project_id:           Number(project_id),
-      project_site_id:      Number(project_site_id),
-      work_description,
-      billing_unit,
-      billing_qty:          parseFloat(billing_qty),
-      billing_rate:         parseFloat(billing_rate),
-      billing_amount:       parseFloat(billing_amount),
-      boms_completed_count: bomsCompleted,
-      billing_status,
-      invoice_date,
-      // ── running-total columns ──
-      previous_quantity,
-      this_bill_quantity,
-      cumulative_quantity,
-      previous_amount,
-      this_bill_amount,
-      cumulative_amount,
-      cgst_amt:  parseFloat(cgst_amt  || 0),
-      sgst_amt:  parseFloat(sgst_amt  || 0),
-      igst_amt:  parseFloat(igst_amt  || 0),
-      remarks:   remarks || null,
-      created_by,
-      created_at: now,
-      updated_at: now,
-      // ✅ bomUnitOfLength removed — column does NOT exist in work_billing_order
-    });
-
-    if (!work_billing_order_id) {
-      throw new Error("Failed to create billing order");
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        dedupedDetails.push(d);
+      }
     }
 
-    // ── Validate required fields per detail row ───────────────────────
+    console.log(
+      `[createWorkBilling] material_details received=${material_details.length}, after dedup=${dedupedDetails.length}`
+    );
+
+    // ════════════════════════════════════════════════════════════════
+    // STEP 6 — Validate required fields per detail row
+    //   Done BEFORE any DB writes so we fail fast cleanly.
+    // ════════════════════════════════════════════════════════════════
     const requiredDetailFields = [
       "bom_id", "bom_unit", "bom_qty", "bom_price", "bom_amount",
       "progress_step_name", "step_sl_number", "product_id",
       "product_name", "hsn_code", "unit", "qty_per_bom", "required_qty",
     ];
 
-    for (let i = 0; i < material_details.length; i++) {
-      const row     = material_details[i];
+    for (let i = 0; i < dedupedDetails.length; i++) {
+      const row = dedupedDetails[i];
       const missing = requiredDetailFields.filter(
-        (f) => row[f] == null || row[f] === ""
+        (f) => row[f] == null || String(row[f]).trim() === ""
       );
       if (missing.length > 0) {
         return res.status(400).json({
           success: false,
-          message: `material_details[${i}] is missing: ${missing.join(", ")}`,
+          message: `material_details[${i}] is missing required field(s): ${missing.join(", ")}`,
         });
       }
     }
 
-    // ── Build & insert detail rows ────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════
+    // STEP 7 — Calculate this_bill_quantity & this_bill_amount
+    //
+    //   bomUnitOfLength is now a LABEL ("km", "m") — NOT a multiplier.
+    //   The multiplier is always 1 (we count BOMs completed directly).
+    //
+    //   this_bill_quantity = bomsCompleted            (e.g. 2)
+    //   this_bill_amount   = bomsCompleted × bom_price_per_unit
+    //
+    //   bom_price is taken from the first deduped detail row.
+    //   All rows under the same BOM share the same bom_price.
+    //   Guard: if bom_price is missing/NaN fall back to 0 with a warning.
+    // ════════════════════════════════════════════════════════════════
+    const rawBomPrice = parseFloat(dedupedDetails[0]?.bom_price);
+    const bomPricePerUnit = isNaN(rawBomPrice) ? 0 : rawBomPrice;
+
+    if (bomPricePerUnit === 0) {
+      console.warn(
+        `[createWorkBilling] bom_price is 0 or missing on first detail row — this_bill_amount will be 0`
+      );
+    }
+
+    const this_bill_quantity = bomsCompleted;                   // e.g. 2
+    const this_bill_amount   = bomsCompleted * bomPricePerUnit; // e.g. 2 × 4000 = 8000
+
+    // ════════════════════════════════════════════════════════════════
+    // STEP 8 — Fetch previous cumulative totals
+    //   Matches on project_id + project_site_id + work_description.
+    //   COALESCE ensures 0 when no prior rows exist (first billing).
+    //
+    //   1st billing:  previous = 0,     cumulative = this
+    //   2nd billing:  previous = this1, cumulative = this1 + this2
+    // ════════════════════════════════════════════════════════════════
+    let previous_quantity = 0;
+    let previous_amount   = 0;
+
+    try {
+      const prevRows = await customSelectSqlQuery2(
+        `SELECT
+           COALESCE(SUM(this_bill_quantity), 0) AS prev_qty,
+           COALESCE(SUM(this_bill_amount),   0) AS prev_amt
+         FROM work_billing_order
+         WHERE project_id       = ?
+           AND project_site_id  = ?
+           AND work_description = ?`,
+        [Number(project_id), Number(project_site_id), work_description],
+        true
+      );
+
+      previous_quantity = parseFloat(prevRows[0]?.prev_qty ?? 0) || 0;
+      previous_amount   = parseFloat(prevRows[0]?.prev_amt ?? 0) || 0;
+    } catch (queryErr) {
+      // Non-fatal — log and continue with 0 (first-bill assumption)
+      console.error("[createWorkBilling] Failed to fetch previous totals:", queryErr.message);
+    }
+
+    const cumulative_quantity = previous_quantity + this_bill_quantity;
+    const cumulative_amount   = previous_amount   + this_bill_amount;
+
+    // ════════════════════════════════════════════════════════════════
+    // STEP 9 — Generate invoice_no & timestamps
+    // ════════════════════════════════════════════════════════════════
+    const invoice_no = await this.#generateInvoiceNo(invoice_date);
+    const now        = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+    const created_by = req.user?.id || null;
+
+    // ════════════════════════════════════════════════════════════════
+    // STEP 10 — Insert work_billing_order row
+    //   NOTE: bomUnitOfLength is NOT a column here —
+    //         it lives only in billing_material_detail.
+    // ════════════════════════════════════════════════════════════════
+    const work_billing_order_id = await insertData("work_billing_order", {
+      invoice_no,
+      project_id:           Number(project_id),
+      project_site_id:      Number(project_site_id),
+      work_description,
+      billing_unit,
+      billing_qty:          parseFloat(billing_qty)    || 0,
+      billing_rate:         parseFloat(billing_rate)   || 0,
+      billing_amount:       parseFloat(billing_amount) || 0,
+      boms_completed_count: bomsCompleted,
+      billing_status,
+      invoice_date,
+      // ── running-total columns ───────────────────────────
+      previous_quantity,    // SUM of all past this_bill_quantity (0 on first bill)
+      this_bill_quantity,   // bomsCompleted (e.g. 2)
+      cumulative_quantity,  // previous + this  (e.g. 0 + 2 = 2)
+      previous_amount,      // SUM of all past this_bill_amount (0 on first bill)
+      this_bill_amount,     // bomsCompleted × bom_price (e.g. 2 × 4000 = 8000)
+      cumulative_amount,    // previous_amount + this_bill_amount (e.g. 0 + 8000 = 8000)
+      cgst_amt:  parseFloat(cgst_amt)  || 0,
+      sgst_amt:  parseFloat(sgst_amt)  || 0,
+      igst_amt:  parseFloat(igst_amt)  || 0,
+      remarks:   remarks?.trim() || null,
+      created_by,
+      created_at: now,
+      updated_at: now,
+    });
+
+    if (!work_billing_order_id) {
+      throw new Error("insertData returned falsy for work_billing_order — check DB constraints");
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // STEP 11 — Build de-duplicated detail rows
+    // ════════════════════════════════════════════════════════════════
     const detailCols =
       "work_billing_order_id, work_progress_site_id, bom_id, bomUnitOfLength, " +
       "bom_unit, bom_qty, bom_price, bom_amount, progress_step_name, step_sl_number, " +
       "product_id, product_name, hsn_code, unit, qty_per_bom, required_qty, " +
       "used_qty, created_at, updated_at";
 
-    const detailRows = material_details.map((d) => {
+    const detailRows = dedupedDetails.map((d) => {
+      // Per-row label: prefer the row's own value, fall back to top-level label
+      const rowBomUnitOfLength =
+        d.bomUnitOfLength != null && String(d.bomUnitOfLength).trim() !== ""
+          ? String(d.bomUnitOfLength).trim()
+          : parsedBomUnitOfLength;
 
-
-     const rowBomUnitOfLength =
-  d.bomUnitOfLength != null && d.bomUnitOfLength !== ""
-    ? String(d.bomUnitOfLength)
-    : parsedBomUnitOfLength;
-    
       return {
         work_billing_order_id,
         work_progress_site_id:
-          d.work_progress_site_id != null
-            ? Number(d.work_progress_site_id)
-            : null,
+          d.work_progress_site_id != null ? Number(d.work_progress_site_id) : null,
         bom_id:             d.bom_id,
-        // bomUnitOfLength:
-        //   rowBomUnitOfLength !== null && !isNaN(rowBomUnitOfLength)
-        //     ? rowBomUnitOfLength
-        //     : null,
-
-        bomUnitOfLength: rowBomUnitOfLength || null,
+        bomUnitOfLength:    rowBomUnitOfLength || null,  // VARCHAR label "km", "m", etc.
         bom_unit:           d.bom_unit,
-        bom_qty:            parseFloat(d.bom_qty),
-        bom_price:          parseFloat(d.bom_price),
-        bom_amount:         parseFloat(d.bom_amount),
+        bom_qty:            parseFloat(d.bom_qty)    || 0,
+        bom_price:          parseFloat(d.bom_price)  || 0,
+        bom_amount:         parseFloat(d.bom_amount) || 0,
         progress_step_name: d.progress_step_name,
-        step_sl_number:     parseFloat(d.step_sl_number),
+        step_sl_number:     parseFloat(d.step_sl_number) || 0,
         product_id:         Number(d.product_id),
         product_name:       d.product_name,
-        hsn_code:           d.hsn_code,
+        hsn_code:           String(d.hsn_code ?? ""),
         unit:               d.unit,
-        qty_per_bom:        parseFloat(d.qty_per_bom),
-        required_qty:       parseFloat(d.required_qty),
-        used_qty:           parseFloat(d.used_qty || 0),
+        qty_per_bom:        parseFloat(d.qty_per_bom)   || 0,
+        required_qty:       parseFloat(d.required_qty)  || 0,
+        used_qty:           parseFloat(d.used_qty)      || 0,
         created_at:         now,
         updated_at:         now,
       };
     });
 
+    // ════════════════════════════════════════════════════════════════
+    // STEP 12 — Batch insert detail rows
+    // ════════════════════════════════════════════════════════════════
     await batchInsertData("billing_material_detail", detailCols, detailRows);
 
+    console.log(
+      `[createWorkBilling] SUCCESS — order_id=${work_billing_order_id}, invoice=${invoice_no}, ` +
+      `this_bill_qty=${this_bill_quantity}, this_bill_amt=${this_bill_amount}, ` +
+      `prev_qty=${previous_quantity}, cumulative_qty=${cumulative_quantity}, ` +
+      `prev_amt=${previous_amount}, cumulative_amt=${cumulative_amount}, ` +
+      `detail_rows_inserted=${detailRows.length}`
+    );
+
+    // ════════════════════════════════════════════════════════════════
+    // STEP 13 — Respond
+    // ════════════════════════════════════════════════════════════════
     return res.status(201).json({
       success: true,
       message: "Work billing order created successfully",
@@ -475,11 +552,12 @@ const parsedBomUnitOfLength =
         previous_amount,
         this_bill_amount,
         cumulative_amount,
+        detail_rows_inserted: detailRows.length,
       },
     });
 
   } catch (error) {
-    console.error("ERROR in createWorkBilling:", error.message);
+    console.error("[createWorkBilling] UNHANDLED ERROR:", error.message, error.stack);
     return res.status(500).json({
       success: false,
       message: "Unable to create work billing order",
