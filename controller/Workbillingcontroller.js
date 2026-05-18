@@ -1313,18 +1313,724 @@ createWorkBilling = async (req, res) => {
 
 
 
-getAllWorkBillingByProjectId = async (req, res) => {
-  try {
-    const { project_id } = req.body;
+// getAllWorkBillingByProjectId = async (req, res) => {
+//   try {
+//     const { project_id } = req.body;
 
-    if (!project_id) {
+//     if (!project_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id is required in request body",
+//       });
+//     }
+
+//     // ── PROJECT + CLIENT + SITE META ─────────────────────────────
+//     const projectSql = `
+//       SELECT
+//         cl.client_id,
+//         cl.client_name,
+//         cl.client_type,
+//         cl.client_mobile,
+//         cl.client_phone,
+//         cl.client_email,
+//         cl.client_address,
+
+//         mps.address    AS site_address,
+//         mps.from_date  AS site_from_date,
+//         mps.to_date    AS site_to_date,
+//         mps.project_id AS site_project_id
+
+//       FROM md_project AS mp
+
+//       LEFT JOIN md_client AS cl
+//         ON mp.client_id = cl.client_id
+
+//       LEFT JOIN md_project_site AS mps
+//         ON mps.project_id = mp.project_id
+
+//       WHERE mp.project_id = ?
+//       LIMIT 1
+//     `;
+
+//     const projectMeta = await customSelectSqlQuery2(projectSql, [project_id], false);
+
+//     // ── BILLING DATA ─────────────────────────────────────────────
+//     const sql = `
+//       SELECT
+//         wbo.work_billing_order_id,
+//         wbo.invoice_no,
+//         wbo.project_id,
+//         wbo.project_site_id,
+//         wbo.work_description,
+//         wbo.billing_unit,
+//         wbo.billing_qty,
+//         wbo.billing_rate,
+//         wbo.billing_amount,
+//         wbo.boms_completed_count,
+//         wbo.billing_status,
+//         wbo.invoice_date,
+//         wbo.remarks,
+//         wbo.created_by,
+//         wbo.created_at,
+//         wbo.updated_at,
+
+//         wbo.previous_quantity,
+//         wbo.this_bill_quantity,
+//         wbo.cumulative_quantity,
+//         wbo.previous_amount,
+//         wbo.this_bill_amount,
+//         wbo.cumulative_amount,
+//         wbo.cgst_amt,
+//         wbo.sgst_amt,
+//         wbo.igst_amt,
+
+//         mpb.quantity   AS boq_qty,
+//         mpb.rate       AS boq_rate,
+//         mpb.amount     AS boq_amount,
+//         mpb.hsn_code   AS boq_hsn_code,
+
+//         bmd.billing_material_detail_id,
+//         bmd.work_progress_site_id,
+//         bmd.bom_id,
+//         bmd.bomUnitOfLength     AS detail_bom_unit_of_length,
+//         bmd.bom_unit,
+//         bmd.bom_qty,
+//         bmd.bom_price,
+//         bmd.bom_amount          AS detail_bom_amount,
+//         bmd.progress_step_name,
+//         bmd.step_sl_number,
+//         bmd.product_id,
+//         bmd.product_name,
+//         bmd.hsn_code,
+//         bmd.unit,
+//         bmd.qty_per_bom,
+//         bmd.required_qty,
+//         bmd.used_qty
+
+//       FROM work_billing_order AS wbo
+
+//       LEFT JOIN md_project_billing AS mpb
+//         ON mpb.project_id = wbo.project_id
+//         AND mpb.project_work_description = wbo.work_description
+
+//       LEFT JOIN billing_material_detail AS bmd
+//         ON bmd.work_billing_order_id = wbo.work_billing_order_id
+
+//       WHERE wbo.project_id = ?
+//       ORDER BY
+//         wbo.work_description ASC,
+//         wbo.work_billing_order_id ASC,
+//         bmd.step_sl_number ASC
+//     `;
+
+//     const rows = await customSelectSqlQuery2(sql, [project_id], true);
+
+//     if (!rows || rows.length === 0) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "No billing orders found for this project",
+//       });
+//     }
+
+//     // ── STEP 1: BUILD ORDER MAP ─────────────────────────────
+//     const orderMap = {};
+//     const orderIndex = [];
+
+//     rows.forEach((row) => {
+//       const orderId = row.work_billing_order_id;
+
+//       if (!orderMap[orderId]) {
+//         orderMap[orderId] = {
+//           work_billing_order_id: orderId,
+//           invoice_no: row.invoice_no,
+//           project_id: row.project_id,
+//           project_site_id: row.project_site_id,
+//           work_description: row.work_description,
+
+//           billing_unit: row.billing_unit,
+//           billing_qty: Number(row.billing_qty || 0),
+//           billing_rate: Number(row.billing_rate || 0),
+//           billing_amount: Number(row.billing_amount || 0),
+
+//           previous_quantity: Number(row.previous_quantity || 0),
+//           this_bill_quantity: Number(row.this_bill_quantity || 0),
+//           cumulative_quantity: Number(row.cumulative_quantity || 0),
+
+//           previous_amount: Number(row.previous_amount || 0),
+//           this_bill_amount: Number(row.this_bill_amount || 0),
+//           cumulative_amount: Number(row.cumulative_amount || 0),
+
+//           boq_qty: Number(row.boq_qty || 0),
+//           boq_rate: Number(row.boq_rate || 0),
+//           boq_amount: Number(row.boq_amount || 0),
+//           boq_hsn: row.boq_hsn_code || "",
+
+//           invoice_date: row.invoice_date,
+//           material_details: [],
+//         };
+
+//         orderIndex.push(orderId);
+//       }
+
+//       if (row.billing_material_detail_id) {
+//         orderMap[orderId].material_details.push({
+//           billing_material_detail_id: row.billing_material_detail_id,
+//           product_name: row.product_name,
+//           qty_per_bom: Number(row.qty_per_bom || 0),
+//           required_qty: Number(row.required_qty || 0),
+//           used_qty: Number(row.used_qty || 0),
+//         });
+//       }
+//     });
+
+//     // ── STEP 2: GROUP BY WORK DESCRIPTION ─────────────────────
+//     const descMap = {};
+//     const descOrder = [];
+
+//     orderIndex.forEach((id) => {
+//       const order = orderMap[id];
+//       const key = `${order.project_site_id}_${order.work_description}`;
+
+//       if (!descMap[key]) {
+//         descMap[key] = {
+//           work_description: order.work_description,
+//           billing_unit: order.billing_unit,
+//           billing_rate: order.billing_rate,
+
+//           boq_qty: order.boq_qty,
+//           boq_rate: order.boq_rate,
+//           boq_amount: order.boq_amount,
+//           boq_hsn: order.boq_hsn,
+
+//           bills: [],
+//           latest_order_id: 0,
+//           latest_invoice_no: null,
+//         };
+
+//         descOrder.push(key);
+//       }
+
+//       descMap[key].bills.push(order);
+
+//       // ✅ FIX: latest invoice using MAX ID
+//       if (order.work_billing_order_id > descMap[key].latest_order_id) {
+//         descMap[key].latest_order_id = order.work_billing_order_id;
+//         descMap[key].latest_invoice_no = order.invoice_no;
+//       }
+//     });
+
+//     // ── STEP 3: BUILD RESULT ─────────────────────────────
+//     const result = descOrder.map((key) => {
+//       const group = descMap[key];
+//       const latestBill = group.bills[group.bills.length - 1];
+
+//       return {
+//         work_description: group.work_description,
+//         invoice_no: group.latest_invoice_no || "N/A",
+
+//         billing_unit: group.billing_unit,
+//         billing_rate: group.billing_rate,
+
+//         boq_qty: group.boq_qty,
+//         boq_rate: group.boq_rate,
+//         boq_amount: group.boq_amount,
+//         boq_hsn: group.boq_hsn,
+
+//         previous_quantity: Number(latestBill.previous_quantity || 0),
+//         this_bill_quantity: Number(latestBill.this_bill_quantity || 0),
+//         cumulative_quantity: Number(latestBill.cumulative_quantity || 0),
+
+//         previous_amount: Number(latestBill.previous_amount || 0),
+//         this_bill_amount: Number(latestBill.this_bill_amount || 0),
+//         cumulative_amount: Number(latestBill.cumulative_amount || 0),
+//       };
+//     });
+
+//     // ── OPTIONAL: OVERALL LATEST INVOICE ─────────────────────
+//     const latestInvoice = rows.reduce((max, row) => {
+//       return (!max || row.work_billing_order_id > max.work_billing_order_id)
+//         ? row
+//         : max;
+//     }, null);
+
+//     // ── STEP 4: BILL DETAILS ─────────────────────────────
+//     const bill_details = {
+//       invoice_no: latestInvoice?.invoice_no || "N/A",
+
+//       client_id: projectMeta?.client_id || "N/A",
+//       client_name: projectMeta?.client_name || "N/A",
+//       client_type: projectMeta?.client_type || "N/A",
+//       client_mobile: projectMeta?.client_mobile || "N/A",
+//       client_phone: projectMeta?.client_phone || "N/A",
+//       client_email: projectMeta?.client_email || "N/A",
+//       client_address: projectMeta?.client_address || "N/A",
+
+//       date: projectMeta?.site_from_date || "N/A",
+//       place_of_delivery: projectMeta?.site_address || "N/A",
+//       to_date: projectMeta?.site_to_date || "N/A",
+//       project_id: projectMeta?.site_project_id || "N/A",
+//     };
+
+//     // ── FINAL RESPONSE ─────────────────────────────
+//     return res.status(200).json({
+//       success: true,
+//       total: result.length,
+//       bill_details,
+//       data: result,
+//     });
+
+//   } catch (error) {
+//     console.error("Error:", error.message);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Unable to fetch billing orders",
+//       error: error.message,
+//     });
+//   }
+// };
+
+
+// getAllWorkBillingByProjectId = async (req, res) => {
+//   try {
+//     const { project_id } = req.body;
+
+//     // ── VALIDATION ─────────────────────────────────────────────
+//     if (!project_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id is required in request body",
+//       });
+//     }
+
+//     // ── PROJECT + CLIENT + SITE META ─────────────────────────────
+//     const projectSql = `
+//       SELECT
+//         cl.client_id,
+//         cl.client_name,
+//         cl.client_type,
+//         cl.client_mobile,
+//         cl.client_phone,
+//         cl.client_email,
+//         cl.client_address,
+
+//         mps.address    AS site_address,
+//         mps.from_date  AS site_from_date,
+//         mps.to_date    AS site_to_date,
+//         mps.project_id AS site_project_id
+
+//       FROM md_project AS mp
+
+//       LEFT JOIN md_client AS cl
+//         ON mp.client_id = cl.client_id
+
+//       LEFT JOIN md_project_site AS mps
+//         ON mps.project_id = mp.project_id
+
+//       WHERE mp.project_id = ?
+//       LIMIT 1
+//     `;
+
+//     const projectMeta = await customSelectSqlQuery2(
+//       projectSql,
+//       [project_id],
+//       false
+//     );
+
+//     // ── BILLING DATA ─────────────────────────────────────────────
+//     const sql = `
+//       SELECT
+//         wbo.work_billing_order_id,
+//         wbo.invoice_no,
+
+//         -- ✅ MAIN TABLE VALUES
+//         wbo.project_id,
+//         wbo.project_site_id,
+
+//         wbo.work_description,
+//         wbo.billing_unit,
+//         wbo.billing_qty,
+//         wbo.billing_rate,
+//         wbo.billing_amount,
+//         wbo.boms_completed_count,
+//         wbo.billing_status,
+//         wbo.invoice_date,
+//         wbo.remarks,
+//         wbo.created_by,
+//         wbo.created_at,
+//         wbo.updated_at,
+
+//         wbo.previous_quantity,
+//         wbo.this_bill_quantity,
+//         wbo.cumulative_quantity,
+
+//         wbo.previous_amount,
+//         wbo.this_bill_amount,
+//         wbo.cumulative_amount,
+
+//         wbo.cgst_amt,
+//         wbo.sgst_amt,
+//         wbo.igst_amt,
+
+//         -- ✅ BOQ
+//         mpb.quantity   AS boq_qty,
+//         mpb.rate       AS boq_rate,
+//         mpb.amount     AS boq_amount,
+//         mpb.hsn_code   AS boq_hsn_code,
+
+//         -- ✅ CHILD TABLE
+//         bmd.billing_material_detail_id,
+//         bmd.work_progress_site_id,
+//         bmd.bom_id,
+//         bmd.bomUnitOfLength AS detail_bom_unit_of_length,
+//         bmd.bom_unit,
+//         bmd.bom_qty,
+//         bmd.bom_price,
+//         bmd.bom_amount AS detail_bom_amount,
+//         bmd.progress_step_name,
+//         bmd.step_sl_number,
+//         bmd.product_id,
+//         bmd.product_name,
+//         bmd.hsn_code,
+//         bmd.unit,
+//         bmd.qty_per_bom,
+//         bmd.required_qty,
+//         bmd.used_qty,
+
+//         -- ✅ REP TASK
+//         tpde.rep_task
+
+//       FROM work_billing_order AS wbo
+
+//       LEFT JOIN md_project_billing AS mpb
+//         ON mpb.project_id = wbo.project_id
+//         AND mpb.project_work_description = wbo.work_description
+
+//       LEFT JOIN billing_material_detail AS bmd
+//         ON bmd.work_billing_order_id = wbo.work_billing_order_id
+
+//       -- ✅ REP TASK JOIN
+//       LEFT JOIN tx_project_details_with_estimation AS tpde
+//         ON tpde.project_id = wbo.project_id
+//         AND tpde.site_id = wbo.project_site_id
+//         AND tpde.bom_id = bmd.bom_id
+
+//       WHERE wbo.project_id = ?
+
+//       ORDER BY
+//         wbo.work_description ASC,
+//         wbo.work_billing_order_id ASC,
+//         bmd.step_sl_number ASC
+//     `;
+
+//     const rows = await customSelectSqlQuery2(
+//       sql,
+//       [project_id],
+//       true
+//     );
+
+//     // ── NO DATA ─────────────────────────────────────────────
+//     if (!rows || rows.length === 0) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "No billing orders found for this project",
+//       });
+//     }
+
+//     // ── STEP 1: BUILD ORDER MAP ─────────────────────────────
+//     const orderMap = {};
+//     const orderIndex = [];
+
+//     rows.forEach((row) => {
+//       const orderId = row.work_billing_order_id;
+
+//       if (!orderMap[orderId]) {
+//         orderMap[orderId] = {
+//           work_billing_order_id: orderId,
+
+//           invoice_no: row.invoice_no,
+
+//           // ✅ FROM MAIN TABLE
+//           project_id: row.project_id,
+//           project_site_id: row.project_site_id,
+
+//           work_description: row.work_description,
+
+//           // ✅ SITE ID MUST COME FROM wbo.project_site_id
+//           site_id: row.project_site_id || null,
+
+//           // ✅ FROM CHILD TABLE
+//           bom_id: row.bom_id || null,
+
+//           // ✅ FROM tx_project_details_with_estimation
+//           rep_task: row.rep_task || "",
+
+//           billing_unit: row.billing_unit,
+
+//           billing_qty: Number(row.billing_qty || 0),
+//           billing_rate: Number(row.billing_rate || 0),
+//           billing_amount: Number(row.billing_amount || 0),
+
+//           previous_quantity: Number(
+//             row.previous_quantity || 0
+//           ),
+
+//           this_bill_quantity: Number(
+//             row.this_bill_quantity || 0
+//           ),
+
+//           cumulative_quantity: Number(
+//             row.cumulative_quantity || 0
+//           ),
+
+//           previous_amount: Number(
+//             row.previous_amount || 0
+//           ),
+
+//           this_bill_amount: Number(
+//             row.this_bill_amount || 0
+//           ),
+
+//           cumulative_amount: Number(
+//             row.cumulative_amount || 0
+//           ),
+
+//           boq_qty: Number(row.boq_qty || 0),
+//           boq_rate: Number(row.boq_rate || 0),
+//           boq_amount: Number(row.boq_amount || 0),
+
+//           boq_hsn: row.boq_hsn_code || "",
+
+//           invoice_date: row.invoice_date,
+
+//           material_details: [],
+//         };
+
+//         orderIndex.push(orderId);
+//       }
+
+//       // ── MATERIAL DETAILS ─────────────────────────────
+//       if (row.billing_material_detail_id) {
+//         orderMap[orderId].material_details.push({
+//           billing_material_detail_id:
+//             row.billing_material_detail_id,
+
+//           product_name: row.product_name,
+
+//           qty_per_bom: Number(
+//             row.qty_per_bom || 0
+//           ),
+
+//           required_qty: Number(
+//             row.required_qty || 0
+//           ),
+
+//           used_qty: Number(
+//             row.used_qty || 0
+//           ),
+//         });
+//       }
+//     });
+
+//     // ── STEP 2: GROUP BY WORK DESCRIPTION ─────────────────────
+//     const descMap = {};
+//     const descOrder = [];
+
+//     orderIndex.forEach((id) => {
+//       const order = orderMap[id];
+
+//       const key = `${order.project_site_id}_${order.work_description}`;
+
+//       if (!descMap[key]) {
+//         descMap[key] = {
+//           work_description: order.work_description,
+
+//           billing_unit: order.billing_unit,
+//           billing_rate: order.billing_rate,
+
+//           boq_qty: order.boq_qty,
+//           boq_rate: order.boq_rate,
+//           boq_amount: order.boq_amount,
+//           boq_hsn: order.boq_hsn,
+
+//           bills: [],
+
+//           latest_order_id: 0,
+//           latest_invoice_no: null,
+//         };
+
+//         descOrder.push(key);
+//       }
+
+//       descMap[key].bills.push(order);
+
+//       // ── LATEST ORDER ─────────────────────────────
+//       if (
+//         order.work_billing_order_id >
+//         descMap[key].latest_order_id
+//       ) {
+//         descMap[key].latest_order_id =
+//           order.work_billing_order_id;
+
+//         descMap[key].latest_invoice_no =
+//           order.invoice_no;
+//       }
+//     });
+
+//     // ── STEP 3: BUILD FINAL RESULT ─────────────────────────────
+//     const result = descOrder.map((key) => {
+//       const group = descMap[key];
+
+//       const latestBill =
+//         group.bills[group.bills.length - 1];
+
+//       return {
+//         work_description: group.work_description,
+
+//         invoice_no:
+//           group.latest_invoice_no || "N/A",
+
+//         // ✅ CORRECT SITE ID
+//         site_id: latestBill.site_id,
+
+//         // ✅ BOM ID
+//         bom_id: latestBill.bom_id,
+
+//         // ✅ REP TASK
+//         rep_task: latestBill.rep_task,
+
+//         billing_unit: group.billing_unit,
+//         billing_rate: group.billing_rate,
+
+//         boq_qty: group.boq_qty,
+//         boq_rate: group.boq_rate,
+//         boq_amount: group.boq_amount,
+//         boq_hsn: group.boq_hsn,
+
+//         previous_quantity: Number(
+//           latestBill.previous_quantity || 0
+//         ),
+
+//         this_bill_quantity: Number(
+//           latestBill.this_bill_quantity || 0
+//         ),
+
+//         cumulative_quantity: Number(
+//           latestBill.cumulative_quantity || 0
+//         ),
+
+//         previous_amount: Number(
+//           latestBill.previous_amount || 0
+//         ),
+
+//         this_bill_amount: Number(
+//           latestBill.this_bill_amount || 0
+//         ),
+
+//         cumulative_amount: Number(
+//           latestBill.cumulative_amount || 0
+//         ),
+//       };
+//     });
+
+//     // ── LATEST INVOICE ─────────────────────────────
+//     const latestInvoice = rows.reduce((max, row) => {
+//       return (
+//         !max ||
+//         row.work_billing_order_id >
+//           max.work_billing_order_id
+//       )
+//         ? row
+//         : max;
+//     }, null);
+
+//     // ── BILL DETAILS ─────────────────────────────
+//     const bill_details = {
+//       invoice_no: latestInvoice?.invoice_no || "N/A",
+
+//       client_id: projectMeta?.client_id || "N/A",
+//       client_name: projectMeta?.client_name || "N/A",
+//       client_type: projectMeta?.client_type || "N/A",
+
+//       client_mobile:
+//         projectMeta?.client_mobile || "N/A",
+
+//       client_phone:
+//         projectMeta?.client_phone || "N/A",
+
+//       client_email:
+//         projectMeta?.client_email || "N/A",
+
+//       client_address:
+//         projectMeta?.client_address || "N/A",
+
+//       date: projectMeta?.site_from_date || "N/A",
+
+//       place_of_delivery:
+//         projectMeta?.site_address || "N/A",
+
+//       to_date:
+//         projectMeta?.site_to_date || "N/A",
+
+//       project_id:
+//         projectMeta?.site_project_id || "N/A",
+//     };
+
+//     // ── FINAL RESPONSE ─────────────────────────────
+//     return res.status(200).json({
+//       success: true,
+//       total: result.length,
+//       bill_details,
+//       data: result,
+//     });
+
+//   } catch (error) {
+//     console.error(
+//       "Error in getAllWorkBillingByProjectId:",
+//       error
+//     );
+
+//     return res.status(500).json({
+//       success: false,
+//       message: "Unable to fetch billing orders",
+//       error: error.message,
+//     });
+//   }
+// };
+
+ getAllWorkBillingByProjectId = async (req, res) => {
+  try {
+    const rawProjectId = req?.body?.project_id;
+
+    // ── VALIDATION ─────────────────────────────────────────────
+    if (
+      rawProjectId === undefined ||
+      rawProjectId === null ||
+      rawProjectId === ""
+    ) {
       return res.status(400).json({
         success: false,
         message: "project_id is required in request body",
       });
     }
 
+    const project_id = Number(rawProjectId);
+
+    if (!Number.isInteger(project_id) || project_id <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "project_id must be a valid positive integer",
+      });
+    }
+
+    // Small numeric helper, avoids repeated Number(...) noise
+    const toNumber = (value) => {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : 0;
+    };
+
     // ── PROJECT + CLIENT + SITE META ─────────────────────────────
+    // LIMIT 1 kept intentionally to preserve existing logic,
+    // but ORDER BY added for deterministic row selection.
     const projectSql = `
       SELECT
         cl.client_id,
@@ -1349,18 +2055,25 @@ getAllWorkBillingByProjectId = async (req, res) => {
         ON mps.project_id = mp.project_id
 
       WHERE mp.project_id = ?
+      ORDER BY mps.project_site_id ASC
       LIMIT 1
     `;
 
-    const projectMeta = await customSelectSqlQuery2(projectSql, [project_id], false);
+    const projectMeta = await customSelectSqlQuery2(
+      projectSql,
+      [project_id],
+      false
+    );
 
     // ── BILLING DATA ─────────────────────────────────────────────
     const sql = `
       SELECT
         wbo.work_billing_order_id,
         wbo.invoice_no,
+
         wbo.project_id,
         wbo.project_site_id,
+
         wbo.work_description,
         wbo.billing_unit,
         wbo.billing_qty,
@@ -1377,9 +2090,11 @@ getAllWorkBillingByProjectId = async (req, res) => {
         wbo.previous_quantity,
         wbo.this_bill_quantity,
         wbo.cumulative_quantity,
+
         wbo.previous_amount,
         wbo.this_bill_amount,
         wbo.cumulative_amount,
+
         wbo.cgst_amt,
         wbo.sgst_amt,
         wbo.igst_amt,
@@ -1392,11 +2107,11 @@ getAllWorkBillingByProjectId = async (req, res) => {
         bmd.billing_material_detail_id,
         bmd.work_progress_site_id,
         bmd.bom_id,
-        bmd.bomUnitOfLength     AS detail_bom_unit_of_length,
+        bmd.bomUnitOfLength AS detail_bom_unit_of_length,
         bmd.bom_unit,
         bmd.bom_qty,
         bmd.bom_price,
-        bmd.bom_amount          AS detail_bom_amount,
+        bmd.bom_amount AS detail_bom_amount,
         bmd.progress_step_name,
         bmd.step_sl_number,
         bmd.product_id,
@@ -1405,7 +2120,9 @@ getAllWorkBillingByProjectId = async (req, res) => {
         bmd.unit,
         bmd.qty_per_bom,
         bmd.required_qty,
-        bmd.used_qty
+        bmd.used_qty,
+
+        tpde.rep_task
 
       FROM work_billing_order AS wbo
 
@@ -1416,16 +2133,24 @@ getAllWorkBillingByProjectId = async (req, res) => {
       LEFT JOIN billing_material_detail AS bmd
         ON bmd.work_billing_order_id = wbo.work_billing_order_id
 
+      LEFT JOIN tx_project_details_with_estimation AS tpde
+        ON tpde.project_id = wbo.project_id
+        AND tpde.site_id = wbo.project_site_id
+        AND tpde.bom_id = bmd.bom_id
+
       WHERE wbo.project_id = ?
+
       ORDER BY
         wbo.work_description ASC,
         wbo.work_billing_order_id ASC,
-        bmd.step_sl_number ASC
+        bmd.step_sl_number ASC,
+        bmd.billing_material_detail_id ASC
     `;
 
     const rows = await customSelectSqlQuery2(sql, [project_id], true);
 
-    if (!rows || rows.length === 0) {
+    // ── NO DATA ─────────────────────────────────────────────
+    if (!Array.isArray(rows) || rows.length === 0) {
       return res.status(404).json({
         success: false,
         message: "No billing orders found for this project",
@@ -1433,67 +2158,99 @@ getAllWorkBillingByProjectId = async (req, res) => {
     }
 
     // ── STEP 1: BUILD ORDER MAP ─────────────────────────────
-    const orderMap = {};
+    // Use Map for safer keyed access and stable insertion order.
+    const orderMap = new Map();
     const orderIndex = [];
 
-    rows.forEach((row) => {
+    for (const row of rows) {
       const orderId = row.work_billing_order_id;
 
-      if (!orderMap[orderId]) {
-        orderMap[orderId] = {
+      if (!orderMap.has(orderId)) {
+        orderMap.set(orderId, {
           work_billing_order_id: orderId,
           invoice_no: row.invoice_no,
+
           project_id: row.project_id,
           project_site_id: row.project_site_id,
+
           work_description: row.work_description,
+          site_id: row.project_site_id || null,
+
+          bom_id: row.bom_id || null,
+          rep_task: row.rep_task || "",
 
           billing_unit: row.billing_unit,
-          billing_qty: Number(row.billing_qty || 0),
-          billing_rate: Number(row.billing_rate || 0),
-          billing_amount: Number(row.billing_amount || 0),
+          billing_qty: toNumber(row.billing_qty),
+          billing_rate: toNumber(row.billing_rate),
+          billing_amount: toNumber(row.billing_amount),
 
-          previous_quantity: Number(row.previous_quantity || 0),
-          this_bill_quantity: Number(row.this_bill_quantity || 0),
-          cumulative_quantity: Number(row.cumulative_quantity || 0),
+          previous_quantity: toNumber(row.previous_quantity),
+          this_bill_quantity: toNumber(row.this_bill_quantity),
+          cumulative_quantity: toNumber(row.cumulative_quantity),
 
-          previous_amount: Number(row.previous_amount || 0),
-          this_bill_amount: Number(row.this_bill_amount || 0),
-          cumulative_amount: Number(row.cumulative_amount || 0),
+          previous_amount: toNumber(row.previous_amount),
+          this_bill_amount: toNumber(row.this_bill_amount),
+          cumulative_amount: toNumber(row.cumulative_amount),
 
-          boq_qty: Number(row.boq_qty || 0),
-          boq_rate: Number(row.boq_rate || 0),
-          boq_amount: Number(row.boq_amount || 0),
+          boq_qty: toNumber(row.boq_qty),
+          boq_rate: toNumber(row.boq_rate),
+          boq_amount: toNumber(row.boq_amount),
           boq_hsn: row.boq_hsn_code || "",
 
           invoice_date: row.invoice_date,
           material_details: [],
-        };
+          _materialIds: new Set(), // internal dedupe guard
+        });
 
         orderIndex.push(orderId);
       }
 
-      if (row.billing_material_detail_id) {
-        orderMap[orderId].material_details.push({
+      const order = orderMap.get(orderId);
+
+      // Preserve first non-null bom_id / rep_task exactly in spirit of current logic
+      if (order.bom_id == null && row.bom_id != null) {
+        order.bom_id = row.bom_id;
+      }
+
+      if (!order.rep_task && row.rep_task) {
+        order.rep_task = row.rep_task;
+      }
+
+      // ── MATERIAL DETAILS ─────────────────────────────
+      if (
+        row.billing_material_detail_id &&
+        !order._materialIds.has(row.billing_material_detail_id)
+      ) {
+        order._materialIds.add(row.billing_material_detail_id);
+
+        order.material_details.push({
           billing_material_detail_id: row.billing_material_detail_id,
           product_name: row.product_name,
-          qty_per_bom: Number(row.qty_per_bom || 0),
-          required_qty: Number(row.required_qty || 0),
-          used_qty: Number(row.used_qty || 0),
+          qty_per_bom: toNumber(row.qty_per_bom),
+          required_qty: toNumber(row.required_qty),
+          used_qty: toNumber(row.used_qty),
         });
       }
-    });
+    }
+
+    // remove internal sets to keep response clean
+    for (const orderId of orderIndex) {
+      const order = orderMap.get(orderId);
+      delete order._materialIds;
+    }
 
     // ── STEP 2: GROUP BY WORK DESCRIPTION ─────────────────────
-    const descMap = {};
+    const descMap = new Map();
     const descOrder = [];
 
-    orderIndex.forEach((id) => {
-      const order = orderMap[id];
+    for (const id of orderIndex) {
+      const order = orderMap.get(id);
       const key = `${order.project_site_id}_${order.work_description}`;
 
-      if (!descMap[key]) {
-        descMap[key] = {
+      if (!descMap.has(key)) {
+        descMap.set(key, {
           work_description: order.work_description,
+
           billing_unit: order.billing_unit,
           billing_rate: order.billing_rate,
 
@@ -1505,28 +2262,44 @@ getAllWorkBillingByProjectId = async (req, res) => {
           bills: [],
           latest_order_id: 0,
           latest_invoice_no: null,
-        };
+        });
 
         descOrder.push(key);
       }
 
-      descMap[key].bills.push(order);
+      const group = descMap.get(key);
+      group.bills.push(order);
 
-      // ✅ FIX: latest invoice using MAX ID
-      if (order.work_billing_order_id > descMap[key].latest_order_id) {
-        descMap[key].latest_order_id = order.work_billing_order_id;
-        descMap[key].latest_invoice_no = order.invoice_no;
+      if (order.work_billing_order_id > group.latest_order_id) {
+        group.latest_order_id = order.work_billing_order_id;
+        group.latest_invoice_no = order.invoice_no;
       }
-    });
+    }
 
-    // ── STEP 3: BUILD RESULT ─────────────────────────────
+    // ── STEP 3: BUILD FINAL RESULT ─────────────────────────────
     const result = descOrder.map((key) => {
-      const group = descMap[key];
-      const latestBill = group.bills[group.bills.length - 1];
+      const group = descMap.get(key);
+
+      // Use actual highest order ID bill deterministically,
+      // not merely last array item.
+      let latestBill = group.bills[0];
+
+      for (let i = 1; i < group.bills.length; i++) {
+        if (
+          group.bills[i].work_billing_order_id >
+          latestBill.work_billing_order_id
+        ) {
+          latestBill = group.bills[i];
+        }
+      }
 
       return {
         work_description: group.work_description,
         invoice_no: group.latest_invoice_no || "N/A",
+
+        site_id: latestBill.site_id,
+        bom_id: latestBill.bom_id,
+        rep_task: latestBill.rep_task,
 
         billing_unit: group.billing_unit,
         billing_rate: group.billing_rate,
@@ -1536,30 +2309,35 @@ getAllWorkBillingByProjectId = async (req, res) => {
         boq_amount: group.boq_amount,
         boq_hsn: group.boq_hsn,
 
-        previous_quantity: Number(latestBill.previous_quantity || 0),
-        this_bill_quantity: Number(latestBill.this_bill_quantity || 0),
-        cumulative_quantity: Number(latestBill.cumulative_quantity || 0),
+        previous_quantity: toNumber(latestBill.previous_quantity),
+        this_bill_quantity: toNumber(latestBill.this_bill_quantity),
+        cumulative_quantity: toNumber(latestBill.cumulative_quantity),
 
-        previous_amount: Number(latestBill.previous_amount || 0),
-        this_bill_amount: Number(latestBill.this_bill_amount || 0),
-        cumulative_amount: Number(latestBill.cumulative_amount || 0),
+        previous_amount: toNumber(latestBill.previous_amount),
+        this_bill_amount: toNumber(latestBill.this_bill_amount),
+        cumulative_amount: toNumber(latestBill.cumulative_amount),
       };
     });
 
-    // ── OPTIONAL: OVERALL LATEST INVOICE ─────────────────────
-    const latestInvoice = rows.reduce((max, row) => {
-      return (!max || row.work_billing_order_id > max.work_billing_order_id)
-        ? row
-        : max;
-    }, null);
+    // ── LATEST INVOICE ─────────────────────────────
+    let latestInvoice = rows[0];
+    for (let i = 1; i < rows.length; i++) {
+      if (
+        rows[i].work_billing_order_id >
+        latestInvoice.work_billing_order_id
+      ) {
+        latestInvoice = rows[i];
+      }
+    }
 
-    // ── STEP 4: BILL DETAILS ─────────────────────────────
+    // ── BILL DETAILS ─────────────────────────────
     const bill_details = {
       invoice_no: latestInvoice?.invoice_no || "N/A",
 
       client_id: projectMeta?.client_id || "N/A",
       client_name: projectMeta?.client_name || "N/A",
       client_type: projectMeta?.client_type || "N/A",
+
       client_mobile: projectMeta?.client_mobile || "N/A",
       client_phone: projectMeta?.client_phone || "N/A",
       client_email: projectMeta?.client_email || "N/A",
@@ -1578,13 +2356,16 @@ getAllWorkBillingByProjectId = async (req, res) => {
       bill_details,
       data: result,
     });
-
   } catch (error) {
-    console.error("Error:", error.message);
+    console.error("Error in getAllWorkBillingByProjectId:", {
+      message: error?.message,
+      stack: error?.stack,
+      body: req?.body,
+    });
+
     return res.status(500).json({
       success: false,
       message: "Unable to fetch billing orders",
-      error: error.message,
     });
   }
 };
