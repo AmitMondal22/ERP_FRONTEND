@@ -15,19 +15,59 @@ const {
 } = require("../models/MasterModel");
 
 class WorkBillingController {
+// ─────────────────────────────────────────────────────────────────
+//  HELPER: generate invoice_no = WO-YYYY-MM-DD/N
+//
+//  Uses MAX(sequence) — safe against deletions, gaps, and retries.
+//  countRows() was WRONG: if /2 was deleted, count=1 → tries /2 again → DUPLICATE.
+//  MAX(seq) always moves forward: if /2 was deleted, max=3 → next = 4. Safe.
+// ─────────────────────────────────────────────────────────────────
+// #generateInvoiceNo = async (date) => {
+//   const dateStr = dayjs(date).format("YYYY-MM-DD");
 
-  // ─────────────────────────────────────────────
-  //  HELPER: generate invoice_no = WO-YYYY-MM-DD/N
-  // ─────────────────────────────────────────────
-  #generateInvoiceNo = async (date) => {
-    const dateStr = dayjs(date).format("YYYY-MM-DD");
-    const count = await countRows(
-      "work_billing_order",
-      `invoice_date = '${dateStr}'`
-    );
-    return `WO-${dateStr}/${count + 1}`;
-  };
+//   const rows = await customSelectSqlQuery2(
+//     `SELECT COALESCE(
+//        MAX(CAST(SUBSTRING_INDEX(invoice_no, '/', -1) AS UNSIGNED)),
+//        0
+//      ) AS max_seq
+//      FROM work_billing_order
+//      WHERE invoice_date = ?`,
+//     [dateStr],
+//     true
+//   );
 
+//   const maxSeq  = parseInt(rows[0]?.max_seq ?? 0, 10) || 0;
+//   const nextSeq = maxSeq + 1;
+
+//   return `WO-${dateStr}/${nextSeq}`;
+// };
+
+// ─────────────────────────────────────────────────────────────────
+//  HELPER: generate invoice_no = WO-YYYY-MM-DD/N
+//
+//  Uses MAX(sequence) — safe against deletions, gaps, and retries.
+//  countRows() was WRONG: if /2 was deleted, count=1 → tries /2 again → DUPLICATE.
+//  MAX(seq) always moves forward: if /2 was deleted, max=3 → next = 4. Safe.
+// ─────────────────────────────────────────────────────────────────
+#generateInvoiceNo = async (date) => {
+  const dateStr = dayjs(date).format("YYYY-MM-DD");
+
+  const rows = await customSelectSqlQuery2(
+    `SELECT COALESCE(
+       MAX(CAST(SUBSTRING_INDEX(invoice_no, '/', -1) AS UNSIGNED)),
+       0
+     ) AS max_seq
+     FROM work_billing_order
+     WHERE invoice_date = ?`,
+    [dateStr],
+    true
+  );
+
+  const maxSeq  = parseInt(rows[0]?.max_seq ?? 0, 10) || 0;
+  const nextSeq = maxSeq + 1;
+
+  return `WO-${dateStr}/${nextSeq}`;
+};
 
   // ─────────────────────────────────────────────
   //  CREATE  POST /work-billing
@@ -443,16 +483,25 @@ createWorkBilling = async (req, res) => {
     // ════════════════════════════════════════════════════════════════
     // STEP 9 — Generate invoice_no & timestamps
     // ════════════════════════════════════════════════════════════════
-    const invoice_no = await this.#generateInvoiceNo(invoice_date);
-    const now        = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
-    const created_by = req.user?.id || null;
+    // const invoice_no = await this.#generateInvoiceNo(invoice_date);
+    // const now        = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+    // const created_by = req.user?.id || null;
 
-    // ════════════════════════════════════════════════════════════════
-    // STEP 10 — Insert work_billing_order row
-    //   NOTE: bomUnitOfLength is NOT a column here —
-    //         it lives only in billing_material_detail.
-    // ════════════════════════════════════════════════════════════════
-    const work_billing_order_id = await insertData("work_billing_order", {
+    const now        = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+const created_by = req.user?.id || null;
+
+let work_billing_order_id = null;
+let invoice_no            = null;
+let lastInsertError       = null;
+
+for (let attempt = 1; attempt <= 5; attempt++) {
+  try {
+    // Re-read MAX on every attempt so we always get a fresh sequence number
+    invoice_no = await this.#generateInvoiceNo(invoice_date);
+
+    console.log(`[createWorkBilling] Attempting insert with invoice_no="${invoice_no}" (attempt ${attempt})`);
+
+    work_billing_order_id = await insertData("work_billing_order", {
       invoice_no,
       project_id:           Number(project_id),
       project_site_id:      Number(project_site_id),
@@ -464,13 +513,12 @@ createWorkBilling = async (req, res) => {
       boms_completed_count: bomsCompleted,
       billing_status,
       invoice_date,
-      // ── running-total columns ───────────────────────────
-      previous_quantity,    // SUM of all past this_bill_quantity (0 on first bill)
-      this_bill_quantity,   // bomsCompleted (e.g. 2)
-      cumulative_quantity,  // previous + this  (e.g. 0 + 2 = 2)
-      previous_amount,      // SUM of all past this_bill_amount (0 on first bill)
-      this_bill_amount,     // bomsCompleted × bom_price (e.g. 2 × 4000 = 8000)
-      cumulative_amount,    // previous_amount + this_bill_amount (e.g. 0 + 8000 = 8000)
+      previous_quantity,
+      this_bill_quantity,
+      cumulative_quantity,
+      previous_amount,
+      this_bill_amount,
+      cumulative_amount,
       cgst_amt:  parseFloat(cgst_amt)  || 0,
       sgst_amt:  parseFloat(sgst_amt)  || 0,
       igst_amt:  parseFloat(igst_amt)  || 0,
@@ -480,9 +528,72 @@ createWorkBilling = async (req, res) => {
       updated_at: now,
     });
 
-    if (!work_billing_order_id) {
-      throw new Error("insertData returned falsy for work_billing_order — check DB constraints");
+    // ✅ Insert succeeded — exit the retry loop
+    lastInsertError = null;
+    break;
+
+  } catch (insertErr) {
+    // Only retry on invoice_no duplicate — all other errors rethrow immediately
+    const isDuplicateInvoice =
+      insertErr?.code === "ER_DUP_ENTRY" &&
+      insertErr?.message?.includes("invoice_no");
+
+    if (isDuplicateInvoice) {
+      console.warn(
+        `[createWorkBilling] invoice_no collision on "${invoice_no}", attempt=${attempt}. Retrying...`
+      );
+      lastInsertError = insertErr;
+      continue; // re-read MAX and try again
     }
+
+    // Any other DB error (wrong column, constraint, etc.) — fail immediately
+    throw insertErr;
+  }
+}
+
+// If all 5 attempts failed (extremely unlikely — means 5 concurrent requests hit same second)
+if (!work_billing_order_id) {
+  throw lastInsertError ?? new Error(
+    `[createWorkBilling] Failed to insert work_billing_order after 5 attempts — invoice_no collision unresolvable`
+  );
+}
+
+    // ════════════════════════════════════════════════════════════════
+    // STEP 10 — Insert work_billing_order row
+    //   NOTE: bomUnitOfLength is NOT a column here —
+    //         it lives only in billing_material_detail.
+    // ════════════════════════════════════════════════════════════════
+    // const work_billing_order_id = await insertData("work_billing_order", {
+    //   invoice_no,
+    //   project_id:           Number(project_id),
+    //   project_site_id:      Number(project_site_id),
+    //   work_description,
+    //   billing_unit,
+    //   billing_qty:          parseFloat(billing_qty)    || 0,
+    //   billing_rate:         parseFloat(billing_rate)   || 0,
+    //   billing_amount:       parseFloat(billing_amount) || 0,
+    //   boms_completed_count: bomsCompleted,
+    //   billing_status,
+    //   invoice_date,
+    //   // ── running-total columns ───────────────────────────
+    //   previous_quantity,    // SUM of all past this_bill_quantity (0 on first bill)
+    //   this_bill_quantity,   // bomsCompleted (e.g. 2)
+    //   cumulative_quantity,  // previous + this  (e.g. 0 + 2 = 2)
+    //   previous_amount,      // SUM of all past this_bill_amount (0 on first bill)
+    //   this_bill_amount,     // bomsCompleted × bom_price (e.g. 2 × 4000 = 8000)
+    //   cumulative_amount,    // previous_amount + this_bill_amount (e.g. 0 + 8000 = 8000)
+    //   cgst_amt:  parseFloat(cgst_amt)  || 0,
+    //   sgst_amt:  parseFloat(sgst_amt)  || 0,
+    //   igst_amt:  parseFloat(igst_amt)  || 0,
+    //   remarks:   remarks?.trim() || null,
+    //   created_by,
+    //   created_at: now,
+    //   updated_at: now,
+    // });
+
+    // if (!work_billing_order_id) {
+    //   throw new Error("insertData returned falsy for work_billing_order — check DB constraints");
+    // }
 
     // ════════════════════════════════════════════════════════════════
     // STEP 11 — Build de-duplicated detail rows
