@@ -7,36 +7,108 @@ dayjs.extend(utc);
 
 class projectSiteController{
 
-    createProjectSite = async (req,res) => {
-        try {
-            const { project_site_name,address, city_id, project_id,is_time_extended, from_date, to_date} = req.body;
-            const insertValues = {
-                project_site_name,
-                address,
-                city_id,
-                project_id,
-                from_date,
-                is_time_extended,
-                to_date,
-                create_by: req.user.id,
-                created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
-            };
-            const insertedId = await insertData("md_project_site", insertValues);
-            return res.status(200).json({
-            success: true,
-            message: "Project Site created",
-            data: insertedId
-            });
-        } catch (error) {
-            return res.status(500).json({
-                success: false,
-                message: "Failed to create project Site",
-                error: error.message
-            });
-        }
+    // createProjectSite = async (req,res) => {
+    //     try {
+    //         const { project_site_name,address, city_id, project_id,is_time_extended, from_date, to_date} = req.body;
+    //         const insertValues = {
+    //             project_site_name,
+    //             address,
+    //             city_id,
+    //             project_id,
+    //             from_date,
+    //             is_time_extended,
+    //             to_date,
+    //             create_by: req.user.id,
+    //             created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
+    //         };
+    //         const insertedId = await insertData("md_project_site", insertValues);
+    //         return res.status(200).json({
+    //         success: true,
+    //         message: "Project Site created",
+    //         data: insertedId
+    //         });
+    //     } catch (error) {
+    //         return res.status(500).json({
+    //             success: false,
+    //             message: "Failed to create project Site",
+    //             error: error.message
+    //         });
+    //     }
         
-    }
+    // }
  
+
+    
+createProjectSite = async (req, res) => {
+    try {
+
+        const {
+            project_site_name,
+            address,
+            city_id,
+            project_id,
+            is_time_extended,
+            from_date,
+            to_date
+        } = req.body;
+
+        // ✅ Convert frontend value to ENUM('Y','N')
+        let formattedTimeExtended = null;
+
+        if (
+            is_time_extended === true ||
+            is_time_extended === "true" ||
+            is_time_extended === "Yes" ||
+            is_time_extended === "Y"
+        ) {
+            formattedTimeExtended = "Y";
+        } else if (
+            is_time_extended === false ||
+            is_time_extended === "false" ||
+            is_time_extended === "No" ||
+            is_time_extended === "N"
+        ) {
+            formattedTimeExtended = "N";
+        }
+
+        const insertValues = {
+            project_site_name,
+            address,
+            city_id,
+            project_id,
+            from_date,
+            is_time_extended: formattedTimeExtended,
+            to_date,
+            create_by: req.user.id,
+            created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
+        };
+
+        console.log("INSERT VALUES =>", insertValues);
+
+        const insertedId = await insertData(
+            "md_project_site",
+            insertValues
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: "Project Site created successfully",
+            data: insertedId
+        });
+
+    } catch (error) {
+
+        console.error("CREATE PROJECT SITE ERROR:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to create project site",
+            error: error.message
+        });
+    }
+};
+
+
 
  getAllProjectsSite = async (req, res) => {
   try {
@@ -223,67 +295,143 @@ class projectSiteController{
 
 
 
+// async getProjectSiteByProjectId(req, res) {
+//   try {
+//     const { id } = req.params; // project_id
+
+//     if (!id || isNaN(id)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid project id",
+//       });
+//     }
+
+//     // 🔹 JOIN tables
+//     const table = `
+//       md_project_site AS a
+//       JOIN lo_cities AS b ON a.city_id = b.id
+//       JOIN lo_states AS c ON b.state_id = c.id
+//       JOIN md_project AS d ON a.project_id = d.project_id
+//     `;
+
+//     // 🔹 Select fields
+//     const select = `
+//       a.project_site_id,
+//       a.project_site_name,
+//       a.address,
+//       a.city_id,
+//       b.state_id,              -- important for dropdown
+//       a.project_id,
+//       a.from_date,
+//       a.to_date,
+//       a.is_time_extended,
+//       b.name AS city_name,
+//       c.name AS state_name,
+//       d.project_name
+//     `;
+
+//     // 🔹 Condition (filter by project_id)
+//     const condition = `a.project_id = ${Number(id)}`;
+
+//     // 🔹 Order by
+//     const orderBy = `a.project_site_name ASC`;
+
+//     // 🔹 Fetch multiple rows
+//     const result = await selectData(table, select, condition, orderBy);
+
+//     return res.status(200).json({
+//       success: true,
+//       data: result || [],
+//     });
+
+//   } catch (error) {
+//     console.error("Error in getProjectSiteByProjectId:", error);
+
+//     return res.status(500).json({
+//       success: false,
+//       message: "Unable to fetch project sites",
+//     });
+//   }
+// }
 async getProjectSiteByProjectId(req, res) {
   try {
-    const { id } = req.params; // project_id
+    const siteId = Number(req.params.id);
 
-    if (!id || isNaN(id)) {
+    // =========================
+    // 1. Validate input
+    // =========================
+    if (!siteId || !Number.isInteger(siteId) || siteId <= 0) {
       return res.status(400).json({
         success: false,
-        message: "Invalid project id",
+        message: "Invalid project site id",
       });
     }
 
-    // 🔹 JOIN tables
-    const table = `
-      md_project_site AS a
-      JOIN lo_cities AS b ON a.city_id = b.id
-      JOIN lo_states AS c ON b.state_id = c.id
-      JOIN md_project AS d ON a.project_id = d.project_id
-    `;
+    // =========================
+    // 2. Query with LEFT JOIN (safe for production)
+    // =========================
+    const sql = `
+  SELECT
+    a.project_site_id,
+    a.project_site_name,
+    a.address,
+    a.city_id,
+    a.project_id,
+    a.from_date,
+    a.to_date,
+    a.is_time_extended,
+    a.create_by,
+    a.created_at,
+    a.updated_at,
 
-    // 🔹 Select fields
-    const select = `
-      a.project_site_id,
-      a.project_site_name,
-      a.address,
-      a.city_id,
-      b.state_id,              -- important for dropdown
-      a.project_id,
-      a.from_date,
-      a.to_date,
-      a.is_time_extended,
-      b.name AS city_name,
-      c.name AS state_name,
-      d.project_name
-    `;
+    b.name      AS city_name,
+    b.state_id  AS state_id,   -- ← ADD THIS
+    c.name      AS state_name
 
-    // 🔹 Condition (filter by project_id)
-    const condition = `a.project_id = ${Number(id)}`;
+  FROM md_project_site AS a
+  LEFT JOIN lo_cities  AS b ON a.city_id   = b.id
+  LEFT JOIN lo_states  AS c ON b.state_id  = c.id
+  WHERE a.project_site_id = ?
+  LIMIT 1
+`;
 
-    // 🔹 Order by
-    const orderBy = `a.project_site_name ASC`;
+    // =========================
+    // 3. Execute safely
+    // =========================
+    const result = await customSelectSqlQuery2(sql, [siteId], true);
 
-    // 🔹 Fetch multiple rows
-    const result = await selectData(table, select, condition, orderBy);
+    // =========================
+    // 4. Handle empty result
+    // =========================
+    if (!result || result.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Project site not found",
+      });
+    }
 
-    return res.status(200).json({
-      success: true,
-      data: result || [],
-    });
+    // =========================
+    // 5. Success response
+    // =========================
+   const site = result[0];
+site.is_time_extended = site.is_time_extended === 1 ? "Y"
+                      : site.is_time_extended === 0 ? "N"
+                      : null;
+
+return res.status(200).json({
+  success: true,
+  data: site,
+});
 
   } catch (error) {
-    console.error("Error in getProjectSiteByProjectId:", error);
+    console.error("getProjectSiteById ERROR:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Unable to fetch project sites",
+      message: "Unable to fetch project site",
     });
   }
 }
-
-
-
 
 
 
