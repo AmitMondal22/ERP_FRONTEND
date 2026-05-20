@@ -320,7 +320,7 @@ class projectBillingController {
   createBillingItem = async (req, res) => {
   try {
     const {
-      project_id,
+      project_id,   
       project_work_description,
       hsn_code,
       unit,

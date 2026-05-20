@@ -295,65 +295,68 @@ createProjectSite = async (req, res) => {
 
 
 
-// async getProjectSiteByProjectId(req, res) {
-//   try {
-//     const { id } = req.params; // project_id
-
-//     if (!id || isNaN(id)) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Invalid project id",
-//       });
-//     }
-
-//     // 🔹 JOIN tables
-//     const table = `
-//       md_project_site AS a
-//       JOIN lo_cities AS b ON a.city_id = b.id
-//       JOIN lo_states AS c ON b.state_id = c.id
-//       JOIN md_project AS d ON a.project_id = d.project_id
-//     `;
-
-//     // 🔹 Select fields
-//     const select = `
-//       a.project_site_id,
-//       a.project_site_name,
-//       a.address,
-//       a.city_id,
-//       b.state_id,              -- important for dropdown
-//       a.project_id,
-//       a.from_date,
-//       a.to_date,
-//       a.is_time_extended,
-//       b.name AS city_name,
-//       c.name AS state_name,
-//       d.project_name
-//     `;
-
-//     // 🔹 Condition (filter by project_id)
-//     const condition = `a.project_id = ${Number(id)}`;
-
-//     // 🔹 Order by
-//     const orderBy = `a.project_site_name ASC`;
-
-//     // 🔹 Fetch multiple rows
-//     const result = await selectData(table, select, condition, orderBy);
-
-//     return res.status(200).json({
-//       success: true,
-//       data: result || [],
-//     });
-
-//   } catch (error) {
-//     console.error("Error in getProjectSiteByProjectId:", error);
-
-//     return res.status(500).json({
-//       success: false,
-//       message: "Unable to fetch project sites",
-//     });
-//   }
-// }
 async getProjectSiteByProjectId(req, res) {
+  try {
+    const { id } = req.params; // project_id
+
+    if (!id || isNaN(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid project id",
+      });
+    }
+
+    // 🔹 JOIN tables
+    const table = `
+      md_project_site AS a
+      JOIN lo_cities AS b ON a.city_id = b.id
+      JOIN lo_states AS c ON b.state_id = c.id
+      JOIN md_project AS d ON a.project_id = d.project_id
+    `;
+
+    // 🔹 Select fields
+    const select = `
+      a.project_site_id,
+      a.project_site_name,
+      a.address,
+      a.city_id,
+      b.state_id,              -- important for dropdown
+      a.project_id,
+      a.from_date,
+      a.to_date,
+      a.is_time_extended,
+      b.name AS city_name,
+      c.name AS state_name,
+      d.project_name
+    `;
+
+    // 🔹 Condition (filter by project_id)
+    const condition = `a.project_id = ${Number(id)}`;
+
+    // 🔹 Order by
+    const orderBy = `a.project_site_name ASC`;
+
+    // 🔹 Fetch multiple rows
+    const result = await selectData(table, select, condition, orderBy);
+
+    return res.status(200).json({
+      success: true,
+      data: result || [],
+    });
+
+  } catch (error) {
+    console.error("Error in getProjectSiteByProjectId:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch project sites",
+    });
+  }
+}
+
+
+
+async getProjectSiteBySiteId(req, res) {
   try {
     const siteId = Number(req.params.id);
 
@@ -436,7 +439,9 @@ return res.status(200).json({
 
 
 
-//////////////////////////////
+//////////////////////////
+
+
 
 async getProjectSiteById(req, res) {///////
   try {
