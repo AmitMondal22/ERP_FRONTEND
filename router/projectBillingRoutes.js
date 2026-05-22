@@ -9,7 +9,7 @@ router.post("/api/createprojectbilling", authcheck,projectBillingController.crea
 // GET ALL
 router.get("/api/getprojectbillingdetailsbyId/:id",authcheck,projectBillingController.getBillingItemById);
 
-// GET BY PROJECT ID
+// GET BY PROJECT ID 
 router.get("/api/getprojectbillingbyprojectid/:id",authcheck,projectBillingController.getBillingItemsByProjectId);
 
 // UPDATE

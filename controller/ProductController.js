@@ -59,26 +59,72 @@ class productController {
 
 getAllProducts = async (req, res) => {
   try {
-    const products = await customSelectSqlQuery(`
-      SELECT 
-        p.product_id,
-        p.product_type_id,
-        pt.product_type_name,      -- fetch the name
-        p.product_name,
-        p.model_no, 
-        p.uom_id,
-        p.unit_id,
-        u.unit_name,
-        p.hsn_code,
-        p.qty,
-        p.manufacturer_name,
-        p.product_image,
-        p.created_by
-      FROM md_product p
-      INNER JOIN md_unit u ON p.unit_id = u.unit_id
-      INNER JOIN md_product_type pt ON p.product_type_id = pt.product_type_id
-      ORDER BY p.product_id DESC
-    `, true);  // fetch all rows
+    // const products = await customSelectSqlQuery(`
+    //   SELECT 
+    //     p.product_id,
+    //     p.product_type_id,
+    //     pt.product_type_name,      -- fetch the name
+    //     p.product_name,
+    //     p.model_no, 
+    //     p.uom_id,
+    //     p.unit_id,
+    //     u.unit_name,
+    //     p.hsn_code,
+    //     p.qty,
+    //     p.manufacturer_name,
+    //     p.product_image,
+    //     p.created_by
+    //   FROM md_product p
+    //   INNER JOIN md_unit u ON p.unit_id = u.unit_id
+    //   INNER JOIN md_product_type pt ON p.product_type_id = pt.product_type_id
+    //   ORDER BY p.product_id DESC
+    // `, true);  // fetch all rows
+
+      
+
+    
+const products = await customSelectSqlQuery(`
+  SELECT 
+    p.product_id,
+    p.product_type_id,
+    pt.product_type_name,
+
+    p.product_name,
+    p.model_no, 
+
+    p.unit_id,
+    u.unit_name AS unit_name,
+
+    p.uom_id,
+    um.unit_name AS uom_name,
+
+    p.hsn_code,
+    p.qty,
+    p.manufacturer_name,
+    p.product_image,
+    p.created_by
+
+  FROM md_product p
+
+  INNER JOIN md_unit u 
+    ON p.unit_id = u.unit_id
+
+  LEFT JOIN md_unit um 
+    ON p.uom_id = um.unit_id
+
+  INNER JOIN md_product_type pt 
+    ON p.product_type_id = pt.product_type_id
+
+  ORDER BY p.product_name ASC
+`, true);
+
+
+
+
+
+
+
+
 
     res.status(200).json({
       success: true,

@@ -1,5 +1,3 @@
-/////////////////////////////////////////////////////////////////////////////
-
 // dayjs = require("dayjs");
 // const utc = require("dayjs/plugin/utc");
 // dayjs.extend(utc);
@@ -8,7 +6,6 @@
 //   insertData,
 //   updateData,
 //   deleteData,
-//   selectOneData,
 //   customSelectSqlQuery,
 // } = require("../models/MasterModel");
 
@@ -16,58 +13,117 @@
 
 // class projectBillingController {
 
-//   // -------------------------------------------------------------
-//   // 1️⃣ CREATE BILLING ITEM
-//   // -------------------------------------------------------------
 //   createBillingItem = async (req, res) => {
-//     try {
-//       const {
-//         project_id,
-//         bom_id,
-//         unit,
-//         quantity,
-//         rate,
-//         amount,
-//         remarks,
-//       } = req.body;
+//   try {
+//     const {
+//       project_id,   
+//       project_work_description,
+//       hsn_code,
+//       unit,
+//       quantity,
+//       rate,
+//       amount,
+//       remarks,
+//     } = req.body;
 
-//       if (!project_id || !bom_id) {
-//         return res.status(400).json({
-//           success: false,
-//           message: "project_id & bom_id are required",
-//         });
-//       }
-
-//       const insertObj = {
-//         project_id,
-//         bom_id,
-//         unit,
-//         quantity,
-//         rate,
-//         amount,
-//         remarks,
-//         created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
-//       };
-
-//       const billing_id = await insertData(table, insertObj);
-
-//       return res.status(201).json({
-//         success: true,
-//         message: "Billing item created successfully",
-//         billing_id,
-//       });
-
-//     } catch (err) {
-//       console.error(err);
-//       return res.status(500).json({
+//     /* -------------------- Validation -------------------- */
+//     if (!project_id || !project_work_description) {
+//       return res.status(400).json({
 //         success: false,
-//         message: "Error creating billing item",
+//         error: {
+//           code: "VALIDATION_ERROR",
+//           message: "project_id and project_work_description are required",
+//           fields: {
+//             project_id: !project_id ? "Required" : null,
+//             project_work_description: !project_work_description ? "Required" : null,
+//           },
+//         },
 //       });
 //     }
-//   };
 
+//     if (quantity !== undefined && Number(quantity) <= 0) {
+//       return res.status(400).json({
+//         success: false,
+//         error: {
+//           code: "INVALID_QUANTITY",
+//           message: "Quantity must be greater than 0",
+//         },
+//       });
+//     }
+
+//     if (rate !== undefined && Number(rate) < 0) {
+//       return res.status(400).json({
+//         success: false,
+//         error: {
+//           code: "INVALID_RATE",
+//           message: "Rate cannot be negative",
+//         },
+//       });
+//     }
+
+//     /* -------------------- Insert Object -------------------- */
+//     const insertObj = {
+//       project_id,
+//       project_work_description,
+//       hsn_code,
+//       unit,
+//       quantity,
+//       rate,
+//       amount,
+//       remarks,
+//       created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
+//     };
+
+
+//     if (hsn_code && hsn_code.length > 20) {
+//   return res.status(400).json({
+//     success: false,
+//     error: {
+//       code: "INVALID_HSN",
+//       message: "HSN code too long",
+//     },
+//   });
+// }
+//     /* -------------------- DB Insert -------------------- */
+//     const billing_id = await insertData(table, insertObj);
+
+//     if (!billing_id) {
+//       return res.status(500).json({
+//         success: false,
+//         error: {
+//           code: "DB_INSERT_FAILED",
+//           message: "Failed to create billing item",
+//         },
+//       });
+//     }
+
+//     /* -------------------- Success -------------------- */
+//     return res.status(201).json({
+//       success: true,
+//       message: "Billing item created successfully",
+//       data: {
+//         billing_id,
+//       },
+//     });
+
+//   } catch (err) {
+//     console.error("❌ Create Billing Error:", {
+//       message: err.message,
+//       stack: err.stack,
+//     });
+
+//     /* -------------------- Unexpected Error -------------------- */
+//     return res.status(500).json({
+//       success: false,
+//       error: {
+//         code: "INTERNAL_SERVER_ERROR",
+//         message: "Something went wrong while creating billing item",
+//       },
+//     });
+//   }
+// };
 //   // -------------------------------------------------------------
-//   // 2️⃣ GET ALL BILLING ITEMS BY PROJECT (WITH BOM NAME)
+//   // 2️⃣ GET ALL BILLING ITEMS BY PROJECT
 //   // -------------------------------------------------------------
 //   getBillingItemsByProjectId = async (req, res) => {
 //     try {
@@ -81,24 +137,62 @@
 //         });
 //       }
 
-//       const sql = `
-//         SELECT 
-//           pb.billing_id,
-//           pb.project_id,
-//           pb.bom_id,
-//           b.bom_name,
-//           pb.unit,
-//           pb.quantity,
-//           pb.rate,
-//           pb.amount,
-//           pb.remarks,
-//           pb.created_at
-//         FROM md_project_billing pb
-//         LEFT JOIN md_bom b 
-//           ON pb.bom_id = b.bom_id
-//         WHERE pb.project_id = ${project_id}
-//         ORDER BY pb.billing_id DESC
-//       `;
+//       // const sql = `
+//       //   SELECT 
+//       //     billing_id,
+//       //     project_id,
+//       //     project_work_description,
+//       //     unit,
+//       //     quantity,
+//       //     rate,
+//       //     amount,
+//       //     remarks,
+//       //     hsn_code,
+//       //     created_at
+//       //   FROM md_project_billing
+//       //   WHERE project_id = ${project_id}
+//       //   ORDER BY billing_id DESC
+//       // `;
+
+
+
+//       const sql =`SELECT 
+//   pb.billing_id,
+//   pb.project_id,
+//   pb.project_work_description,
+//   pb.unit,
+//   pb.quantity,
+//   pb.rate,
+//   pb.amount,
+//   pb.remarks,
+//   pb.hsn_code,
+//   pb.created_at,
+
+//   pr.project_name,
+
+//   -- ✅ only required client fields
+//   cl.client_id,
+//   cl.client_name,
+//   cl.client_type,
+//   cl.client_mobile,
+//   cl.client_phone,
+//   cl.client_email
+
+// FROM md_project_billing pb
+
+// LEFT JOIN md_project pr
+//   ON pb.project_id = pr.project_id
+
+// LEFT JOIN md_client cl
+//   ON pr.client_id = cl.client_id
+
+// WHERE pb.project_id = ${project_id}
+
+// ORDER BY pb.billing_id DESC`
+
+
+
+
 
 //       const rows = await customSelectSqlQuery(sql, true);
 
@@ -117,20 +211,16 @@
 //   };
 
 //   // -------------------------------------------------------------
-//   // 3️⃣ GET SINGLE BILLING ITEM (WITH BOM NAME)
+//   // 3 GET SINGLE BILLING ITEM
 //   // -------------------------------------------------------------
 //   getBillingItemById = async (req, res) => {
 //     try {
 //       const { id } = req.params;
 
 //       const sql = `
-//         SELECT 
-//           pb.*,
-//           b.bom_name
-//         FROM md_project_billing pb
-//         LEFT JOIN md_bom b 
-//           ON pb.bom_id = b.bom_id
-//         WHERE pb.billing_id = ${id}
+//         SELECT *
+//         FROM md_project_billing
+//         WHERE billing_id = ${id}
 //         LIMIT 1
 //       `;
 
@@ -149,7 +239,7 @@
 //       });
 
 //     } catch (err) {
-//       console.error(err);
+//       console.error(" Get Billing Error:", err);
 //       return res.status(500).json({
 //         success: false,
 //         message: "Error fetching billing item",
@@ -157,72 +247,89 @@
 //     }
 //   };
 
-//   // -------------------------------------------------------------
-//   // 4️⃣ UPDATE BILLING ITEM
-//   // -------------------------------------------------------------
-//   updateBillingItem = async (req, res) => {
-//     try {
-//       const { id } = req.params;
 
-//       const {
-//         project_id,
-//         bom_id,
-//         unit,
-//         quantity,
-//         rate,
-//         amount,
-//         remarks,
-//       } = req.body;
 
-//       if (!project_id) {
-//         return res.status(400).json({
-//           success: false,
-//           message: "project_id is required",
-//         });
-//       }
 
-//       const setObj = {
-//         project_id,
-//         bom_id,
-//         unit,
-//         quantity,
-//         rate,
-//         amount,
-//         remarks,
-//         updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
-//       };
+// updateBillingItem = async (req, res) => {
+//   try {
+//     const { id } = req.params;
 
-//       const affected = await updateData(table, setObj, `billing_id = ${id}`);
+//     const {
+//       project_id,
+//       project_work_description,
+//       unit,
+//       quantity,
+//       rate,
+//       amount,
+//       hsn_code,
+//       remarks,
+//     } = req.body;
 
-//       if (affected === 0) {
-//         return res.status(404).json({
-//           success: false,
-//           message: "Billing item not found",
-//         });
-//       }
-
-//       return res.status(200).json({
-//         success: true,
-//         message: "Billing item updated successfully",
-//       });
-
-//     } catch (err) {
-//       console.error(err);
-//       return res.status(500).json({
+//     if (!project_id || !project_work_description) {
+//       return res.status(400).json({
 //         success: false,
-//         message: "Error updating billing item",
+//         message: "project_id & project_work_description are required",
 //       });
 //     }
-//   };
 
-//   // -------------------------------------------------------------
-//   // 5️⃣ DELETE BILLING ITEM
-//   // -------------------------------------------------------------
+//     //  validate id from params
+//     if (!id || id === 'undefined' || isNaN(Number(id))) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid billing_id provided",
+//       });
+//     }
+
+//     const setObj = {
+//       project_id,
+//       project_work_description,
+//       unit,
+//       quantity,
+//       rate,
+//       amount,
+//       remarks,
+//       hsn_code,
+//       updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
+//     };
+
+//     const affected = await updateData(
+//       table,
+//       setObj,
+//       `billing_id = ${Number(id)}`
+//     );
+
+//     if (affected === 0) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Billing item not found",
+//       });
+//     }
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Billing item updated successfully",
+//     });
+
+//   } catch (err) {
+//     console.error("❌ Update Billing Error:", err);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Error updating billing item",
+//     });
+//   }
+// };
+
+
+ 
+ 
 //   deleteBillingItem = async (req, res) => {
 //     try {
 //       const { id } = req.params;
 
-//       const affected = await deleteData(table, `billing_id = ${id}`);
+//       const affected = await deleteData(
+//         table,
+//         `billing_id = ${id}`
+//       );
 
 //       if (affected === 0) {
 //         return res.status(404).json({
@@ -237,7 +344,7 @@
 //       });
 
 //     } catch (err) {
-//       console.error(err);
+//       console.error("❌ Delete Billing Error:", err);
 //       return res.status(500).json({
 //         success: false,
 //         message: "Error deleting billing item",
@@ -247,8 +354,6 @@
 // }
 
 // module.exports = new projectBillingController();
-
-
 
 
 
@@ -267,168 +372,149 @@ const table = "md_project_billing";
 
 class projectBillingController {
 
-  // -------------------------------------------------------------
-  //  CREATE BILLING ITEM
-  // -------------------------------------------------------------
-  // createBillingItem = async (req, res) => {
-  //   try {
-  //     const {
-  //       project_id,
-  //       project_work_description,
-  //       unit,
-  //       quantity,
-  //       rate,
-  //       amount,
-  //       remarks,
-  //     } = req.body;
-
-  //     if (!project_id || !project_work_description) {
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "project_id & project_work_description are required",
-  //       });
-  //     }
-
-  //     const insertObj = {
-  //       project_id,
-  //       project_work_description,
-  //       unit,
-  //       quantity,
-  //       rate,
-  //       amount,
-  //       remarks,
-  //       created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
-  //     };
-
-  //     const billing_id = await insertData(table, insertObj);
-
-  //     return res.status(201).json({
-  //       success: true,
-  //       message: "Billing item created successfully",
-  //       billing_id,
-  //     });
-
-  //   } catch (err) {
-  //     console.error("❌ Create Billing Error:", err);
-  //     return res.status(500).json({
-  //       success: false,
-  //       message: "Error creating billing item",
-  //     });
-  //   }
-  // };
-
+  /* ============================================================
+     1. CREATE BILLING ITEM
+     ============================================================ */
   createBillingItem = async (req, res) => {
-  try {
-    const {
-      project_id,   
-      project_work_description,
-      hsn_code,
-      unit,
-      quantity,
-      rate,
-      amount,
-      remarks,
-    } = req.body;
+    try {
+      const {
+        project_id,
+        project_work_description,
+        hsn_code,
+        unit,
+        quantity,
+        rate,
+        base_amount,
+        amount,
+        remarks,
+        gst_type,
+        sgst_percent,
+        sgst_amount,
+        cgst_percent,
+        cgst_amount,
+        igst_percent,
+        igst_amount,
+      } = req.body;
 
-    /* -------------------- Validation -------------------- */
-    if (!project_id || !project_work_description) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: "VALIDATION_ERROR",
-          message: "project_id and project_work_description are required",
-          fields: {
-            project_id: !project_id ? "Required" : null,
-            project_work_description: !project_work_description ? "Required" : null,
+      /* -------------------- Validation -------------------- */
+      if (!project_id || !project_work_description) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "project_id and project_work_description are required",
+            fields: {
+              project_id: !project_id ? "Required" : null,
+              project_work_description: !project_work_description ? "Required" : null,
+            },
           },
-        },
+        });
+      }
+
+      if (quantity !== undefined && Number(quantity) <= 0) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: "INVALID_QUANTITY",
+            message: "Quantity must be greater than 0",
+          },
+        });
+      }
+
+      if (rate !== undefined && Number(rate) < 0) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: "INVALID_RATE",
+            message: "Rate cannot be negative",
+          },
+        });
+      }
+
+      if (hsn_code && hsn_code.length > 20) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: "INVALID_HSN",
+            message: "HSN code too long",
+          },
+        });
+      }
+
+      /* ---- GST mutual exclusion validation ---- */
+      const hasIgst = igst_percent != null && Number(igst_percent) > 0;
+      const hasCgstSgst =
+        (cgst_percent != null && Number(cgst_percent) > 0) ||
+        (sgst_percent != null && Number(sgst_percent) > 0);
+
+      if (hasIgst && hasCgstSgst) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: "INVALID_GST",
+            message: "Cannot use IGST together with CGST/SGST",
+          },
+        });
+      }
+
+      /* -------------------- Insert Object -------------------- */
+      const insertObj = {
+        project_id,
+        project_work_description,
+        hsn_code:     hsn_code     || null,
+        unit,    
+        quantity,
+        rate,
+        base_amount:  base_amount  != null ? Number(base_amount)  : null,
+        amount,                         // final amount (incl. GST if any)
+        gst_type:     gst_type     || "none",
+        sgst_percent: sgst_percent != null ? Number(sgst_percent) : null,
+        sgst_amount:  sgst_amount  != null ? Number(sgst_amount)  : null,
+        cgst_percent: cgst_percent != null ? Number(cgst_percent) : null,
+        cgst_amount:  cgst_amount  != null ? Number(cgst_amount)  : null,
+        igst_percent: igst_percent != null ? Number(igst_percent) : null,
+        igst_amount:  igst_amount  != null ? Number(igst_amount)  : null,
+        created_at:   dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
+        remarks:      remarks      || null,
+        created_by: req.user.id,
+      };
+
+      /* -------------------- DB Insert -------------------- */
+      const billing_id = await insertData(table, insertObj);
+
+      if (!billing_id) {
+        return res.status(500).json({
+          success: false,
+          error: {
+            code: "DB_INSERT_FAILED",
+            message: "Failed to create billing item",
+          },
+        });
+      }
+
+      /* -------------------- Success (response unchanged) -------------------- */
+      return res.status(201).json({
+        success: true,
+        message: "Billing item created successfully",
+        data: { billing_id },
       });
-    }
 
-    if (quantity !== undefined && Number(quantity) <= 0) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: "INVALID_QUANTITY",
-          message: "Quantity must be greater than 0",
-        },
-      });
-    }
-
-    if (rate !== undefined && Number(rate) < 0) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: "INVALID_RATE",
-          message: "Rate cannot be negative",
-        },
-      });
-    }
-
-    /* -------------------- Insert Object -------------------- */
-    const insertObj = {
-      project_id,
-      project_work_description,
-      hsn_code,
-      unit,
-      quantity,
-      rate,
-      amount,
-      remarks,
-      created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
-    };
-
-
-    if (hsn_code && hsn_code.length > 20) {
-  return res.status(400).json({
-    success: false,
-    error: {
-      code: "INVALID_HSN",
-      message: "HSN code too long",
-    },
-  });
-}
-    /* -------------------- DB Insert -------------------- */
-    const billing_id = await insertData(table, insertObj);
-
-    if (!billing_id) {
+    } catch (err) {
+      console.error("❌ Create Billing Error:", { message: err.message, stack: err.stack });
       return res.status(500).json({
         success: false,
         error: {
-          code: "DB_INSERT_FAILED",
-          message: "Failed to create billing item",
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Something went wrong while creating billing item",
         },
       });
     }
+  };
 
-    /* -------------------- Success -------------------- */
-    return res.status(201).json({
-      success: true,
-      message: "Billing item created successfully",
-      data: {
-        billing_id,
-      },
-    });
-
-  } catch (err) {
-    console.error("❌ Create Billing Error:", {
-      message: err.message,
-      stack: err.stack,
-    });
-
-    /* -------------------- Unexpected Error -------------------- */
-    return res.status(500).json({
-      success: false,
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Something went wrong while creating billing item",
-      },
-    });
-  }
-};
-  // -------------------------------------------------------------
-  // 2️⃣ GET ALL BILLING ITEMS BY PROJECT
-  // -------------------------------------------------------------
+  /* ============================================================
+     2. GET ALL BILLING ITEMS BY PROJECT
+        — response shape UNCHANGED, just added new columns to SELECT
+     ============================================================ */
   getBillingItemsByProjectId = async (req, res) => {
     try {
       const { id } = req.params;
@@ -441,65 +527,52 @@ class projectBillingController {
         });
       }
 
-      // const sql = `
-      //   SELECT 
-      //     billing_id,
-      //     project_id,
-      //     project_work_description,
-      //     unit,
-      //     quantity,
-      //     rate,
-      //     amount,
-      //     remarks,
-      //     hsn_code,
-      //     created_at
-      //   FROM md_project_billing
-      //   WHERE project_id = ${project_id}
-      //   ORDER BY billing_id DESC
-      // `;
+      const sql = `
+        SELECT
+          pb.billing_id,
+          pb.project_id,
+          pb.project_work_description,
+          pb.unit,
+          pb.hsn_code,
+          pb.quantity,
+          pb.rate,
+          pb.base_amount,
+          pb.amount,
+          pb.remarks,
+          pb.gst_type,
+          pb.sgst_percent,
+          pb.sgst_amount,
+          pb.cgst_percent,
+          pb.cgst_amount,
+          pb.igst_percent,
+          pb.igst_amount,
+          pb.created_at,
 
+          pr.project_name,
 
+          cl.client_id,
+          cl.client_name,
+          cl.client_type,
+          cl.client_mobile,
+          cl.client_phone,
+          cl.client_email
 
-      const sql =`SELECT 
-  pb.billing_id,
-  pb.project_id,
-  pb.project_work_description,
-  pb.unit,
-  pb.quantity,
-  pb.rate,
-  pb.amount,
-  pb.remarks,
-  pb.hsn_code,
-  pb.created_at,
+        FROM md_project_billing pb
 
-  pr.project_name,
+        LEFT JOIN md_project pr
+          ON pb.project_id = pr.project_id
 
-  -- ✅ only required client fields
-  cl.client_id,
-  cl.client_name,
-  cl.client_type,
-  cl.client_mobile,
-  cl.client_phone,
-  cl.client_email
+        LEFT JOIN md_client cl
+          ON pr.client_id = cl.client_id
 
-FROM md_project_billing pb
+        WHERE pb.project_id = ${project_id}
 
-LEFT JOIN md_project pr
-  ON pb.project_id = pr.project_id
-
-LEFT JOIN md_client cl
-  ON pr.client_id = cl.client_id
-
-WHERE pb.project_id = ${project_id}
-
-ORDER BY pb.billing_id DESC`
-
-
-
-
+        ORDER BY pb.billing_id DESC
+      `;
 
       const rows = await customSelectSqlQuery(sql, true);
 
+      /* ---- response shape UNCHANGED ---- */
       return res.status(200).json({
         success: true,
         data: rows,
@@ -514,9 +587,9 @@ ORDER BY pb.billing_id DESC`
     }
   };
 
-  // -------------------------------------------------------------
-  // 3 GET SINGLE BILLING ITEM
-  // -------------------------------------------------------------
+  /* ============================================================
+     3. GET SINGLE BILLING ITEM  — unchanged
+     ============================================================ */
   getBillingItemById = async (req, res) => {
     try {
       const { id } = req.params;
@@ -543,7 +616,7 @@ ORDER BY pb.billing_id DESC`
       });
 
     } catch (err) {
-      console.error(" Get Billing Error:", err);
+      console.error("Get Billing Error:", err);
       return res.status(500).json({
         success: false,
         message: "Error fetching billing item",
@@ -551,243 +624,112 @@ ORDER BY pb.billing_id DESC`
     }
   };
 
-// -------------------------------------------------------------
-//  UPDATE BILLING ITEM
-// -------------------------------------------------------------
-//   updateBillingItem = async (req, res) => {
-//     try {
-//       const { id } = req.params;
+  /* ============================================================
+     4. UPDATE BILLING ITEM
+     ============================================================ */
+  updateBillingItem = async (req, res) => {
+    try {
+      const { id } = req.params;
 
-//       const {
-//         project_id,
-//         project_work_description,
-//         unit,
-//         quantity,
-//         rate,
-//         amount,
-//         remarks,
-//       } = req.body;
+      if (!id || id === "undefined" || isNaN(Number(id))) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid billing_id provided",
+        });
+      }
 
-//       if (!project_id || !project_work_description) {
-//         return res.status(400).json({
-//           success: false,
-//           message: "project_id & project_work_description are required",
-//         });
-//       }
+      const {
+        project_id,
+        project_work_description,
+        unit,
+        quantity,
+        rate,
+        base_amount,
+        amount,
+        hsn_code,
+        remarks,
+        gst_type,
+        sgst_percent,
+        sgst_amount,
+        cgst_percent,
+        cgst_amount,
+        igst_percent,
+        igst_amount,
+      } = req.body;
 
-//       const setObj = {
-//         project_id,
-//         project_work_description,
-//         unit,
-//         quantity,
-//         rate,
-//         amount,
-//         remarks,
-//         updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
-//       };
+      if (!project_id || !project_work_description) {
+        return res.status(400).json({
+          success: false,
+          message: "project_id & project_work_description are required",
+        });
+      }
 
+      /* ---- GST mutual exclusion validation ---- */
+      const hasIgst = igst_percent != null && Number(igst_percent) > 0;
+      const hasCgstSgst =
+        (cgst_percent != null && Number(cgst_percent) > 0) ||
+        (sgst_percent != null && Number(sgst_percent) > 0);
 
-// if (!billingId || billingId === 'undefined') {
-//   throw new Error('Invalid billing_id provided');
-// }
+      if (hasIgst && hasCgstSgst) {
+        return res.status(400).json({
+          success: false,
+          message: "Cannot use IGST together with CGST/SGST",
+        });
+      }
 
+      const setObj = {
+        project_id,
+        project_work_description,
+        unit,
+        quantity,
+        rate,
+        base_amount:  base_amount  != null ? Number(base_amount)  : null,
+        amount,                         // final amount (incl. GST if any)
+        hsn_code:     hsn_code     || null,
+        gst_type:     gst_type     || "none",
+        sgst_percent: sgst_percent != null ? Number(sgst_percent) : null,
+        sgst_amount:  sgst_amount  != null ? Number(sgst_amount)  : null,
+        cgst_percent: cgst_percent != null ? Number(cgst_percent) : null,
+        cgst_amount:  cgst_amount  != null ? Number(cgst_amount)  : null,
+        igst_percent: igst_percent != null ? Number(igst_percent) : null,
+        igst_amount:  igst_amount  != null ? Number(igst_amount)  : null,
+        updated_at:   dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
+        remarks:      remarks      || null,
+        created_by: req.user.id,
+      };
 
-//       const affected = await updateData(
-//         table,
-//         setObj,
-//         `billing_id = ${id}`
-//       );
+      const affected = await updateData(table, setObj, `billing_id = ${Number(id)}`);
 
-//       if (affected === 0) {
-//         return res.status(404).json({
-//           success: false,
-//           message: "Billing item not found",
-//         });
-//       }
+      if (affected === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Billing item not found",
+        });
+      }
 
-//       return res.status(200).json({
-//         success: true,
-//         message: "Billing item updated successfully",
-//       });
+      /* ---- response shape UNCHANGED ---- */
+      return res.status(200).json({
+        success: true,
+        message: "Billing item updated successfully",
+      });
 
-//     } catch (err) {
-//       console.error(" Update Billing Error:", err);
-//       return res.status(500).json({
-//         success: false,
-//         message: "Error updating billing item",
-//       });
-//     }
-//   };
-
-
-
-
-updateBillingItem = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const {
-      project_id,
-      project_work_description,
-      unit,
-      quantity,
-      rate,
-      amount,
-      hsn_code,
-      remarks,
-    } = req.body;
-
-    if (!project_id || !project_work_description) {
-      return res.status(400).json({
+    } catch (err) {
+      console.error("❌ Update Billing Error:", err);
+      return res.status(500).json({
         success: false,
-        message: "project_id & project_work_description are required",
+        message: "Error updating billing item",
       });
     }
+  };
 
-    //  validate id from params
-    if (!id || id === 'undefined' || isNaN(Number(id))) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid billing_id provided",
-      });
-    }
-
-    const setObj = {
-      project_id,
-      project_work_description,
-      unit,
-      quantity,
-      rate,
-      amount,
-      remarks,
-      hsn_code,
-      updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
-    };
-
-    const affected = await updateData(
-      table,
-      setObj,
-      `billing_id = ${Number(id)}`
-    );
-
-    if (affected === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Billing item not found",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Billing item updated successfully",
-    });
-
-  } catch (err) {
-    console.error("❌ Update Billing Error:", err);
-    return res.status(500).json({
-      success: false,
-      message: "Error updating billing item",
-    });
-  }
-};
-
-
-
-// updateBillingItem = async (req, res) => {
-//   try {
-//     const billingId = Number(req.params.id);
-
-//     /* -------------------- ID Validation -------------------- */
-//     if (!billingId || isNaN(billingId) || billingId <= 0) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Valid billing_id is required in URL",
-//       });
-//     }
-
-//     const {
-//       project_id,
-//       project_work_description,
-//       unit,
-//       quantity,
-//       rate,
-//       amount,
-//       remarks,
-//     } = req.body;
-
-//     // ✅ Better validation
-//     if (!project_id || !project_work_description) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "project_id & project_work_description are required",
-//       });
-//     }
-
-//     // ✅ Sanitize numeric fields
-//     const sanitizedData = {
-//       project_id: Number(project_id),
-//       project_work_description: project_work_description.trim(),
-//       unit: unit?.trim() || null,
-//       quantity: Number(quantity) || 0,
-//       rate: Number(rate) || 0,
-//       amount: Number(amount) || 0,
-//       remarks: remarks?.trim() || null,
-//       updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
-//     };
-
-//     // ✅ Validate required numeric fields
-//     if (sanitizedData.quantity < 0 || sanitizedData.rate < 0) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Quantity and rate must be positive numbers",
-//       });
-//     }
-
-//     const affected = await updateData(
-//       table, // ✅ Ensure 'table' is defined (project_billing?)
-//       sanitizedData,
-//       `billing_id = ${mysql.escape(billingId)}` // ✅ SQL Injection protection
-//     );
-
-//     if (affected === 0) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Billing item not found",
-//       });
-//     }
-
-//     return res.status(200).json({
-//       success: true,
-//       message: "Billing item updated successfully",
-//       data: { billing_id: billingId }
-//     });
-
-//   } catch (err) {
-//     console.error("❌ Update Billing Error:", err);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Internal server error",
-//       error: process.env.NODE_ENV === 'development' ? err.message : undefined
-//     });
-//   }
-// };
-
-
-
-  // -------------------------------------------------------------
-  // 5️⃣ DELETE BILLING ITEM
-  // -------------------------------------------------------------
- 
- 
- 
+  /* ============================================================
+     5. DELETE BILLING ITEM  — completely unchanged
+     ============================================================ */
   deleteBillingItem = async (req, res) => {
     try {
       const { id } = req.params;
 
-      const affected = await deleteData(
-        table,
-        `billing_id = ${id}`
-      );
+      const affected = await deleteData(table, `billing_id = ${id}`);
 
       if (affected === 0) {
         return res.status(404).json({

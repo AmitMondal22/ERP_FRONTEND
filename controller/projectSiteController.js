@@ -36,9 +36,8 @@ class projectSiteController{
     //     }
         
     // }
- 
 
-    
+
 createProjectSite = async (req, res) => {
     try {
 
@@ -52,7 +51,7 @@ createProjectSite = async (req, res) => {
             to_date
         } = req.body;
 
-        // ✅ Convert frontend value to ENUM('Y','N')
+        //  Convert frontend value to ENUM('Y','N')
         let formattedTimeExtended = null;
 
         if (
@@ -107,6 +106,7 @@ createProjectSite = async (req, res) => {
         });
     }
 };
+
 
 
 
