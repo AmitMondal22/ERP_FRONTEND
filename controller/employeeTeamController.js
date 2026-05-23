@@ -728,12 +728,11 @@ getAllEmployeeByTeamIdOnlyForAddingEmployeeToTeam = async (req, res) => {
 //   }
 // };
 
-
 getAllEmployeeByTeamIdFromBody = async (req, res) => {
   try {
     const { team_id, in_out_status, project_id, site_id } = req.body;
 
-    // Issue 3 fix: explicit null check (handles 0 as valid ID)
+    // Null check (handles 0 as valid ID)
     if (team_id == null || in_out_status == null || project_id == null || site_id == null) {
       return res.status(400).json({
         success: false,
@@ -741,7 +740,7 @@ getAllEmployeeByTeamIdFromBody = async (req, res) => {
       });
     }
 
-    // Issue 2 fix: normalize status to handle "y", "Y", true, 1 etc.
+    // Normalize status
     const normalizedStatus = String(in_out_status).toUpperCase().trim();
     if (!["Y", "N"].includes(normalizedStatus)) {
       return res.status(400).json({
@@ -750,16 +749,23 @@ getAllEmployeeByTeamIdFromBody = async (req, res) => {
       });
     }
 
-    // Issue 1 fix: timezone-aware date (IST)
-    const today = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Kolkata",
-    }).format(new Date());
-
-    // Attendance filter based on normalized status
-    const attendanceFilter =
-      normalizedStatus === "Y"
-        ? `AND (a.in_out_status = 'N' OR a.in_out_status IS NULL)`
-        : `AND a.in_out_status = 'Y'`;
+    let attendanceFilter;
+    if (normalizedStatus === "Y") {
+      // Marking IN → show employees who are:
+      // 1. Have no attendance record today (never checked in) ← a.attendance_id IS NULL
+      // 2. Have checked out (in_out_status = 'N')
+      attendanceFilter = `
+        AND (
+          a.attendance_id IS NULL
+          OR a.in_out_status = 'N'
+        )
+      `;
+    } else {
+      // Marking OUT → show employees who are currently IN
+      attendanceFilter = `
+        AND a.in_out_status = 'Y'
+      `;
+    }
 
     const sql = `
       SELECT 
@@ -770,21 +776,18 @@ getAllEmployeeByTeamIdFromBody = async (req, res) => {
         e.last_name,
         e.email,
         e.phone,
-        a.in_out_status
+        a.in_out_status,
+        a.check_in,
+        a.check_out
       FROM md_em_employee_team AS t
       INNER JOIN em_employees AS e
         ON t.employee_id = e.employee_id
-      LEFT JOIN (
-        SELECT a1.employee_id, a1.in_out_status, a1.work_date
-        FROM em_attendance a1
-        INNER JOIN (
-          SELECT employee_id, MAX(attendance_id) AS max_id
-          FROM em_attendance
-          WHERE work_date = ?
-          GROUP BY employee_id
-        ) a2 ON a1.employee_id = a2.employee_id
-             AND a1.attendance_id = a2.max_id
-      ) AS a ON a.employee_id = t.employee_id
+      LEFT JOIN em_attendance AS a
+        ON a.employee_id = t.employee_id
+        AND a.team_id = t.team_id
+        AND a.project_id = t.project_id
+        AND a.site_id = t.site_id
+        AND a.work_date = CURDATE()
       WHERE t.team_id = ?
         AND t.project_id = ?
         AND t.site_id = ?
@@ -793,9 +796,8 @@ getAllEmployeeByTeamIdFromBody = async (req, res) => {
       ORDER BY e.first_name ASC
     `;
 
-    const params = [today, team_id, project_id, site_id];
+    const params = [team_id, project_id, site_id];
 
-    // Issue 4 fix: fallback to empty array if DB returns null/undefined
     const employees = (await customSelectSqlQuery2(sql, params)) ?? [];
 
     return res.status(200).json({
