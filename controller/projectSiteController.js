@@ -113,11 +113,11 @@ createProjectSite = async (req, res) => {
  getAllProjectsSite = async (req, res) => {
   try {
     const table =
-      "md_project_site as a, lo_cities as b, lo_states as c";
+      "md_project_site as a, lo_cities as b, lo_states as c,md_project as d";
     const condition = `a.city_id = b.id AND b.state_id = c.id`;
     // Give unique aliases for duplicate column names
     const select =
-      "a.*, b.name AS city_name, b.state_id, c.name AS state_name";
+      "a.*, b.name AS city_name, b.state_id, c.name AS state_name,d.project_name";
 
     const rows = await selectData(
       table,
