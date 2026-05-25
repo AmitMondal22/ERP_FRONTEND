@@ -1,4 +1,4 @@
-const { insertData,selectData ,selectOneData, selectLastData, deleteData, updateData,customSelectSqlQuery2} = require("../models/MasterModel");
+const { insertData,selectData ,selectOneData, selectLastData, deleteData, updateData,customSelectSqlQuery2,customSelectSqlQuery} = require("../models/MasterModel");
 const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 dayjs.extend(utc);
@@ -292,37 +292,33 @@ createProjectSite = async (req, res) => {
 //   }
 // }
 
-
 getAllProjectsSite = async (req, res) => {
   try {
-    const table = "md_project_site as a, lo_cities as b, lo_states as c";
-
-    const condition = `a.city_id = b.id AND b.state_id = c.id`;
-
-    const select = `
-      a.id AS project_site_id,
-      a.project_id,
-      a.project_site_name,
-      a.address,
-      a.city_id,
-      a.from_date,
-      a.to_date,
-      a.is_time_extended,
-      a.create_by,
-      a.created_at,
-      a.updated_at,
-      b.name AS city_name,
-      b.state_id,
-      c.name AS state_name,
-      (SELECT d.project_name FROM md_project d WHERE d.id = a.project_id LIMIT 1) AS project_name
+    const sql = `
+      SELECT 
+        a.project_site_id,
+        a.project_id,
+        a.project_site_name,
+        a.address,
+        a.city_id,
+        a.from_date,
+        a.to_date,
+        a.is_time_extended,
+        a.create_by,
+        a.created_at,
+        a.updated_at,
+        b.name AS city_name,
+        b.state_id,
+        c.name AS state_name,
+        d.project_name
+      FROM md_project_site a
+      INNER JOIN lo_cities b ON a.city_id = b.id
+      INNER JOIN lo_states c ON b.state_id = c.id
+      INNER JOIN md_project d ON a.project_id = d.project_id
+      ORDER BY a.project_site_name ASC
     `;
 
-    const rows = await selectData(
-      table,
-      select,
-      condition,
-      "a.project_site_name ASC"
-    );
+    const rows = await customSelectSqlQuery(sql, true);
 
     const projectsSites = rows.map((row) => ({
       ...row,
