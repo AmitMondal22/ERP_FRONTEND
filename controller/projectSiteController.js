@@ -110,44 +110,44 @@ createProjectSite = async (req, res) => {
 
 
 
- getAllProjectsSite = async (req, res) => {
-  try {
-    const table =
-      "md_project_site as a, lo_cities as b, lo_states as c,md_project as d";
-    const condition = `a.city_id = b.id AND b.state_id = c.id`;
-    // Give unique aliases for duplicate column names
-    const select =
-      "a.*, b.name AS city_name, b.state_id, c.name AS state_name,d.project_name";
+//  getAllProjectsSite = async (req, res) => {
+//   try {
+//     const table =
+//       "md_project_site as a, lo_cities as b, lo_states as c,md_project as d";
+//     const condition = `a.city_id = b.id AND b.state_id = c.id`;
+//     // Give unique aliases for duplicate column names
+//     const select =
+//       "a.*, b.name AS city_name, b.state_id, c.name AS state_name,d.project_name";
 
-    const rows = await selectData(
-      table,
-      select,
-      condition, 
-      "a.project_site_name ASC"
-    );
+//     const rows = await selectData(
+//       table,
+//       select,
+//       condition, 
+//       "a.project_site_name ASC"
+//     );
 
-    // Format all date columns to a fixed string (UTC or local as you prefer)
-    const projectsSites = rows.map((row) => ({
-      ...row,
-      from_date: row.from_date
-        ? dayjs.utc(row.from_date).format("YYYY-MM-DD")
-        : null,
-      to_date: row.to_date
-        ? dayjs.utc(row.to_date).format("YYYY-MM-DD")
-        : null,
-      created_at: row.created_at
-        ? dayjs.utc(row.created_at).format("YYYY-MM-DD HH:mm:ss")
-        : null,
-    }));
+//     // Format all date columns to a fixed string (UTC or local as you prefer)
+//     const projectsSites = rows.map((row) => ({
+//       ...row,
+//       from_date: row.from_date
+//         ? dayjs.utc(row.from_date).format("YYYY-MM-DD")
+//         : null,
+//       to_date: row.to_date
+//         ? dayjs.utc(row.to_date).format("YYYY-MM-DD")
+//         : null,
+//       created_at: row.created_at
+//         ? dayjs.utc(row.created_at).format("YYYY-MM-DD HH:mm:ss")
+//         : null,
+//     }));
 
-    res.status(200).json({ success: true, data: projectsSites });
-  } catch (error) {
-    console.error("getAllProjectsSite error:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Unable to fetch projects" });
-  }
-};
+//     res.status(200).json({ success: true, data: projectsSites });
+//   } catch (error) {
+//     console.error("getAllProjectsSite error:", error);
+//     res
+//       .status(500)
+//       .json({ success: false, message: "Unable to fetch projects" });
+//   }
+// };
 
 
 
@@ -292,6 +292,59 @@ createProjectSite = async (req, res) => {
 //   }
 // }
 
+
+getAllProjectsSite = async (req, res) => {
+  try {
+    const table = "md_project_site as a, lo_cities as b, lo_states as c";
+
+    const condition = `a.city_id = b.id AND b.state_id = c.id`;
+
+    const select = `
+      a.id AS project_site_id,
+      a.project_id,
+      a.project_site_name,
+      a.address,
+      a.city_id,
+      a.from_date,
+      a.to_date,
+      a.is_time_extended,
+      a.create_by,
+      a.created_at,
+      a.updated_at,
+      b.name AS city_name,
+      b.state_id,
+      c.name AS state_name,
+      (SELECT d.project_name FROM md_project d WHERE d.id = a.project_id LIMIT 1) AS project_name
+    `;
+
+    const rows = await selectData(
+      table,
+      select,
+      condition,
+      "a.project_site_name ASC"
+    );
+
+    const projectsSites = rows.map((row) => ({
+      ...row,
+      from_date: row.from_date
+        ? dayjs.utc(row.from_date).format("YYYY-MM-DD")
+        : null,
+      to_date: row.to_date
+        ? dayjs.utc(row.to_date).format("YYYY-MM-DD")
+        : null,
+      created_at: row.created_at
+        ? dayjs.utc(row.created_at).format("YYYY-MM-DD HH:mm:ss")
+        : null,
+    }));
+
+    res.status(200).json({ success: true, data: projectsSites });
+  } catch (error) {
+    console.error("getAllProjectsSite error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Unable to fetch projects" });
+  }
+};
 
 
 
