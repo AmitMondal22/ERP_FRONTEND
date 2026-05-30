@@ -20,6 +20,9 @@ router.post("/api/get-by-project-and-project-site",authcheck, controller.getWork
 
 router.post("/api/get-data-comparison-with",controller.getBomItemsByProjectComparisonData)
 
+/****************************** */
+router.post("/api/get-all-materials-details-used",controller.getUsedQuantityTillDate);//******** */
+/********************** */
 router.post("/api/get-work-progress-details-for-comparison", controller.getBomItemsByProjectAndSiteForComparison)
 
 /******** */

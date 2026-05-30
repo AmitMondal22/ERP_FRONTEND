@@ -321,9 +321,11 @@ createWorkProgress = async (req, res) => {
       total_qty_of_material_used,
       date,
       billing_status,
-      created_by,
+     // created_by,
       consumed_products = []
     } = req.body;
+
+        const created_by = req.user?.id || null;
 
     /* ---------------- BASIC VALIDATION ---------------- */
     if (!project_id || !project_site_id || !bom_id) {
@@ -1347,7 +1349,7 @@ getBomItemsByProjectAndSiteForComparison = async (req, res) => {
       WHERE w.project_id = ?
         AND w.project_site_id = ?
 
-      GROUP BY 
+      GROUP BY  
           bi.product_id,
           p.product_name,
           u.unit_name
@@ -1494,6 +1496,276 @@ getBomItemsByProjectComparisonData = async (req, res) => {
   }
 };
 /******** */
+
+// getUsedQuantityTillDate = async (req, res) => {
+//   try {
+//     const { project_id, project_site_id } = req.body;
+
+//     if (!project_id || !project_site_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id and project_site_id are required",
+//       });
+//     }
+
+//     const sql = `
+//       SELECT 
+//         sui.product_id,
+//         pr.product_name,
+//         u.unit_name,
+//         wp.bom_id,
+//         wp.bom_progress_id,
+//         bp.bom_progress_name,
+
+//         SUM(sui.Act_Qty)          AS total_used_qty,
+//         SUM(sui.bom_product_qty)  AS total_bom_product_qty,
+//         COUNT(DISTINCT wp.work_progress_site_id) AS entry_count
+
+//       FROM tx_site_used_items sui
+
+//       INNER JOIN tx_work_progress wp
+//         ON sui.work_progress_site_id = wp.work_progress_site_id
+
+//       LEFT JOIN md_product pr
+//         ON sui.product_id = pr.product_id
+
+//       LEFT JOIN md_unit u
+//         ON pr.unit_id = u.unit_id
+
+//       LEFT JOIN md_bom_progress bp
+//         ON wp.bom_progress_id = bp.bom_progress_id
+
+//       WHERE wp.project_id      = ?
+//         AND wp.project_site_id = ?
+
+//       GROUP BY
+//         sui.product_id,
+//         pr.product_name,
+//         u.unit_name,
+//         wp.bom_id,
+//         wp.bom_progress_id,
+//         bp.bom_progress_name
+
+//       ORDER BY wp.bom_id, wp.bom_progress_id, sui.product_id
+//     `;
+
+//     const rows = await customSelectSqlQuery2(sql, [project_id, project_site_id]);
+
+//     // Group by bom_id → bom_progress_id → products
+//     const bomMap = new Map();
+
+//     for (const row of rows) {
+//       if (!bomMap.has(row.bom_id)) {
+//         bomMap.set(row.bom_id, {
+//           bom_id: row.bom_id,
+//           progresses: new Map(),
+//         });
+//       }
+
+//       const bom = bomMap.get(row.bom_id);
+
+//       if (!bom.progresses.has(row.bom_progress_id)) {
+//         bom.progresses.set(row.bom_progress_id, {
+//           bom_progress_id: row.bom_progress_id,
+//           bom_progress_name: row.bom_progress_name,
+//           products: [],
+//         });
+//       }
+
+//       bom.progresses.get(row.bom_progress_id).products.push({
+//         product_id:           row.product_id,
+//         product_name:         row.product_name,
+//         unit_name:            row.unit_name,
+//         total_used_qty:       Number(row.total_used_qty   || 0),
+//         total_bom_product_qty: Number(row.total_bom_product_qty || 0),
+//         entry_count:          Number(row.entry_count      || 0),
+//       });
+//     }
+
+//     // Flatten Maps to arrays
+//     const result = [];
+//     for (const bom of bomMap.values()) {
+//       bom.progresses = Array.from(bom.progresses.values());
+//       result.push(bom);
+//     }
+
+//     return res.status(200).json({
+//       success: true,
+//       data: result,
+//     });
+
+//   } catch (error) {
+//     console.error("GET USED QTY TILL DATE ERROR:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Unable to fetch used quantity till date",
+//     });
+//   }
+// };
+
+getUsedQuantityTillDate = async (req, res) => {
+  try {
+    const { project_id, project_site_id } = req.body;
+
+    if (!project_id || !project_site_id) {
+      return res.status(400).json({
+        success: false,
+        message: "project_id and project_site_id are required",
+      });
+    }
+
+    const sql = `
+      SELECT 
+        sui.product_id,
+        pr.product_name,
+        u.unit_name,
+
+        wp.bom_id,
+        b.bom_name,
+
+        wp.bom_progress_id,
+        bp.bom_progress_name,
+
+        -- Actual Used Qty
+        SUM(sui.Act_Qty) AS total_used_qty,
+
+        -- BOM Qty consumed
+        SUM(sui.bom_product_qty) AS total_bom_product_qty,
+
+        -- Estimated Qty from Project Estimation
+        MAX(
+          COALESCE(pde.rep_task, 0) *
+          COALESCE(bi.total_qty, 0)
+        ) AS total_required_qty,
+
+        COUNT(DISTINCT wp.work_progress_site_id) AS entry_count
+
+      FROM tx_site_used_items sui
+
+      INNER JOIN tx_work_progress wp
+        ON sui.work_progress_site_id = wp.work_progress_site_id
+
+      LEFT JOIN md_product pr
+        ON sui.product_id = pr.product_id
+
+      LEFT JOIN md_unit u
+        ON pr.unit_id = u.unit_id
+
+      LEFT JOIN md_bom_progress bp
+        ON wp.bom_progress_id = bp.bom_progress_id
+
+      LEFT JOIN md_bom b
+        ON wp.bom_id = b.bom_id
+
+      LEFT JOIN md_bom_item bi
+        ON bi.bom_id = wp.bom_id
+        AND bi.product_id = sui.product_id
+        AND bi.bom_progress_id = wp.bom_progress_id
+
+      LEFT JOIN tx_project_details_with_estimation pde
+        ON pde.project_id = wp.project_id
+        AND pde.site_id = wp.project_site_id
+        AND pde.bom_id = wp.bom_id
+
+      WHERE wp.project_id = ?
+        AND wp.project_site_id = ?
+
+      GROUP BY
+        sui.product_id,
+        pr.product_name,
+        u.unit_name,
+        wp.bom_id,
+        b.bom_name,
+        wp.bom_progress_id,
+        bp.bom_progress_name
+
+      ORDER BY
+        wp.bom_id,
+        wp.bom_progress_id,
+        sui.product_id
+    `;
+
+    const rows = await customSelectSqlQuery2(sql, [
+      project_id,
+      project_site_id,
+    ]);
+
+    const bomMap = new Map();
+
+    for (const row of rows) {
+      if (!bomMap.has(row.bom_id)) {
+        bomMap.set(row.bom_id, {
+          bom_id: row.bom_id,
+          bom_name: row.bom_name,
+          progresses: new Map(),
+        });
+      }
+
+      const bom = bomMap.get(row.bom_id);
+
+      if (!bom.progresses.has(row.bom_progress_id)) {
+        bom.progresses.set(row.bom_progress_id, {
+          bom_progress_id: row.bom_progress_id,
+          bom_progress_name: row.bom_progress_name,
+          products: [],
+        });
+      }
+
+      const estimatedQty = Number(row.total_required_qty || 0);
+      const usedQty = Number(row.total_used_qty || 0);
+
+      bom.progresses.get(row.bom_progress_id).products.push({
+        product_id: row.product_id,
+        product_name: row.product_name,
+        unit_name: row.unit_name,
+
+        // Estimation Qty
+        estimated_qty: estimatedQty,
+
+        // Actual Used Qty
+        total_used_qty: usedQty,
+
+        // BOM Qty Used
+        total_bom_product_qty: Number(
+          row.total_bom_product_qty || 0
+        ),
+
+        // Remaining
+        remaining_qty: estimatedQty - usedQty,
+
+        // Over Consumption Flag
+        is_exceeded: usedQty > estimatedQty,
+
+        over_used_qty:
+          usedQty > estimatedQty
+            ? usedQty - estimatedQty
+            : 0,
+
+        entry_count: Number(row.entry_count || 0),
+      });
+    }
+
+    const result = [];
+
+    for (const bom of bomMap.values()) {
+      bom.progresses = Array.from(bom.progresses.values());
+      result.push(bom);
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+
+  } catch (error) {
+    console.error("GET USED QTY TILL DATE ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch used quantity till date",
+    });
+  }
+};
 /////////
 
 getWorkProgressByProjectAndSite = async (req, res) => {

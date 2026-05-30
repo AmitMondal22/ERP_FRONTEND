@@ -462,7 +462,7 @@ getBillableBoms = async (req, res) => {
 
 ///////////////////////////////////////////////////////
 
-
+ 
 
 // getBillingDataFullinDetails = async (req, res) => {
 //   try {
@@ -717,51 +717,103 @@ getBillingDataFullinDetails = async (req, res) => {
     }
 
     /* ---------------- BOM DATA ---------------- */
-    const bomSql = `
-      SELECT
-        t.project_estimation_id,
-        t.project_id,
-        p.project_name,
-        t.site_id,
-        s.project_site_name,
-        t.bom_id,
-        t.bom_name,
-        t.rep_task,
-        t.billing_id,
-        t.bom_price,
-        t.bom_unit,
-        t.bom_value_unit,
-        billing.project_work_description,
-        billing.unit AS billing_unit,
-        billing.quantity AS billing_quantity,
-        billing.rate AS billing_rate,
-        billing.amount AS billing_amount,
-        billing.remarks AS billing_remarks,
-        bp.bom_progress_id,
-        bp.bom_progress_name,
-        bp.sl_number,
-        bi.bom_item_id,
-        bi.product_id,
-        bi.qty AS per_unit_qty,
-        bi.total_qty,
-        pr.product_name,
-        pr.product_type_id,
-        pr.hsn_code,
-        uom.unit_name AS unit
-      FROM tx_project_details_with_estimation t
-      LEFT JOIN md_project p ON t.project_id = p.project_id
-      LEFT JOIN md_project_site s ON t.site_id = s.project_site_id
-      LEFT JOIN md_project_billing billing ON t.billing_id = billing.billing_id
-      LEFT JOIN md_bom_progress bp ON t.bom_id = bp.bom_id
-      LEFT JOIN md_bom_item bi 
-        ON bp.bom_progress_id = bi.bom_progress_id
-       AND t.bom_id = bi.bom_id
-      LEFT JOIN md_product pr ON bi.product_id = pr.product_id
-      LEFT JOIN md_unit uom ON pr.unit_id = uom.unit_id
-      WHERE t.project_id = ?
-        AND (? IS NULL OR t.site_id = ?)
-      ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
-    `;
+    // const bomSql = `
+    //   SELECT
+    //     t.project_estimation_id,
+    //     t.project_id,
+    //     p.project_name,
+    //     t.site_id,
+    //     s.project_site_name,
+    //     t.bom_id,
+    //     t.bom_name,
+    //     t.rep_task,
+    //     t.billing_id,
+    //     t.bom_price,
+    //     t.bom_unit,
+    //     t.bom_value_unit,
+    //     billing.project_work_description,
+    //     billing.unit AS billing_unit,
+    //     billing.quantity AS billing_quantity,
+    //     billing.rate AS billing_rate,
+    //     billing.amount AS billing_amount,
+    //     billing.remarks AS billing_remarks,
+    //     bp.bom_progress_id,
+    //     bp.bom_progress_name,
+    //     bp.sl_number,
+    //     bi.bom_item_id,
+    //     bi.product_id,
+    //     bi.qty AS per_unit_qty,
+    //     bi.total_qty,
+    //     pr.product_name,
+    //     pr.product_type_id,
+    //     pr.hsn_code,
+    //     uom.unit_name AS unit
+    //   FROM tx_project_details_with_estimation t
+    //   LEFT JOIN md_project p ON t.project_id = p.project_id
+    //   LEFT JOIN md_project_site s ON t.site_id = s.project_site_id
+    //   LEFT JOIN md_project_billing billing ON t.billing_id = billing.billing_id
+    //   LEFT JOIN md_bom_progress bp ON t.bom_id = bp.bom_id
+    //   LEFT JOIN md_bom_item bi 
+    //     ON bp.bom_progress_id = bi.bom_progress_id
+    //    AND t.bom_id = bi.bom_id
+    //   LEFT JOIN md_product pr ON bi.product_id = pr.product_id
+    //   LEFT JOIN md_unit uom ON pr.unit_id = uom.unit_id
+    //   WHERE t.project_id = ?
+    //     AND (? IS NULL OR t.site_id = ?)
+    //   ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
+    // `;
+
+
+   const bomSql = `
+  SELECT
+    t.project_estimation_id,
+    t.project_id,
+    p.project_name,
+    t.site_id,
+    s.project_site_name,
+    t.bom_id,
+    t.bom_name,
+    t.rep_task,
+    t.billing_id,
+    t.bom_price,
+    t.bom_unit,
+    t.bom_value_unit,
+    billing.project_work_description,
+    billing.unit AS billing_unit,
+    billing.quantity AS billing_quantity,
+    billing.rate AS billing_rate,
+    billing.amount AS billing_amount,
+    billing.remarks AS billing_remarks,
+    billing.gst_type AS gst_type,
+    billing.sgst_percent AS sgst_percent,
+    billing.cgst_percent AS cgst_percent,
+    billing.igst_percent AS igst_percent,
+    bp.bom_progress_id,
+    bp.bom_progress_name,
+    bp.sl_number,
+    bi.bom_item_id,
+    bi.product_id,
+    bi.qty AS per_unit_qty,
+    bi.total_qty,
+    pr.product_name,
+    pr.product_type_id,
+    pr.hsn_code,
+    uom.unit_name AS unit
+  FROM tx_project_details_with_estimation t
+  LEFT JOIN md_project p ON t.project_id = p.project_id
+  LEFT JOIN md_project_site s ON t.site_id = s.project_site_id
+  LEFT JOIN md_project_billing billing ON t.billing_id = billing.billing_id
+  LEFT JOIN md_bom_progress bp ON t.bom_id = bp.bom_id
+  LEFT JOIN md_bom_item bi 
+    ON bp.bom_progress_id = bi.bom_progress_id
+   AND t.bom_id = bi.bom_id
+  LEFT JOIN md_product pr ON bi.product_id = pr.product_id
+  LEFT JOIN md_unit uom ON pr.unit_id = uom.unit_id
+  WHERE t.project_id = ?
+    AND (? IS NULL OR t.site_id = ?)
+  ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
+`;
+
 
     /* ---------------- MATERIAL USED ---------------- */
     const materialSql = `
@@ -833,18 +885,36 @@ getBillingDataFullinDetails = async (req, res) => {
 
       if (!billingMap.has(row.billing_id)) {
         billingMap.set(row.billing_id, {
-          billing_id: row.billing_id,
-          project_id: row.project_id,
-          project_name: row.project_name,
-          site_id: row.site_id,
-          site_name: row.project_site_name,
-          project_work_description: row.project_work_description,
-          billing_unit: row.billing_unit,
-          billing_quantity: row.billing_quantity,
-          billing_rate: row.billing_rate,
-          billing_amount: row.billing_amount,
-          billing_remarks: row.billing_remarks,
-          boms: new Map()
+          // billing_id: row.billing_id,
+          // project_id: row.project_id,
+          // project_name: row.project_name,
+          // site_id: row.site_id,
+          // site_name: row.project_site_name,
+          // project_work_description: row.project_work_description,
+          // billing_unit: row.billing_unit,
+          // billing_quantity: row.billing_quantity,
+          // billing_rate: row.billing_rate,
+          // billing_amount: row.billing_amount,
+          // billing_remarks: row.billing_remarks,
+          // boms: new Map()
+
+
+  billing_id: row.billing_id,
+  project_id: row.project_id,
+  project_name: row.project_name,
+  site_id: row.site_id,
+  site_name: row.project_site_name,
+  project_work_description: row.project_work_description,
+  billing_unit: row.billing_unit,
+  billing_quantity: row.billing_quantity,
+  billing_rate: row.billing_rate,
+  billing_amount: row.billing_amount,
+  billing_remarks: row.billing_remarks,
+  gst_type: row.gst_type,
+  sgst_percent: row.sgst_percent,
+  cgst_percent: row.cgst_percent,
+  igst_percent: row.igst_percent,
+  boms: new Map()
         });
       }
 
