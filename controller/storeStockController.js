@@ -2516,11 +2516,19 @@ async deductStockBulk(req, res) {
     const {
       project_id,
       site_id,
-      dpr_id        = null,
+      dpr_id = null,
       transaction_date,
-      created_by,
       products      = [],
     } = req.body;
+
+    const created_by = req.user?.id;   
+
+if (!created_by) {
+  return res.status(401).json({
+    success: false,
+    message: "Unable to identify authenticated user",
+  });
+}
 
     if (!project_id || !site_id || !products.length) {
       return res.status(400).json({

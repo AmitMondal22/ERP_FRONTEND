@@ -41,7 +41,7 @@ router.get("/api/get-store-fulldetails/:store_id",storeStockController.getStoreF
 
 router.post("/api/stock-ledger/deduct",      storeStockController.deductStockByProjectSite);
 
-router.post("/api/stock-ledger/deduct-bulk", storeStockController.deductStockBulk);////
+router.post("/api/stock-ledger/deduct-bulk", authcheck, storeStockController.deductStockBulk);/////////
 
 //router.get( "/api/store-stock/:store_id/:project_id/:site_id",    storeStockController.getStoreProjectSiteStock);
 
