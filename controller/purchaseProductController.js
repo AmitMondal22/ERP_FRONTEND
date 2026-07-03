@@ -1578,9 +1578,8 @@ deletePurchase = async (req, res) => {
 
 
 
-/**
- * Get Stock Month-wise - SIMPLIFIED for Frontend
- */
+
+   
 // getStockMonthwise = async (req, res) => {
 //   try {
 //     const { project_id, site_id, store_id, product_type_id, fromDate, toDate } = req.body;
@@ -1617,10 +1616,7 @@ deletePurchase = async (req, res) => {
 
 //     const sql = `
 //       SELECT
-//         DATE_FORMAT(pp.created_at, '%Y-%m') AS month_year,
-//         YEAR(pp.created_at) AS year,
-//         MONTH(pp.created_at) AS month,
-//         MONTHNAME(pp.created_at) AS month_name,
+//         DATE_FORMAT(pp.created_at, '%d/%m/%Y') AS purchase_date,
         
 //         p.project_id,
 //         pr.project_name,
@@ -1657,25 +1653,42 @@ deletePurchase = async (req, res) => {
 //       WHERE ${whereClause}
 
 //       GROUP BY 
-//         year, month, pt.product_type_id, prod.product_id, 
-//         p.project_id, p.site_id, p.stor_id
+//         pt.product_type_id, prod.product_id, 
+//         p.project_id, p.site_id, p.stor_id, DATE(pp.created_at)
         
-//       ORDER BY year DESC, month DESC, pt.product_type_name ASC, prod.product_name ASC
+//       ORDER BY pp.created_at DESC, pt.product_type_name ASC, prod.product_name ASC
 //     `;
 
 //     const results = await customSelectSqlQuery2(sql, params);
-//     const structuredData = this.structureSimplifiedData(results);
 
 //     return res.status(200).json({
 //       success: true,
-//       message: "Month-wise stock data fetched successfully",
+//       message: "Stock data fetched successfully",
 //       report_period: `${fromDate} to ${toDate}`,
 //       total_records: results.length,
-//       data: structuredData,
+//       data: results.map(row => ({
+//         purchase_date: row.purchase_date,
+//         project_id: row.project_id,
+//         project_name: row.project_name,
+//         site_id: row.site_id,
+//         site_name: row.project_site_name,
+//         store_id: row.store_id,
+//         store_name: row.store_name,
+//         product_id: row.product_id,
+//         product_name: row.product_name,
+//         product_type: row.product_type_name,
+//         model_no: row.model_no,
+//         hsn_code: row.hsn_code,
+//         manufacturer: row.manufacturer_name,
+//         image: row.product_image,
+//         unit: row.unit_name,
+//         qty: parseFloat(row.total_qty || 0),
+//         amount: parseFloat(row.total_amount || 0).toFixed(2)
+//       }))
 //     });
 
 //   } catch (error) {
-//     console.error("Stock monthwise error:", error);
+//     console.error("Stock data fetch error:", error);
 //     return res.status(500).json({
 //       success: false,
 //       message: "Unable to fetch stock data. Please try again later.",
@@ -1683,63 +1696,143 @@ deletePurchase = async (req, res) => {
 //   }
 // };
 
-/**
- * Structure data - SIMPLE flat structure
- */
-// structureSimplifiedData(results) {
-//   const monthGroups = {};
 
-//   results.forEach(row => {
-//     const monthKey = row.month_year;
-    
-//     // Initialize month if doesn't exist
-//     if (!monthGroups[monthKey]) {
-//       monthGroups[monthKey] = {
-//         month: row.month_name,
-//         month_year: row.month_year,
-//         year: row.year,
-//         project_name: row.project_name,
-//         site_name: row.project_site_name,
-//         store_name: row.store_name,
-//         products: [],
-//         totals: {
-//           total_amount: 0,
-//           total_qty: 0
-//         }
-//       };
+// getStockMonthwise = async (req, res) => {
+//   try {
+//     const { project_id, site_id, store_id, product_type_id, fromDate, toDate } = req.body;
+
+//     if (!project_id || !fromDate || !toDate) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id, fromDate, and toDate are required",
+//       });
 //     }
 
-//     // Add product
-//     monthGroups[monthKey].products.push({
-//       product_id: row.product_id,
-//       product_name: row.product_name,
-//       product_type: row.product_type_name,
-//       model_no: row.model_no,
-//       hsn_code: row.hsn_code,
-//       manufacturer: row.manufacturer_name,
-//       image: row.product_image,
-//       unit: row.unit_name,
-//       qty: parseFloat(row.total_qty || 0),
-//       amount: parseFloat(row.total_amount || 0).toFixed(2)
+//     const conditions = ['p.project_id = ?'];
+//     const params = [project_id];
+
+//     if (site_id) {
+//       conditions.push('p.site_id = ?');
+//       params.push(site_id);
+//     }
+
+//     if (store_id) {
+//       conditions.push('p.stor_id = ?');
+//       params.push(store_id);
+//     }
+
+//     if (product_type_id) {
+//       conditions.push('prod.product_type_id = ?');
+//       params.push(product_type_id);
+//     }
+
+//     conditions.push('DATE(pp.created_at) BETWEEN ? AND ?');
+//     params.push(fromDate, toDate);
+
+//     const whereClause = conditions.join(' AND ');
+
+//     // NOTE: Every non-aggregated column in SELECT is now either part of
+//     // GROUP BY or wrapped in ANY_VALUE(). This avoids ER_WRONG_FIELD_WITH_GROUP
+//     // errors on servers running with ONLY_FULL_GROUP_BY enabled (default on
+//     // MySQL 5.7.5+ and most managed/production DB instances).
+//     const sql = `
+//       SELECT
+//         DATE_FORMAT(pp.created_at, '%d/%m/%Y') AS purchase_date,
+
+//         p.project_id,
+//         ANY_VALUE(pr.project_name) AS project_name,
+//         p.site_id,
+//         ANY_VALUE(ps.project_site_name) AS project_site_name,
+//         p.stor_id AS store_id,
+//         ANY_VALUE(st.store_name) AS store_name,
+
+//         pt.product_type_id,
+//         ANY_VALUE(pt.product_type_name) AS product_type_name,
+
+//         prod.product_id,
+//         ANY_VALUE(prod.product_name) AS product_name,
+//         ANY_VALUE(prod.model_no) AS model_no,
+//         ANY_VALUE(prod.unit_id) AS unit_id,
+//         ANY_VALUE(prod.hsn_code) AS hsn_code,
+//         ANY_VALUE(prod.manufacturer_name) AS manufacturer_name,
+//         ANY_VALUE(prod.product_image) AS product_image,
+
+//         ANY_VALUE(u.unit_name) AS unit_name,
+
+//         SUM(pp.invoice_qty) AS total_qty,
+//         SUM(pp.total_amount) AS total_amount
+
+//       FROM td_purchase_product pp
+//       INNER JOIN td_purchase p ON pp.purchase_id = p.purchase_id
+//       INNER JOIN md_product prod ON pp.product_id = prod.product_id
+//       INNER JOIN md_product_type pt ON prod.product_type_id = pt.product_type_id
+//       INNER JOIN md_project pr ON p.project_id = pr.project_id
+//       LEFT JOIN md_unit u ON prod.unit_id = u.unit_id
+//       LEFT JOIN md_project_site ps ON p.site_id = ps.project_site_id
+//       LEFT JOIN md_store st ON p.stor_id = st.store_id
+
+//       WHERE ${whereClause}
+
+//       GROUP BY
+//         pt.product_type_id, prod.product_id,
+//         p.project_id, p.site_id, p.stor_id, DATE(pp.created_at)
+
+//       ORDER BY pp.created_at DESC, pt.product_type_name ASC, prod.product_name ASC
+//     `;
+
+//     const results = await customSelectSqlQuery2(sql, params);
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Stock data fetched successfully",
+//       report_period: `${fromDate} to ${toDate}`,
+//       total_records: results.length,
+//       data: results.map(row => ({
+//         purchase_date: row.purchase_date,
+//         project_id: row.project_id,
+//         project_name: row.project_name,
+//         site_id: row.site_id,
+//         site_name: row.project_site_name,
+//         store_id: row.store_id,
+//         store_name: row.store_name,
+//         product_id: row.product_id,
+//         product_name: row.product_name,
+//         product_type: row.product_type_name,
+//         model_no: row.model_no,
+//         hsn_code: row.hsn_code,
+//         manufacturer: row.manufacturer_name,
+//         image: row.product_image,
+//         unit: row.unit_name,
+//         qty: parseFloat(row.total_qty || 0),
+//         amount: parseFloat(row.total_amount || 0).toFixed(2)
+//       }))
 //     });
 
-//     // Update totals
-//     monthGroups[monthKey].totals.total_amount += parseFloat(row.total_amount || 0);
-//     monthGroups[monthKey].totals.total_qty += parseFloat(row.total_qty || 0);
-//   });
+//   } catch (error) {
+//     // Log full DB-level error detail server-side so prod failures are
+//     // actually diagnosable (mysql2 attaches sqlMessage/code/sql to the error).
+//     console.error("Stock data fetch error:", {
+//       message: error.message,
+//       code: error.code,
+//       sqlMessage: error.sqlMessage,
+//       sql: error.sql,
+//       stack: error.stack,
+//     });
 
-//   // Convert to array and format totals
-//   return Object.values(monthGroups).map(month => ({
-//     ...month,
-//     totals: {
-//       total_amount: parseFloat(month.totals.total_amount).toFixed(2),
-//       total_qty: parseFloat(month.totals.total_qty).toFixed(2)
-//     }
-//   }));
-// }
+//     return res.status(500).json({
+//       success: false,
+//       message: "Unable to fetch stock data. Please try again later.",
+//       // Only exposed outside production so you can debug quickly without
+//       // leaking DB internals to end users in prod.
+//       ...(process.env.NODE_ENV !== 'production' && {
+//         debug: error.sqlMessage || error.message,
+//       }),
+//     });
+//   }
+// };
 
 
-   
+
 getStockMonthwise = async (req, res) => {
   try {
     const { project_id, site_id, store_id, product_type_id, fromDate, toDate } = req.body;
@@ -1753,54 +1846,61 @@ getStockMonthwise = async (req, res) => {
 
     const conditions = ['p.project_id = ?'];
     const params = [project_id];
-    
+
     if (site_id) {
       conditions.push('p.site_id = ?');
       params.push(site_id);
     }
-    
+
     if (store_id) {
       conditions.push('p.stor_id = ?');
       params.push(store_id);
     }
-    
+
     if (product_type_id) {
       conditions.push('prod.product_type_id = ?');
       params.push(product_type_id);
     }
-    
+
     conditions.push('DATE(pp.created_at) BETWEEN ? AND ?');
     params.push(fromDate, toDate);
 
     const whereClause = conditions.join(' AND ');
 
+    // Using MAX() instead of ANY_VALUE() intentionally:
+    // - Prod (MySQL 8.0.44) runs with ONLY_FULL_GROUP_BY enabled, so every
+    //   non-aggregated SELECT column must be wrapped in an aggregate function.
+    // - Local (MariaDB 10.4.28) does not reliably support ANY_VALUE().
+    // MAX() is supported identically on both and is safe here because each
+    // of these columns is functionally dependent on the GROUP BY keys
+    // (one true value per group — project_id, site_id, stor_id, product_id, date).
     const sql = `
       SELECT
         DATE_FORMAT(pp.created_at, '%d/%m/%Y') AS purchase_date,
-        
+
         p.project_id,
-        pr.project_name,
+        MAX(pr.project_name) AS project_name,
         p.site_id,
-        ps.project_site_name,
+        MAX(ps.project_site_name) AS project_site_name,
         p.stor_id AS store_id,
-        st.store_name,
-        
+        MAX(st.store_name) AS store_name,
+
         pt.product_type_id,
-        pt.product_type_name,
-        
+        MAX(pt.product_type_name) AS product_type_name,
+
         prod.product_id,
-        prod.product_name,
-        prod.model_no,
-        prod.unit_id,
-        prod.hsn_code,
-        prod.manufacturer_name,
-        prod.product_image,
-        
-        u.unit_name,
-        
+        MAX(prod.product_name) AS product_name,
+        MAX(prod.model_no) AS model_no,
+        MAX(prod.unit_id) AS unit_id,
+        MAX(prod.hsn_code) AS hsn_code,
+        MAX(prod.manufacturer_name) AS manufacturer_name,
+        MAX(prod.product_image) AS product_image,
+
+        MAX(u.unit_name) AS unit_name,
+
         SUM(pp.invoice_qty) AS total_qty,
         SUM(pp.total_amount) AS total_amount
-        
+
       FROM td_purchase_product pp
       INNER JOIN td_purchase p ON pp.purchase_id = p.purchase_id
       INNER JOIN md_product prod ON pp.product_id = prod.product_id
@@ -1812,10 +1912,10 @@ getStockMonthwise = async (req, res) => {
 
       WHERE ${whereClause}
 
-      GROUP BY 
-        pt.product_type_id, prod.product_id, 
+      GROUP BY
+        pt.product_type_id, prod.product_id,
         p.project_id, p.site_id, p.stor_id, DATE(pp.created_at)
-        
+
       ORDER BY pp.created_at DESC, pt.product_type_name ASC, prod.product_name ASC
     `;
 
@@ -1848,15 +1948,23 @@ getStockMonthwise = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Stock data fetch error:", error);
+    console.error("Stock data fetch error:", {
+      message: error.message,
+      code: error.code,
+      sqlMessage: error.sqlMessage,
+      sql: error.sql,
+      stack: error.stack,
+    });
+
     return res.status(500).json({
       success: false,
       message: "Unable to fetch stock data. Please try again later.",
+      ...(process.env.NODE_ENV !== 'production' && {
+        debug: error.sqlMessage || error.message,
+      }),
     });
   }
 };
-
-
 
 
 
@@ -2164,7 +2272,196 @@ getStockMonthwise = async (req, res) => {
 /**
  * Get Purchase Details Month-wise - Complete Financial Analysis with Date Range
  * Shows all purchase details including taxes, discounts, rates, etc.
- */
+//  */
+// getPurchaseDetailsMonthwise = async (req, res) => {
+//   try {
+//     const { project_id, site_id, store_id, product_type_id, fromDate, toDate } = req.body;
+
+//     if (!project_id || !fromDate || !toDate) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id, fromDate, and toDate are required",
+//       });
+//     }
+
+//     const conditions = ['p.project_id = ?'];
+//     const params = [project_id];
+    
+//     if (site_id) {
+//       conditions.push('p.site_id = ?');
+//       params.push(site_id);
+//     }
+    
+//     if (store_id) {
+//       conditions.push('p.stor_id = ?');
+//       params.push(store_id);
+//     }
+    
+//     if (product_type_id) {
+//       conditions.push('prod.product_type_id = ?');
+//       params.push(product_type_id);
+//     }
+    
+//     conditions.push('DATE(pp.created_at) BETWEEN ? AND ?');
+//     params.push(fromDate, toDate);
+
+//     const whereClause = conditions.join(' AND ');
+
+//     const sql = `
+//       SELECT
+//         DATE_FORMAT(pp.created_at, '%d/%m/%Y') AS purchase_date,
+        
+//         p.project_id,
+//         pr.project_name,
+//         p.site_id,
+//         ps.project_site_name,
+//         p.stor_id AS store_id,
+//         st.store_name,
+        
+//         pt.product_type_id,
+//         pt.product_type_name,
+        
+//         prod.product_id,
+//         prod.product_name,
+//         prod.model_no,
+//         prod.unit_id,
+//         prod.hsn_code,
+//         prod.manufacturer_name,
+//         prod.product_image,
+        
+//         u.unit_name,
+        
+//         -- Purchase Statistics
+//         COUNT(DISTINCT pp.purchase_id) AS total_purchases,
+//         SUM(pp.product_qty) AS total_product_qty,
+//         SUM(pp.invoice_qty) AS total_invoice_qty,
+        
+//         -- Pricing Details
+//         AVG(pp.unit_rate) AS avg_unit_rate,
+//         MIN(pp.unit_rate) AS min_unit_rate,
+//         MAX(pp.unit_rate) AS max_unit_rate,
+        
+//         -- Financial Breakdown
+//         SUM(pp.discount_amount) AS total_discount,
+//         SUM(pp.sgst_amt) AS total_sgst,
+//         SUM(pp.cgst_amt) AS total_cgst,
+//         SUM(pp.igst_amt) AS total_igst,
+//         SUM(pp.total_amount) AS total_amount,
+        
+//         -- Date Range
+//         MIN(pp.created_at) AS first_purchase_date,
+//         MAX(pp.created_at) AS last_purchase_date
+        
+//       FROM td_purchase_product pp
+//       INNER JOIN td_purchase p ON pp.purchase_id = p.purchase_id
+//       INNER JOIN md_product prod ON pp.product_id = prod.product_id
+//       INNER JOIN md_product_type pt ON prod.product_type_id = pt.product_type_id
+//       INNER JOIN md_project pr ON p.project_id = pr.project_id
+//       LEFT JOIN md_unit u ON prod.unit_id = u.unit_id
+//       LEFT JOIN md_project_site ps ON p.site_id = ps.project_site_id
+//       LEFT JOIN md_store st ON p.stor_id = st.store_id
+      
+//       WHERE ${whereClause}
+      
+//       GROUP BY 
+//         pt.product_type_id, prod.product_id, 
+//         p.project_id, p.site_id, p.stor_id, DATE(pp.created_at)
+        
+//       ORDER BY pp.created_at DESC, pt.product_type_name ASC, prod.product_name ASC
+//     `;
+
+//     const results = await customSelectSqlQuery2(sql, params);
+
+//     // Calculate total days in report
+//     const from = new Date(fromDate);
+//     const to = new Date(toDate);
+//     const totalDays = Math.ceil((to - from) / (1000 * 60 * 60 * 24)) + 1;
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Detailed purchase data fetched successfully",
+//       report_info: {
+//         report_type: "Monthly Purchase Details Report",
+//         report_period: `${fromDate} to ${toDate}`,
+//         date_range: {
+//           from: fromDate,
+//           to: toDate
+//         },
+//         generated_at: new Date().toISOString(),
+//         total_days: totalDays
+//       },
+//       filters: {
+//         project_id,
+//         site_id: site_id || null,
+//         store_id: store_id || null,
+//         product_type_id: product_type_id || null,
+//         fromDate,
+//         toDate,
+//       },
+//       total_records: results.length,
+//       data: results.map(row => ({
+//         purchase_date: row.purchase_date,
+        
+//         project_id: row.project_id,
+//         project_name: row.project_name,
+//         site_id: row.site_id,
+//         project_site_name: row.project_site_name,
+//         store_id: row.store_id,
+//         store_name: row.store_name,
+        
+//         product_type_id: row.product_type_id,
+//         product_type_name: row.product_type_name,
+        
+//         product_id: row.product_id,
+//         product_name: row.product_name,
+//         model_no: row.model_no,
+//         unit_id: row.unit_id,
+//         hsn_code: row.hsn_code,
+//         manufacturer_name: row.manufacturer_name,
+//         product_image: row.product_image,
+//         unit_name: row.unit_name,
+        
+//         // Purchase Statistics
+//         total_purchases: row.total_purchases,
+//         total_product_qty: parseFloat(row.total_product_qty || 0),
+//         total_invoice_qty: parseFloat(row.total_invoice_qty || 0),
+        
+//         // Pricing Details
+//         avg_unit_rate: parseFloat(row.avg_unit_rate || 0).toFixed(2),
+//         min_unit_rate: parseFloat(row.min_unit_rate || 0).toFixed(2),
+//         max_unit_rate: parseFloat(row.max_unit_rate || 0).toFixed(2),
+        
+//         // Financial Breakdown
+//         total_discount: parseFloat(row.total_discount || 0).toFixed(2),
+//         total_sgst: parseFloat(row.total_sgst || 0).toFixed(2),
+//         total_cgst: parseFloat(row.total_cgst || 0).toFixed(2),
+//         total_igst: parseFloat(row.total_igst || 0).toFixed(2),
+//         total_amount: parseFloat(row.total_amount || 0).toFixed(2),
+        
+//         // Date Range
+//         first_purchase_date: row.first_purchase_date,
+//         last_purchase_date: row.last_purchase_date
+//       })),
+//     });
+
+//   } catch (error) {
+//     console.error("Purchase details monthwise error:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Unable to fetch purchase details. Please try again later.",
+//     });
+//   }
+// };
+
+
+
+
+// --------------------------------------------------
+// GET PURCHASES BY PROJECT, SITE, AND PRODUCT
+// --------------------------------------------------
+
+
+
 getPurchaseDetailsMonthwise = async (req, res) => {
   try {
     const { project_id, site_id, store_id, product_type_id, fromDate, toDate } = req.body;
@@ -2178,72 +2475,82 @@ getPurchaseDetailsMonthwise = async (req, res) => {
 
     const conditions = ['p.project_id = ?'];
     const params = [project_id];
-    
+
     if (site_id) {
       conditions.push('p.site_id = ?');
       params.push(site_id);
     }
-    
+
     if (store_id) {
       conditions.push('p.stor_id = ?');
       params.push(store_id);
     }
-    
+
     if (product_type_id) {
       conditions.push('prod.product_type_id = ?');
       params.push(product_type_id);
     }
-    
+
     conditions.push('DATE(pp.created_at) BETWEEN ? AND ?');
     params.push(fromDate, toDate);
 
     const whereClause = conditions.join(' AND ');
 
+    // Every non-aggregated / non-GROUP-BY-key column below is wrapped in
+    // MAX() (not ANY_VALUE()) for two reasons:
+    // 1. Prod (MySQL 8.0.44) runs with ONLY_FULL_GROUP_BY enabled, so any
+    //    SELECT column that isn't a GROUP BY key or wrapped in an aggregate
+    //    throws ER_WRONG_FIELD_WITH_GROUP.
+    // 2. Local (MariaDB 10.4.28) doesn't reliably support ANY_VALUE().
+    // MAX() works identically on both. Note: pp.created_at itself is also
+    // wrapped (not just DATE(pp.created_at)) because DATE_FORMAT(pp.created_at, ...)
+    // is a different expression than the GROUP BY key DATE(pp.created_at) and
+    // is NOT recognized as functionally dependent under ONLY_FULL_GROUP_BY.
     const sql = `
       SELECT
-        DATE_FORMAT(pp.created_at, '%d/%m/%Y') AS purchase_date,
-        
+        DATE_FORMAT(MAX(pp.created_at), '%d/%m/%Y') AS purchase_date,
+
         p.project_id,
-        pr.project_name,
+        MAX(pr.project_name) AS project_name,
         p.site_id,
-        ps.project_site_name,
+        MAX(ps.project_site_name) AS project_site_name,
         p.stor_id AS store_id,
-        st.store_name,
-        
+        MAX(st.store_name) AS store_name,
+
         pt.product_type_id,
-        pt.product_type_name,
-        
+        MAX(pt.product_type_name) AS product_type_name,
+
         prod.product_id,
-        prod.product_name,
-        prod.model_no,
-        prod.unit_id,
-        prod.hsn_code,
-        prod.manufacturer_name,
-        prod.product_image,
-        
-        u.unit_name,
-        
+        MAX(prod.product_name) AS product_name,
+        MAX(prod.model_no) AS model_no,
+        MAX(prod.unit_id) AS unit_id,
+        MAX(prod.hsn_code) AS hsn_code,
+        MAX(prod.manufacturer_name) AS manufacturer_name,
+        MAX(prod.product_image) AS product_image,
+
+        MAX(u.unit_name) AS unit_name,
+
         -- Purchase Statistics
         COUNT(DISTINCT pp.purchase_id) AS total_purchases,
         SUM(pp.product_qty) AS total_product_qty,
         SUM(pp.invoice_qty) AS total_invoice_qty,
-        
+
         -- Pricing Details
         AVG(pp.unit_rate) AS avg_unit_rate,
         MIN(pp.unit_rate) AS min_unit_rate,
         MAX(pp.unit_rate) AS max_unit_rate,
-        
+
         -- Financial Breakdown
         SUM(pp.discount_amount) AS total_discount,
         SUM(pp.sgst_amt) AS total_sgst,
         SUM(pp.cgst_amt) AS total_cgst,
         SUM(pp.igst_amt) AS total_igst,
         SUM(pp.total_amount) AS total_amount,
-        
+
         -- Date Range
         MIN(pp.created_at) AS first_purchase_date,
         MAX(pp.created_at) AS last_purchase_date
-        
+
       FROM td_purchase_product pp
       INNER JOIN td_purchase p ON pp.purchase_id = p.purchase_id
       INNER JOIN md_product prod ON pp.product_id = prod.product_id
@@ -2252,13 +2559,13 @@ getPurchaseDetailsMonthwise = async (req, res) => {
       LEFT JOIN md_unit u ON prod.unit_id = u.unit_id
       LEFT JOIN md_project_site ps ON p.site_id = ps.project_site_id
       LEFT JOIN md_store st ON p.stor_id = st.store_id
-      
+
       WHERE ${whereClause}
-      
-      GROUP BY 
-        pt.product_type_id, prod.product_id, 
+
+      GROUP BY
+        pt.product_type_id, prod.product_id,
         p.project_id, p.site_id, p.stor_id, DATE(pp.created_at)
-        
+
       ORDER BY pp.created_at DESC, pt.product_type_name ASC, prod.product_name ASC
     `;
 
@@ -2293,17 +2600,17 @@ getPurchaseDetailsMonthwise = async (req, res) => {
       total_records: results.length,
       data: results.map(row => ({
         purchase_date: row.purchase_date,
-        
+
         project_id: row.project_id,
         project_name: row.project_name,
         site_id: row.site_id,
         project_site_name: row.project_site_name,
         store_id: row.store_id,
         store_name: row.store_name,
-        
+
         product_type_id: row.product_type_id,
         product_type_name: row.product_type_name,
-        
+
         product_id: row.product_id,
         product_name: row.product_name,
         model_no: row.model_no,
@@ -2312,24 +2619,24 @@ getPurchaseDetailsMonthwise = async (req, res) => {
         manufacturer_name: row.manufacturer_name,
         product_image: row.product_image,
         unit_name: row.unit_name,
-        
+
         // Purchase Statistics
         total_purchases: row.total_purchases,
         total_product_qty: parseFloat(row.total_product_qty || 0),
         total_invoice_qty: parseFloat(row.total_invoice_qty || 0),
-        
+
         // Pricing Details
         avg_unit_rate: parseFloat(row.avg_unit_rate || 0).toFixed(2),
         min_unit_rate: parseFloat(row.min_unit_rate || 0).toFixed(2),
         max_unit_rate: parseFloat(row.max_unit_rate || 0).toFixed(2),
-        
+
         // Financial Breakdown
         total_discount: parseFloat(row.total_discount || 0).toFixed(2),
         total_sgst: parseFloat(row.total_sgst || 0).toFixed(2),
         total_cgst: parseFloat(row.total_cgst || 0).toFixed(2),
         total_igst: parseFloat(row.total_igst || 0).toFixed(2),
         total_amount: parseFloat(row.total_amount || 0).toFixed(2),
-        
+
         // Date Range
         first_purchase_date: row.first_purchase_date,
         last_purchase_date: row.last_purchase_date
@@ -2337,10 +2644,20 @@ getPurchaseDetailsMonthwise = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Purchase details monthwise error:", error);
+    console.error("Purchase details monthwise error:", {
+      message: error.message,
+      code: error.code,
+      sqlMessage: error.sqlMessage,
+      sql: error.sql,
+      stack: error.stack,
+    });
+
     return res.status(500).json({
       success: false,
       message: "Unable to fetch purchase details. Please try again later.",
+      ...(process.env.NODE_ENV !== 'production' && {
+        debug: error.sqlMessage || error.message,
+      }),
     });
   }
 };
@@ -2348,9 +2665,9 @@ getPurchaseDetailsMonthwise = async (req, res) => {
 
 
 
-// --------------------------------------------------
-// GET PURCHASES BY PROJECT, SITE, AND PRODUCT
-// --------------------------------------------------
+//////////////////////////
+
+
 getPurchasesByProjectSiteAndProductwithAlldetails = async (req, res) => {
   try {
     const { project_id, site_id, product_id } = req.body;
