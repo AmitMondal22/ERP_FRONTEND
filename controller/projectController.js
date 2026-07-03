@@ -141,6 +141,165 @@ const project = await selectOneData(table, select, `a.project_id = ${Number(id)}
 
 //////////////////////
 
+// getPurchaseByProjectSiteAndDate = async (req, res) => {
+//   try {
+//     const { project_id, site_id, fromDate, toDate } = req.body;
+
+//     // Validation
+//     if (!project_id || !site_id || !fromDate || !toDate) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "project_id, site_id, fromDate and toDate are required",
+//       });
+//     }
+
+//     // Strict validation to prevent SQL injection
+//     const parsedProjectId = Number(project_id);
+//     const parsedSiteId = Number(site_id);
+    
+//     if (isNaN(parsedProjectId) || parsedProjectId <= 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid project_id",
+//       });
+//     }
+
+//     if (isNaN(parsedSiteId) || parsedSiteId <= 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid site_id",
+//       });
+//     }
+
+//     // Strict date validation (YYYY-MM-DD format only)
+//     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+//     if (!dateRegex.test(fromDate) || !dateRegex.test(toDate)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid date format. Use YYYY-MM-DD",
+//       });
+//     }
+
+//     const sql = `
+//       SELECT
+//         p.purchase_id,
+//         p.invoice_no,
+//         DATE(p.invoice_date) AS invoice_date,
+//         DATE(p.delivery_date) AS delivery_date,
+//         p.invoice_image,
+//         p.transport_insurance,
+//         p.remarks,
+
+//         p.project_id,
+//         pr.project_name,
+//         cl.client_id,
+//         cl.client_code,
+//         cl.client_name,
+//         cl.client_type,
+//         cl.industry_type,
+// cl.client_mobile,
+// cl.client_phone,
+// cl.client_email,
+// cl.client_website,
+// cl.client_address,
+
+//         p.site_id,
+//         ps.project_site_name,
+
+//         p.vendor_id,
+//         v.vendor_name,
+//         v.vendor_mobile,
+//         v.vendor_email,
+//         v.vendor_gst_in,
+
+//         p.stor_id,
+//         s.store_name,
+
+//         p.purchase_order_id,
+//         po.po_no,
+//         DATE(po.date) AS po_date,
+//         DATE(po.delivery_date) AS po_delivery_date,
+//         po.total_amount AS po_total_amount,
+//         po.terms_and_condition,
+
+//         pp.purchase_product_id,
+//         pp.product_id,
+//         prod.product_name,
+//         prod.product_type_id,
+
+//         pp.product_qty,
+//         pp.invoice_qty,
+//         pp.unit_rate,
+//         pp.discount_rate,
+//         pp.discount_amount,
+//         pp.sgst_rate,
+//         pp.cgst_rate,
+//         pp.igst_rate,
+//         pp.sgst_amt,
+//         pp.cgst_amt,
+//         pp.igst_amt,
+//         pp.total_amount AS product_total_amount,
+//         pp.return_id,
+//         DATE(pp.make_date) AS make_date,
+//         pp.ownership_status,
+
+//         DATE(pp.created_at) AS purchase_date,
+//         pp.created_at,
+//         pp.updated_at
+
+//       FROM td_purchase p
+
+//       LEFT JOIN md_project pr
+//         ON p.project_id = pr.project_id
+
+//         LEFT JOIN md_client cl
+//     ON pr.client_id = cl.client_id
+
+//       LEFT JOIN md_project_site ps
+//         ON p.site_id = ps.project_site_id
+
+//       LEFT JOIN md_vendor v
+//         ON p.vendor_id = v.vendor_id
+
+//       LEFT JOIN md_store s
+//         ON p.stor_id = s.store_id
+
+//       LEFT JOIN td_purchase_order po
+//         ON p.purchase_order_id = po.purchase_order_id
+
+//       LEFT JOIN td_purchase_product pp
+//         ON p.purchase_id = pp.purchase_id
+
+//       LEFT JOIN md_product prod
+//         ON pp.product_id = prod.product_id
+
+//       WHERE
+//         p.project_id = ${parsedProjectId}
+//         AND p.site_id = ${parsedSiteId}
+//         AND DATE(p.invoice_date) BETWEEN '${fromDate}' AND '${toDate}'
+
+//       ORDER BY p.invoice_date DESC, p.purchase_id DESC
+//     `;
+
+//     const results = await customSelectSqlQuery(sql);
+
+//     return res.status(200).json({
+//       success: true,
+//       total: results.length,
+//       data: results,
+//     });
+
+//   } catch (error) {
+//     console.error("Error fetching project-site purchase history:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Internal server error",
+//       error: error.message,
+//     });
+//   }
+// };
+
+
 getPurchaseByProjectSiteAndDate = async (req, res) => {
   try {
     const { project_id, site_id, fromDate, toDate } = req.body;
@@ -156,7 +315,7 @@ getPurchaseByProjectSiteAndDate = async (req, res) => {
     // Strict validation to prevent SQL injection
     const parsedProjectId = Number(project_id);
     const parsedSiteId = Number(site_id);
-    
+
     if (isNaN(parsedProjectId) || parsedProjectId <= 0) {
       return res.status(400).json({
         success: false,
@@ -173,6 +332,7 @@ getPurchaseByProjectSiteAndDate = async (req, res) => {
 
     // Strict date validation (YYYY-MM-DD format only)
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
     if (!dateRegex.test(fromDate) || !dateRegex.test(toDate)) {
       return res.status(400).json({
         success: false,
@@ -192,16 +352,17 @@ getPurchaseByProjectSiteAndDate = async (req, res) => {
 
         p.project_id,
         pr.project_name,
+
         cl.client_id,
         cl.client_code,
         cl.client_name,
         cl.client_type,
         cl.industry_type,
-cl.client_mobile,
-cl.client_phone,
-cl.client_email,
-cl.client_website,
-cl.client_address,
+        cl.client_mobile,
+        cl.client_phone,
+        cl.client_email,
+        cl.client_website,
+        cl.client_address,
 
         p.site_id,
         ps.project_site_name,
@@ -252,6 +413,9 @@ cl.client_address,
       LEFT JOIN md_project pr
         ON p.project_id = pr.project_id
 
+      LEFT JOIN md_client cl
+        ON pr.client_id = cl.client_id
+
       LEFT JOIN md_project_site ps
         ON p.site_id = ps.project_site_id
 
@@ -275,7 +439,9 @@ cl.client_address,
         AND p.site_id = ${parsedSiteId}
         AND DATE(p.invoice_date) BETWEEN '${fromDate}' AND '${toDate}'
 
-      ORDER BY p.invoice_date DESC, p.purchase_id DESC
+      ORDER BY
+        p.invoice_date DESC,
+        p.purchase_id DESC
     `;
 
     const results = await customSelectSqlQuery(sql);
@@ -288,6 +454,7 @@ cl.client_address,
 
   } catch (error) {
     console.error("Error fetching project-site purchase history:", error);
+
     return res.status(500).json({
       success: false,
       message: "Internal server error",
@@ -295,9 +462,6 @@ cl.client_address,
     });
   }
 };
-
-
-
 
 }
 
