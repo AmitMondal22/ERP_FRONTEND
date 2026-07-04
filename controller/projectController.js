@@ -445,6 +445,8 @@ getPurchaseByProjectSiteAndDate = async (req, res) => {
     `;
 
     const results = await customSelectSqlQuery(sql);
+    const check = await customSelectSqlQuery("SELECT DATABASE() AS db, @@hostname AS host, @@port AS port, CONNECTION_ID() AS conn_id");
+    console.log("THIS QUERY IS RUNNING AGAINST:", check);
 
     return res.status(200).json({
       success: true,
