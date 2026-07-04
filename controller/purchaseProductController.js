@@ -1580,121 +1580,6 @@ deletePurchase = async (req, res) => {
 
 
    
-// getStockMonthwise = async (req, res) => {
-//   try {
-//     const { project_id, site_id, store_id, product_type_id, fromDate, toDate } = req.body;
-
-//     if (!project_id || !fromDate || !toDate) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "project_id, fromDate, and toDate are required",
-//       });
-//     }
-
-//     const conditions = ['p.project_id = ?'];
-//     const params = [project_id];
-    
-//     if (site_id) {
-//       conditions.push('p.site_id = ?');
-//       params.push(site_id);
-//     }
-    
-//     if (store_id) {
-//       conditions.push('p.stor_id = ?');
-//       params.push(store_id);
-//     }
-    
-//     if (product_type_id) {
-//       conditions.push('prod.product_type_id = ?');
-//       params.push(product_type_id);
-//     }
-    
-//     conditions.push('DATE(pp.created_at) BETWEEN ? AND ?');
-//     params.push(fromDate, toDate);
-
-//     const whereClause = conditions.join(' AND ');
-
-//     const sql = `
-//       SELECT
-//         DATE_FORMAT(pp.created_at, '%d/%m/%Y') AS purchase_date,
-        
-//         p.project_id,
-//         pr.project_name,
-//         p.site_id,
-//         ps.project_site_name,
-//         p.stor_id AS store_id,
-//         st.store_name,
-        
-//         pt.product_type_id,
-//         pt.product_type_name,
-        
-//         prod.product_id,
-//         prod.product_name,
-//         prod.model_no,
-//         prod.unit_id,
-//         prod.hsn_code,
-//         prod.manufacturer_name,
-//         prod.product_image,
-        
-//         u.unit_name,
-        
-//         SUM(pp.invoice_qty) AS total_qty,
-//         SUM(pp.total_amount) AS total_amount
-        
-//       FROM td_purchase_product pp
-//       INNER JOIN td_purchase p ON pp.purchase_id = p.purchase_id
-//       INNER JOIN md_product prod ON pp.product_id = prod.product_id
-//       INNER JOIN md_product_type pt ON prod.product_type_id = pt.product_type_id
-//       INNER JOIN md_project pr ON p.project_id = pr.project_id
-//       LEFT JOIN md_unit u ON prod.unit_id = u.unit_id
-//       LEFT JOIN md_project_site ps ON p.site_id = ps.project_site_id
-//       LEFT JOIN md_store st ON p.stor_id = st.store_id
-
-//       WHERE ${whereClause}
-
-//       GROUP BY 
-//         pt.product_type_id, prod.product_id, 
-//         p.project_id, p.site_id, p.stor_id, DATE(pp.created_at)
-        
-//       ORDER BY pp.created_at DESC, pt.product_type_name ASC, prod.product_name ASC
-//     `;
-
-//     const results = await customSelectSqlQuery2(sql, params);
-
-//     return res.status(200).json({
-//       success: true,
-//       message: "Stock data fetched successfully",
-//       report_period: `${fromDate} to ${toDate}`,
-//       total_records: results.length,
-//       data: results.map(row => ({
-//         purchase_date: row.purchase_date,
-//         project_id: row.project_id,
-//         project_name: row.project_name,
-//         site_id: row.site_id,
-//         site_name: row.project_site_name,
-//         store_id: row.store_id,
-//         store_name: row.store_name,
-//         product_id: row.product_id,
-//         product_name: row.product_name,
-//         product_type: row.product_type_name,
-//         model_no: row.model_no,
-//         hsn_code: row.hsn_code,
-//         manufacturer: row.manufacturer_name,
-//         image: row.product_image,
-//         unit: row.unit_name,
-//         qty: parseFloat(row.total_qty || 0),
-//         amount: parseFloat(row.total_amount || 0).toFixed(2)
-//       }))
-//     });
-
-//   } catch (error) {
-//     console.error("Stock data fetch error:", error);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Unable to fetch stock data. Please try again later.",
-//     });
-//   }
-// };
 
 
 // getStockMonthwise = async (req, res) => {
@@ -1833,6 +1718,7 @@ deletePurchase = async (req, res) => {
 
 
 
+
 getStockMonthwise = async (req, res) => {
   try {
     const { project_id, site_id, store_id, product_type_id, fromDate, toDate } = req.body;
@@ -1874,9 +1760,11 @@ getStockMonthwise = async (req, res) => {
     // MAX() is supported identically on both and is safe here because each
     // of these columns is functionally dependent on the GROUP BY keys
     // (one true value per group — project_id, site_id, stor_id, product_id, date).
+
     const sql = `
       SELECT
-        DATE_FORMAT(pp.created_at, '%d/%m/%Y') AS purchase_date,
+
+        MAX(DATE_FORMAT(pp.created_at, '%d/%m/%Y')) AS purchase_date,
 
         p.project_id,
         MAX(pr.project_name) AS project_name,
@@ -1910,14 +1798,14 @@ getStockMonthwise = async (req, res) => {
       LEFT JOIN md_project_site ps ON p.site_id = ps.project_site_id
       LEFT JOIN md_store st ON p.stor_id = st.store_id
 
-      WHERE ${whereClause}
+       WHERE ${whereClause}
 
-      GROUP BY
+        GROUP BY
         pt.product_type_id, prod.product_id,
         p.project_id, p.site_id, p.stor_id, DATE(pp.created_at)
 
-      ORDER BY pp.created_at DESC, pt.product_type_name ASC, prod.product_name ASC
-    `;
+        ORDER BY DATE(pp.created_at) DESC, pt.product_type_name ASC, prod.product_name ASC
+       `;
 
     const results = await customSelectSqlQuery2(sql, params);
 
@@ -2566,8 +2454,7 @@ getPurchaseDetailsMonthwise = async (req, res) => {
         pt.product_type_id, prod.product_id,
         p.project_id, p.site_id, p.stor_id, DATE(pp.created_at)
 
-      ORDER BY pp.created_at DESC, pt.product_type_name ASC, prod.product_name ASC
-    `;
+ORDER BY DATE(pp.created_at) DESC, pt.product_type_name ASC, prod.product_name ASC    `;
 
     const results = await customSelectSqlQuery2(sql, params);
 
