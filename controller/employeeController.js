@@ -660,7 +660,7 @@
 
 // module.exports = new EmployeeController();
 
-
+/////////////////////////////////////////////////////////////////////////
 
 
 
@@ -678,6 +678,7 @@ const {
   updateData,
   deleteData,
 } = require("../models/MasterModel");
+
 
 const { sendEmployeeCredentials } = require("../utils/mailer");
 
@@ -821,6 +822,12 @@ class EmployeeController {
 
       const employee_id = await insertData("em_employees", employeeData);
       if (!employee_id) throw new Error("Failed to create employee");
+
+
+console.log("========== EMAIL DEBUG START ==========");
+console.log("Employee Email :", email);
+console.log("Employee ID :", employee_id);
+
 
       // Send credentials via email (if email exists)
       if (email) {

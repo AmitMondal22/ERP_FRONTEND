@@ -2395,7 +2395,7 @@ getPurchaseDetailsMonthwise = async (req, res) => {
     // is a different expression than the GROUP BY key DATE(pp.created_at) and
     // is NOT recognized as functionally dependent under ONLY_FULL_GROUP_BY.
     const sql = `
-      SELECT
+       SELECT
         DATE_FORMAT(MAX(pp.created_at), '%d/%m/%Y') AS purchase_date,
 
         p.project_id,
