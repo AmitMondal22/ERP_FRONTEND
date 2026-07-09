@@ -94,3 +94,5 @@ const sendEmployeeCredentials = async ({ to, employeeId, password }) => {
     throw err;
   }
 };
+
+module.exports = { sendEmployeeCredentials };
