@@ -501,91 +501,6 @@ createPurchase = async (req, res) => {
   };
 
 
-  // getPurchaseById = async (req, res) => {
-  // try {
-  //   const { id } = req.params;
-
-  //   // if (!id) {
-  //   //   return res.status(400).json({ message: "purchase_id is required" });
-  //   // }
-
-  //  const sql = `
-  //           SELECT
-  //             p.purchase_id,
-  //             p.project_id,              
-  //             pr.project_name,
-  //             ps.project_site_name,
-  //             p.site_id,
-  //             p.vendor_id,
-  //             v.vendor_name,
-  //             p.stor_id,
-  //             s.store_name,
-  //             p.purchase_order_id,
-  //             po.voucher_no,
-  //             po.reference_no_and_date,
-  //             p.invoice_no,
-  //             p.invoice_date,
-  //             p.delivery_date,
-  //             p.invoice_image,
-  //             p.transport_insurance,
-  //             p.remarks,
-  //             p.created_by,
-  //             p.update_by,
-  //             p.created_at,
-  //             pp.purchase_product_id,
-  //             pp.product_id,
-  //             pn.product_name,
-  //             pn.product_type_id,
-  //             pt.product_type_name,
-  //             pp.product_qty,
-  //             pp.invoice_qty,
-  //             pp.unit_rate,
-  //             pp.discount_rate,
-  //             pp.discount_amount,
-  //             pp.sgst_rate,
-  //             pp.cgst_rate,
-  //             pp.igst_rate,
-  //             pp.sgst_amt,
-  //             pp.cgst_amt,
-  //             pp.igst_amt,
-  //             pp.total_amount,
-  //             p.updated_at
-  //           FROM td_purchase AS p
-  //             JOIN td_purchase_product AS pp ON p.purchase_id = pp.purchase_id
-  //             LEFT JOIN md_project AS pr ON p.project_id = pr.project_id
-  //             LEFT JOIN md_project_site AS ps ON p.site_id = ps.project_site_id
-  //             JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
-  //             JOIN md_product AS pn ON pp.product_id = pn.product_id
-  //             JOIN md_product_type AS pt ON pn.product_type_id = pt.product_type_id
-  //             LEFT JOIN md_store AS s ON p.stor_id = s.store_id
-  //             LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
-              
-  //           WHERE p.purchase_id = ${id}
-  //         `;
-
-  // const result = await customSelectSqlQuery(sql);
-
-
-  //     if (result.length === 0) {
-  //       return res.status(404).json({
-  //         status: "error",
-  //         message: "Purchase not found or missing linked data",
-  //       });
-  //     }
-
-  //     res.status(200).json({
-  //       status: "success",
-  //       data: result,
-  //     });
-  //   } catch (error) {
-  //     console.error("Error fetching purchase by ID:", error);
-  //     res.status(500).json({
-  //       status: "error",
-  //       message: "Internal server error",
-  //     });
-  //   }
-  // };
-
 
 getPurchaseById = async (req, res) => {
   try {
@@ -598,6 +513,65 @@ getPurchaseById = async (req, res) => {
       });
     }
 
+    // const sql = `
+    //   SELECT
+    //     p.purchase_id,
+    //     p.project_id,
+    //     pr.project_name,
+    //     ps.project_site_name,
+    //     p.site_id,
+    //     p.vendor_id,
+    //     v.vendor_name,
+    //     p.stor_id,
+    //     s.store_name,
+    //     p.purchase_order_id,
+    //     po.po_no,       
+    //     p.invoice_no,
+    //     p.invoice_date,
+    //     p.delivery_date,
+    //     p.due_date,
+    //     p.invoice_image,
+    //     p.transport_insurance,
+    //     p.remarks,
+    //     p.created_by,
+    //     p.update_by,
+    //     p.created_at,
+    //     p.updated_at,
+
+    //     -- Product details
+    //     pp.purchase_product_id,
+    //     pp.product_id,
+    //     pn.product_name,
+    //     pn.product_type_id,
+    //     pt.product_type_name,
+    //     pp.product_qty,
+    //     pp.invoice_qty,
+    //     pp.unit_rate,
+    //     pp.return_id,    -- ⭐ ADDED RETURN_ID
+    //     pp.discount_rate,
+    //     pp.discount_amount,
+    //     pp.sgst_rate,
+    //     pp.cgst_rate,
+    //     pp.igst_rate,
+    //     pp.sgst_amt,
+    //     pp.cgst_amt,
+    //     pp.igst_amt,
+    //     pp.total_amount
+
+    //   FROM td_purchase AS p
+    //   JOIN td_purchase_product AS pp ON p.purchase_id = pp.purchase_id
+    //   LEFT JOIN md_project AS pr ON p.project_id = pr.project_id
+    //   LEFT JOIN md_project_site AS ps ON p.site_id = ps.project_site_id
+    //   JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
+    //   JOIN md_product AS pn ON pp.product_id = pn.product_id
+    //   JOIN md_product_type AS pt ON pn.product_type_id = pt.product_type_id
+    //   LEFT JOIN md_store AS s ON p.stor_id = s.store_id
+    //   LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
+
+    //   WHERE p.purchase_id = ${id}
+    // `;
+
+    
     const sql = `
       SELECT
         p.purchase_id,
@@ -627,12 +601,15 @@ getPurchaseById = async (req, res) => {
         pp.purchase_product_id,
         pp.product_id,
         pn.product_name,
+        pn.hsn_code,           
         pn.product_type_id,
         pt.product_type_name,
+        pn.unit_id,
+        mu.unit_name,         
         pp.product_qty,
         pp.invoice_qty,
         pp.unit_rate,
-        pp.return_id,    -- ⭐ ADDED RETURN_ID
+        pp.return_id,
         pp.discount_rate,
         pp.discount_amount,
         pp.sgst_rate,
@@ -650,11 +627,16 @@ getPurchaseById = async (req, res) => {
       JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
       JOIN md_product AS pn ON pp.product_id = pn.product_id
       JOIN md_product_type AS pt ON pn.product_type_id = pt.product_type_id
+      LEFT JOIN md_unit AS mu ON pn.unit_id = mu.unit_id   
       LEFT JOIN md_store AS s ON p.stor_id = s.store_id
       LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
 
       WHERE p.purchase_id = ${id}
     `;
+
+
+
+
 
     const result = await customSelectSqlQuery(sql);
 
@@ -678,6 +660,11 @@ getPurchaseById = async (req, res) => {
     });
   }
 };
+
+
+
+
+
 /////////////////
 
   // updatePurchase = async (req, res) => {
