@@ -1303,7 +1303,7 @@ async transferStock(req, res) {
       Object.fromEntries(
         Object.entries(obj).map(([k, v]) => [k, v === undefined ? null : v])
       );
-
+ 
     // ---------------- VALIDATION ----------------
     if (
       !from_store_id || !from_project_id || !from_site_id ||

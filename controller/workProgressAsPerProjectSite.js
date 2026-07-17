@@ -2511,6 +2511,58 @@ getWorkProgressByProjectAndSite = async (req, res) => {
     }
 
     /* ---------------- BOM STRUCTURE DATA ---------------- */
+    // const bomSql = `
+    //   SELECT
+    //     t.project_estimation_id,
+    //     t.project_id,
+    //     p.project_name,
+    //     t.site_id,
+    //     s.project_site_name,
+    //     t.bom_id,
+    //     b.bom_name,
+    //     t.rep_task,
+    //     t.billing_id,
+    //     t.bom_price,
+    //     t.bom_unit,
+    //     t.bom_value_unit,
+
+    //     pb.project_work_description,
+    //     pb.unit AS billing_unit,
+
+    //     bp.bom_progress_id,
+    //     bp.bom_progress_name,
+    //     bp.sl_number,
+
+    //     bi.bom_item_id,
+    //     bi.product_id,
+    //     bi.qty AS per_unit_qty,
+    //     bi.total_qty,
+
+    //     pr.product_name,
+    //     pr.product_type_id,
+    //     pr.hsn_code,
+    //     uom.unit_name AS unit
+
+    //   FROM tx_project_details_with_estimation t
+    //   LEFT JOIN md_project p ON t.project_id = p.project_id
+    //   LEFT JOIN md_project_site s ON t.site_id = s.project_site_id
+    //   LEFT JOIN md_bom b ON t.bom_id = b.bom_id
+    //   LEFT JOIN md_project_billing pb ON t.billing_id = pb.billing_id
+    //   LEFT JOIN md_bom_progress bp ON t.bom_id = bp.bom_id
+    //   LEFT JOIN md_bom_item bi 
+    //     ON bp.bom_progress_id = bi.bom_progress_id
+    //    AND t.bom_id = bi.bom_id
+    //   LEFT JOIN md_product pr ON bi.product_id = pr.product_id
+    //   LEFT JOIN md_unit uom ON pr.unit_id = uom.unit_id
+
+    //   WHERE t.project_id = ?
+    //     AND t.site_id = ?
+
+    //   ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
+    // `;
+
+
+
     const bomSql = `
       SELECT
         t.project_estimation_id,
@@ -2526,7 +2578,7 @@ getWorkProgressByProjectAndSite = async (req, res) => {
         t.bom_unit,
         t.bom_value_unit,
 
-        pb.project_work_description,
+        wd.work_description AS project_work_description,
         pb.unit AS billing_unit,
 
         bp.bom_progress_id,
@@ -2548,6 +2600,8 @@ getWorkProgressByProjectAndSite = async (req, res) => {
       LEFT JOIN md_project_site s ON t.site_id = s.project_site_id
       LEFT JOIN md_bom b ON t.bom_id = b.bom_id
       LEFT JOIN md_project_billing pb ON t.billing_id = pb.billing_id
+      LEFT JOIN md_project_work_description wd
+        ON pb.project_work_description_id = wd.project_work_description_id
       LEFT JOIN md_bom_progress bp ON t.bom_id = bp.bom_id
       LEFT JOIN md_bom_item bi 
         ON bp.bom_progress_id = bi.bom_progress_id
@@ -2560,6 +2614,7 @@ getWorkProgressByProjectAndSite = async (req, res) => {
 
       ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
     `;
+
 
     /* ---------------- MATERIAL USED PER WORK-PROGRESS ENTRY ---------------- */
     // FIX: DATE_FORMAT forces MySQL to return a plain 'YYYY-MM-DD' STRING,
@@ -3497,7 +3552,7 @@ if (project_site_id) {
   }
 };
 
-
+///////////////////////////////////////////
 
 
 
@@ -3513,6 +3568,53 @@ getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
     }
 
     // ─── Query 1: BOM Estimation Details ──────────────────────────────────
+    // const bomSql = `
+    //   SELECT 
+    //     t.project_estimation_id,
+    //     t.project_id,
+    //     p.project_name,
+    //     t.site_id,
+    //     s.project_site_name,
+    //     t.bom_id,
+    //     t.bom_name,
+    //     t.rep_task,
+    //     t.billing_id,
+
+    //     billing.project_work_description,
+    //     billing.unit         AS billing_unit,
+    //     billing.quantity     AS billing_quantity,
+    //     billing.rate         AS billing_rate,
+    //     billing.amount       AS billing_amount,
+    //     billing.remarks      AS billing_remarks,
+
+    //     bp.bom_progress_id,
+    //     bp.bom_progress_name,
+    //     bp.sl_number,
+
+    //     bi.bom_item_id,
+    //     bi.product_id,
+    //     bi.qty               AS per_unit_qty,
+    //     bi.total_qty,
+
+    //     pr.product_name,
+    //     pr.product_type_id,
+    //     uom.unit_name        AS unit
+
+    //   FROM tx_project_details_with_estimation t
+    //   INNER JOIN md_project p         ON t.project_id   = p.project_id
+    //   LEFT  JOIN md_project_site s    ON t.site_id      = s.project_site_id
+    //   LEFT  JOIN md_project_billing billing ON t.billing_id = billing.billing_id
+    //   LEFT  JOIN md_bom_progress bp   ON t.bom_id       = bp.bom_id
+    //   LEFT  JOIN md_bom_item bi       ON bp.bom_progress_id = bi.bom_progress_id
+    //                                  AND t.bom_id           = bi.bom_id
+    //   LEFT  JOIN md_product pr        ON bi.product_id  = pr.product_id
+    //   LEFT  JOIN md_unit uom          ON pr.unit_id     = uom.unit_id
+    //   WHERE t.project_id = ?
+    //   ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
+    // `;
+
+
+    // ─── Query 1: BOM Estimation Details ──────────────────────────────────
     const bomSql = `
       SELECT 
         t.project_estimation_id,
@@ -3525,7 +3627,7 @@ getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
         t.rep_task,
         t.billing_id,
 
-        billing.project_work_description,
+        wd.work_description AS project_work_description,
         billing.unit         AS billing_unit,
         billing.quantity     AS billing_quantity,
         billing.rate         AS billing_rate,
@@ -3549,6 +3651,8 @@ getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
       INNER JOIN md_project p         ON t.project_id   = p.project_id
       LEFT  JOIN md_project_site s    ON t.site_id      = s.project_site_id
       LEFT  JOIN md_project_billing billing ON t.billing_id = billing.billing_id
+      LEFT  JOIN md_project_work_description wd
+        ON billing.project_work_description_id = wd.project_work_description_id
       LEFT  JOIN md_bom_progress bp   ON t.bom_id       = bp.bom_id
       LEFT  JOIN md_bom_item bi       ON bp.bom_progress_id = bi.bom_progress_id
                                      AND t.bom_id           = bi.bom_id

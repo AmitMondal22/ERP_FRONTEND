@@ -50,6 +50,8 @@ const WorkBillingRoutes= require("./router/Workbillingroutes");
 const dashboardRoutes= require("./router/dashboardRoutes");
 
 
+const projectWorkDescriptionRoutes= require("./router/projectWorkDescriptionRoutes")
+
 
 const app= express()
 const path = require("path");
@@ -114,8 +116,8 @@ app.use('/',claimTypeReimbursementRoutes);
 app.use('/',clientRoutes);
 app.use('/',ProjectSiteStatusRoutes);
 app.use('/',WorkBillingRoutes);
-app.use('/',dashboardRoutes)
-
+app.use('/',dashboardRoutes);
+app.use('/',projectWorkDescriptionRoutes)
 
 
 
