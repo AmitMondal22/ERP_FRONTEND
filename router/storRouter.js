@@ -26,8 +26,20 @@ router.delete("/api/delete_stor/:id",authcheck, storController.deleteStore);
 router.post("/api/purchase-entry-store-stock",  storeStockController.addPurchaseEntry);
 router.post("/dpr-issue",  storeStockController.addDprIssueEntry);
 
-router.post("/api/transfer-stock-from-store-to-store-project-to-project",  authcheck, storeStockController.transferStock);
+router.post("/api/transfer-stock-from-store-to-store-project-to-project",  authcheck, storeStockController.transferStock);///
 
+//////
+
+router.post("/api/store-stock/issue-to-site", authcheck, storeStockController.issueMaterialToProjectSite);
+
+//////////
+router.get(
+  "/api/stock-ledger/material-issues/by-store/:from_store_id",
+  authcheck, // your existing auth middleware
+  storeStockController.getMaterialIssuesByStore
+);
+
+//////////////////////////////////
 // ---------- READ / REPORTS ----------
 router.get("/available",              storeStockController.getAvailableStock);
 router.get("/history",                storeStockController.getLedgerHistory);
@@ -49,5 +61,8 @@ router.post("/api/stock-ledger/deduct-bulk", authcheck, storeStockController.ded
 router.post("/api/get-current-stock-as-per-store-project-site",        storeStockController.getStoreProjectSiteStock);
 
 router.get("/api/store-projects/:store_id", storeStockController.getProjectsUnderStore);
+
+
+//////////////////////////////////////////////////
 
 module.exports = router;  

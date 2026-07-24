@@ -780,507 +780,8 @@ class StoreStockController {
   // -----------------------------------------------------------------------
  
 
+/////////////////////////////////////////////////////////
 
-
-
-// async transferStock(req, res) {
-//   try {
-
-//     const {
-//       from_store_id,
-//       from_project_id,
-//       from_site_id,
-//       to_store_id,
-//       to_project_id,
-//       to_site_id,
-//       product_id,
-//       transfer_qty,
-//       purchase_id = null,
-//       invoice_no = null,
-//       transaction_date,
-//       created_by
-//     } = req.body;
-
-//     // ---------------- VALIDATION ----------------
-//     if (
-//       !from_store_id || !from_project_id || !from_site_id ||
-//       !to_store_id   || !to_project_id   || !to_site_id   ||
-//       !product_id    || !transfer_qty
-//     ) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "All from/to fields, product_id and transfer_qty are required"
-//       });
-//     }
-
-//     if (
-//       parseInt(from_store_id) === parseInt(to_store_id) &&
-//       parseInt(from_project_id) === parseInt(to_project_id) &&
-//       parseInt(from_site_id) === parseInt(to_site_id)
-//     ) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Source and destination cannot be same"
-//       });
-//     }
-
-//     const qty = parseFloat(transfer_qty);
-//     const txDate = transaction_date || dayjs().format("YYYY-MM-DD");
-
-//     // ---------------- SOURCE CURRENT STOCK ----------------
-//     const sourceStock = await selectOneData(
-//       "tx_current_stock",
-//       "*",
-//       `project_id=${from_project_id}
-//        AND site_id=${from_site_id}
-//        AND store_id=${from_store_id}
-//        AND product_id=${product_id}`
-//     );
-
-//     if (!sourceStock) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Source stock not found"
-//       });
-//     }
-
-//     const availableQty = parseFloat(sourceStock.invoice_qty);
-
-//     if (qty > availableQty) {
-//       return res.status(400).json({
-//         success: false,
-//         message: `Insufficient stock. Available ${availableQty}`
-//       });
-//     }
-
-//     const remainingQty = availableQty - qty;
-
-//     // ---------------- UPDATE SOURCE STOCK ----------------
-//     await updateData(
-//       "tx_current_stock",
-//       {
-//         invoice_qty: remainingQty,
-//         updated_by: created_by,
-//         updated_at: dayjs().format("YYYY-MM-DD HH:mm:ss")
-//       },
-//       `current_stock_id=${sourceStock.current_stock_id}`
-//     );
-
-//     // ---------------- DESTINATION STOCK ----------------
-//     const destStock = await selectOneData(
-//       "tx_current_stock",
-//       "*",
-//       `project_id=${to_project_id}
-//        AND site_id=${to_site_id}
-//        AND store_id=${to_store_id}
-//        AND product_id=${product_id}`
-//     );
-
-//     let destFinalQty = 0;
-
-//     if (destStock) {
-
-//       destFinalQty = parseFloat(destStock.invoice_qty) + qty;
-
-//       await updateData(
-//         "tx_current_stock",
-//         {
-//           invoice_qty: destFinalQty,
-//           updated_by: created_by,
-//           updated_at: dayjs().format("YYYY-MM-DD HH:mm:ss")
-//         },
-//         `current_stock_id=${destStock.current_stock_id}`
-//       );
-
-//     } else {
-
-//       destFinalQty = qty;
-
-//       await insertData("tx_current_stock", {
-//         project_id: to_project_id,
-//         site_id: to_site_id,
-//         store_id: to_store_id,
-//         product_id,
-//         invoice_qty: qty,
-//         created_by
-//       });
-
-//     }
-
-//     // ---------------- SOURCE LEDGER BALANCE ----------------
-//     const sourceBalance = await customSelectSqlQuery(
-//       `SELECT COALESCE(SUM(qty_in) - SUM(qty_out),0) AS balance
-//        FROM tx_store_stock_ledger
-//        WHERE store_id=${from_store_id}
-//        AND project_id=${from_project_id}
-//        AND site_id=${from_site_id}
-//        AND product_id=${product_id}`,
-//       false
-//     );
-
-//     const sourceLedgerBalance = parseFloat(sourceBalance?.balance || 0);
-
-//     // ---------------- DEST LEDGER BALANCE ----------------
-//     const destBalance = await customSelectSqlQuery(
-//       `SELECT COALESCE(SUM(qty_in) - SUM(qty_out),0) AS balance
-//        FROM tx_store_stock_ledger
-//        WHERE store_id=${to_store_id}
-//        AND project_id=${to_project_id}
-//        AND site_id=${to_site_id}
-//        AND product_id=${product_id}`,
-//       false
-//     );
-
-//     const destLedgerBalance = parseFloat(destBalance?.balance || 0);
-
-//     // ---------------- TRANSFER OUT LEDGER ----------------
-//     await insertData("tx_store_stock_ledger", {
-
-//       store_id: from_store_id,
-//       project_id: from_project_id,
-//       site_id: from_site_id,
-//       product_id,
-
-//       purchase_id,
-//       invoice_no,
-
-//       from_store_id,
-//       from_project_id,
-//       from_site_id,
-
-//       to_store_id,
-//       to_project_id,
-//       to_site_id,
-
-//       transaction_type: "TRANSFER_OUT",
-
-//       qty_in: 0,
-//       qty_out: qty,
-
-//       balance_qty: sourceLedgerBalance - qty,
-
-//       transaction_date: txDate,
-//       created_by
-//     });
-
-//     // ---------------- TRANSFER IN LEDGER ----------------
-//     const ledger_id = await insertData("tx_store_stock_ledger", {
-
-//       store_id: to_store_id,
-//       project_id: to_project_id,
-//       site_id: to_site_id,
-//       product_id,
-
-//       purchase_id,
-//       invoice_no,
-
-//       from_store_id,
-//       from_project_id,
-//       from_site_id,
-
-//       to_store_id,
-//       to_project_id,
-//       to_site_id,
-
-//       transaction_type: "TRANSFER_IN",
-
-//       qty_in: qty,
-//       qty_out: 0,
-
-//       balance_qty: destLedgerBalance + qty,
-
-//       transaction_date: txDate,
-//       created_by
-//     });
-
-//     // ---------------- RESPONSE ----------------
-//     return res.status(201).json({
-//       success: true,
-//       message: "Stock transferred successfully",
-//       data: {
-//         ledger_id,
-//         product_id,
-//         transfer_qty: qty,
-//         purchase_id,
-//         invoice_no,
-//         source_balance_after: remainingQty,
-//         destination_balance_after: destFinalQty
-//       }
-//     });
-
-//   } catch (err) {
-
-//     console.error("[transferStock]", err);
-
-//     return res.status(500).json({
-//       success: false,
-//       message: err.message
-//     });
-
-//   }
-// }
-
-// async transferStock(req, res) {
-//   try {
-
-//     const {
-//       from_store_id,
-//       from_project_id,
-//       from_site_id,
-//       to_store_id,
-//       to_project_id,
-//       to_site_id,
-//       products,           // [{ product_id, transfer_qty, purchase_id, invoice_no }]
-//       transaction_date,
-//       created_by
-//     } = req.body;
-
-//     // ---------------- VALIDATION ----------------
-//     if (
-//       !from_store_id || !from_project_id || !from_site_id ||
-//       !to_store_id   || !to_project_id   || !to_site_id
-//     ) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "All from/to store, project, and site fields are required"
-//       });
-//     }
-
-//     if (
-//       parseInt(from_store_id) === parseInt(to_store_id) &&
-//       parseInt(from_project_id) === parseInt(to_project_id) &&
-//       parseInt(from_site_id) === parseInt(to_site_id)
-//     ) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Source and destination cannot be the same"
-//       });
-//     }
-
-//     if (!Array.isArray(products) || products.length === 0) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "products must be a non-empty array"
-//       });
-//     }
-
-//     const txDate = transaction_date || dayjs().format("YYYY-MM-DD");
-//     const now    = dayjs().format("YYYY-MM-DD HH:mm:ss");
-
-//     // ---------------- PER-PRODUCT STOCK CHECKS & UPDATES ----------------
-//     const transferOutRows = [];   // batch ledger rows for TRANSFER_OUT
-//     const transferInRows  = [];   // batch ledger rows for TRANSFER_IN
-//     const results         = [];
-
-//     for (const item of products) {
-
-//       const { product_id, transfer_qty, purchase_id = null, invoice_no = null } = item;
-
-//       if (!product_id || !transfer_qty) {
-//         return res.status(400).json({
-//           success: false,
-//           message: `product_id and transfer_qty are required for every product (failed on product_id: ${product_id})`
-//         });
-//       }
-
-//       const qty = parseFloat(transfer_qty);
-
-//       // ── SOURCE STOCK ──
-//       const sourceStock = await selectOneData(
-//         "tx_current_stock",
-//         "*",
-//         `project_id=${from_project_id}
-//          AND site_id=${from_site_id}
-//          AND store_id=${from_store_id}
-//          AND product_id=${product_id}`
-//       );
-
-//       if (!sourceStock) {
-//         return res.status(400).json({
-//           success: false,
-//           message: `Source stock not found for product_id: ${product_id}`
-//         });
-//       }
-
-//       const availableQty = parseFloat(sourceStock.invoice_qty);
-
-//       if (qty > availableQty) {
-//         return res.status(400).json({
-//           success: false,
-//           message: `Insufficient stock for product_id: ${product_id}. Available: ${availableQty}`
-//         });
-//       }
-
-//       const remainingQty = availableQty - qty;
-
-//       // ── UPDATE SOURCE STOCK ──
-//       await updateData(
-//         "tx_current_stock",
-//         {
-//           invoice_qty: remainingQty,
-//           updated_by:  created_by,
-//           updated_at:  now
-//         },
-//         `current_stock_id=${sourceStock.current_stock_id}`
-//       );
-
-//       // ── DESTINATION STOCK ──
-//       const destStock = await selectOneData(
-//         "tx_current_stock",
-//         "*",
-//         `project_id=${to_project_id}
-//          AND site_id=${to_site_id}
-//          AND store_id=${to_store_id}
-//          AND product_id=${product_id}`
-//       );
-
-//       let destFinalQty = 0;
-
-//       if (destStock) {
-
-//         destFinalQty = parseFloat(destStock.invoice_qty) + qty;
-
-//         await updateData(
-//           "tx_current_stock",
-//           {
-//             invoice_qty: destFinalQty,
-//             updated_by:  created_by,
-//             updated_at:  now
-//           },
-//           `current_stock_id=${destStock.current_stock_id}`
-//         );
-
-//       } else {
-
-//         destFinalQty = qty;
-
-//         await insertData("tx_current_stock", {
-//           project_id: to_project_id,
-//           site_id:    to_site_id,
-//           store_id:   to_store_id,
-//           product_id,
-//           invoice_qty: qty,
-//           created_by
-//         });
-
-//       }
-
-//       // ── SOURCE LEDGER BALANCE ──
-//       const sourceBalance = await customSelectSqlQuery(
-//         `SELECT COALESCE(SUM(qty_in) - SUM(qty_out), 0) AS balance
-//          FROM tx_store_stock_ledger
-//          WHERE store_id=${from_store_id}
-//            AND project_id=${from_project_id}
-//            AND site_id=${from_site_id}
-//            AND product_id=${product_id}`,
-//         false
-//       );
-
-//       const sourceLedgerBalance = parseFloat(sourceBalance?.balance || 0);
-
-//       // ── DEST LEDGER BALANCE ──
-//       const destBalance = await customSelectSqlQuery(
-//         `SELECT COALESCE(SUM(qty_in) - SUM(qty_out), 0) AS balance
-//          FROM tx_store_stock_ledger
-//          WHERE store_id=${to_store_id}
-//            AND project_id=${to_project_id}
-//            AND site_id=${to_site_id}
-//            AND product_id=${product_id}`,
-//         false
-//       );
-
-//       const destLedgerBalance = parseFloat(destBalance?.balance || 0);
-
-//       // ── COLLECT LEDGER ROWS ──
-//       transferOutRows.push({
-//         store_id:    from_store_id,
-//         project_id:  from_project_id,
-//         site_id:     from_site_id,
-//         product_id,
-//         purchase_id,
-//         invoice_no,
-//         from_store_id,
-//         from_project_id,
-//         from_site_id,
-//         to_store_id,
-//         to_project_id,
-//         to_site_id,
-//         transaction_type: "TRANSFER_OUT",
-//         qty_in:           0,
-//         qty_out:          qty,
-//         balance_qty:      sourceLedgerBalance - qty,
-//         transaction_date: txDate,
-//         created_by
-//       });
-
-//       transferInRows.push({
-//         store_id:    to_store_id,
-//         project_id:  to_project_id,
-//         site_id:     to_site_id,
-//         product_id,
-//         purchase_id,
-//         invoice_no,
-//         from_store_id,
-//         from_project_id,
-//         from_site_id,
-//         to_store_id,
-//         to_project_id,
-//         to_site_id,
-//         transaction_type: "TRANSFER_IN",
-//         qty_in:           qty,
-//         qty_out:          0,
-//         balance_qty:      destLedgerBalance + qty,
-//         transaction_date: txDate,
-//         created_by
-//       });
-
-//       results.push({
-//         product_id,
-//         transfer_qty:              qty,
-//         purchase_id,
-//         invoice_no,
-//         source_balance_after:      remainingQty,
-//         destination_balance_after: destFinalQty
-//       });
-//     }
-
-//     // ---------------- BATCH INSERT BOTH LEDGER SETS ----------------
-//     const ledgerColumns =
-//       "store_id, project_id, site_id, product_id, purchase_id, invoice_no, " +
-//       "from_store_id, from_project_id, from_site_id, " +
-//       "to_store_id, to_project_id, to_site_id, " +
-//       "transaction_type, qty_in, qty_out, balance_qty, transaction_date, created_by";
-
-//     await batchInsertData(
-//       "tx_store_stock_ledger",
-//       ledgerColumns,
-//       transferOutRows
-//     );
-
-//     await batchInsertData(
-//       "tx_store_stock_ledger",
-//       ledgerColumns,
-//       transferInRows
-//     );
-
-//     // ---------------- RESPONSE ----------------
-//     return res.status(201).json({
-//       success: true,
-//       message: `${products.length} product(s) transferred successfully`,
-//       data: results
-//     });
-
-//   } catch (err) {
-
-//     console.error("[transferStock]", err);
-
-//     return res.status(500).json({
-//       success: false,
-//       message: err.message
-//     });
-
-//   }
-// }
 
 
 async transferStock(req, res) {
@@ -1895,6 +1396,9 @@ async getProjectsUnderStore(req, res) {
   // 10. GET FULL STORE DETAILS WITH ALL JOINED DATA
   // GET /api/stock-ledger/store-details/:store_id
   // -----------------------------------------------------------------------
+
+
+
  async getStoreFullDetails(req, res) {
   try {
     const { store_id } = req.params;
@@ -1946,79 +1450,198 @@ async getProjectsUnderStore(req, res) {
     );
 
     // ───────────────── TRANSACTION DETAILS ─────────────────
+
+
+
+    // const transactions_sql = `
+    //   SELECT
+    //     sl.ledger_id,
+    //     sl.transaction_type,
+    //     sl.transaction_date,
+    //     sl.qty_in,
+    //     sl.qty_out,
+    //     sl.balance_qty,
+    //     sl.created_by,
+    //     sl.created_at AS ledger_created_at,
+
+    //     -- PRODUCT
+    //     sl.product_id,
+    //     prd.product_name,
+    //     prd.model_no,
+
+    //     -- PROJECT
+    //     sl.project_id,
+    //     proj.project_name,
+
+    //     -- PROJECT SITE
+    //     sl.site_id,
+    //     ps.project_site_name,
+    //     ps.address AS project_site_address,
+
+    //     -- PURCHASE
+    //     sl.purchase_id,
+    //     sl.invoice_no,
+    //     pur.invoice_date,
+    //     pur.delivery_date,
+    //     pur.due_date,
+    //     pur.vendor_id,
+    //     pur.purchase_order_id,
+    //     pur.transport_insurance,
+    //     pur.remarks AS purchase_remarks,
+
+    //     -- FROM STORE
+    //     sl.from_store_id,
+    //     fs.store_name    AS from_store_name,
+    //     fs.store_address AS from_store_address,
+    //     sl.from_project_id,
+    //     sl.from_site_id,
+
+    //     -- TO STORE
+    //     sl.to_store_id,
+    //     ts.store_name    AS to_store_name,
+    //     ts.store_address AS to_store_address,
+    //     sl.to_project_id,
+    //     sl.to_site_id
+
+    //   FROM tx_store_stock_ledger sl
+
+    //   LEFT JOIN md_product AS prd
+    //     ON prd.product_id = sl.product_id
+
+    //   LEFT JOIN md_project AS proj
+    //     ON proj.project_id = sl.project_id
+
+    //   LEFT JOIN md_project_site AS ps
+    //     ON ps.project_site_id = sl.site_id
+
+    //   LEFT JOIN td_purchase AS pur
+    //     ON pur.purchase_id = sl.purchase_id
+
+    //   LEFT JOIN md_store AS fs
+    //     ON fs.store_id = sl.from_store_id
+
+    //   LEFT JOIN md_store AS ts
+    //     ON ts.store_id = sl.to_store_id
+
+    //   WHERE sl.store_id = ?
+    //   ORDER BY sl.ledger_id ASC
+    // `;
+
+
     const transactions_sql = `
-      SELECT
-        sl.ledger_id,
-        sl.transaction_type,
-        sl.transaction_date,
-        sl.qty_in,
-        sl.qty_out,
-        sl.balance_qty,
-        sl.created_by,
-        sl.created_at AS ledger_created_at,
+  SELECT
+    sl.ledger_id,
+    sl.transaction_type,
+    sl.transaction_date,
+    sl.qty_in,
+    sl.qty_out,
+    sl.balance_qty,
+    sl.created_by,
+    sl.created_at AS ledger_created_at,
 
-        -- PRODUCT
-        sl.product_id,
-        prd.product_name,
-        prd.model_no,
+    -- PRODUCT
+    sl.product_id,
+    prd.product_name,
+    prd.model_no,
 
-        -- PROJECT
-        sl.project_id,
-        proj.project_name,
+    -- CURRENT PROJECT
+    sl.project_id,
+    proj.project_name,
 
-        -- PROJECT SITE
-        sl.site_id,
-        ps.project_site_name,
-        ps.address AS project_site_address,
+    -- CURRENT PROJECT SITE
+    sl.site_id,
+    ps.project_site_name,
+    ps.address AS project_site_address,
 
-        -- PURCHASE
-        sl.purchase_id,
-        sl.invoice_no,
-        pur.invoice_date,
-        pur.delivery_date,
-        pur.due_date,
-        pur.vendor_id,
-        pur.purchase_order_id,
-        pur.transport_insurance,
-        pur.remarks AS purchase_remarks,
+    -- PURCHASE
+    sl.purchase_id,
+    sl.invoice_no,
+    pur.invoice_date,
+    pur.delivery_date,
+    pur.due_date,
+    pur.vendor_id,
+    pur.purchase_order_id,
+    pur.transport_insurance,
+    pur.remarks AS purchase_remarks,
 
-        -- FROM STORE
-        sl.from_store_id,
-        fs.store_name    AS from_store_name,
-        fs.store_address AS from_store_address,
-        sl.from_project_id,
-        sl.from_site_id,
+    -- FROM STORE
+    sl.from_store_id,
+    fs.store_name    AS from_store_name,
+    fs.store_address AS from_store_address,
 
-        -- TO STORE
-        sl.to_store_id,
-        ts.store_name    AS to_store_name,
-        ts.store_address AS to_store_address,
-        sl.to_project_id,
-        sl.to_site_id
+    -- FROM PROJECT
+    sl.from_project_id,
+    fp.project_name AS from_project_name,
 
-      FROM tx_store_stock_ledger sl
+    -- FROM SITE
+    sl.from_site_id,
+    fps.project_site_name AS from_site_name,
+    fps.address AS from_site_address,
 
-      LEFT JOIN md_product AS prd
-        ON prd.product_id = sl.product_id
+    -- TO STORE
+    sl.to_store_id,
+    ts.store_name    AS to_store_name,
+    ts.store_address AS to_store_address,
 
-      LEFT JOIN md_project AS proj
-        ON proj.project_id = sl.project_id
+    -- TO PROJECT
+    sl.to_project_id,
+    tp.project_name AS to_project_name,
 
-      LEFT JOIN md_project_site AS ps
-        ON ps.project_site_id = sl.site_id
+    -- TO SITE
+    sl.to_site_id,
+    tps.project_site_name AS to_site_name,
+    tps.address AS to_site_address
 
-      LEFT JOIN td_purchase AS pur
-        ON pur.purchase_id = sl.purchase_id
+  FROM tx_store_stock_ledger sl
 
-      LEFT JOIN md_store AS fs
-        ON fs.store_id = sl.from_store_id
+  -- PRODUCT
+  LEFT JOIN md_product AS prd
+    ON prd.product_id = sl.product_id
 
-      LEFT JOIN md_store AS ts
-        ON ts.store_id = sl.to_store_id
+  -- CURRENT PROJECT
+  LEFT JOIN md_project AS proj
+    ON proj.project_id = sl.project_id
 
-      WHERE sl.store_id = ?
-      ORDER BY sl.ledger_id ASC
-    `;
+  -- CURRENT PROJECT SITE
+  LEFT JOIN md_project_site AS ps
+    ON ps.project_site_id = sl.site_id
+
+  -- PURCHASE
+  LEFT JOIN td_purchase AS pur
+    ON pur.purchase_id = sl.purchase_id
+
+  -- FROM STORE
+  LEFT JOIN md_store AS fs
+    ON fs.store_id = sl.from_store_id
+
+  -- TO STORE
+  LEFT JOIN md_store AS ts
+    ON ts.store_id = sl.to_store_id
+
+  -- FROM PROJECT
+  LEFT JOIN md_project AS fp
+    ON fp.project_id = sl.from_project_id
+
+  -- FROM SITE
+  LEFT JOIN md_project_site AS fps
+    ON fps.project_site_id = sl.from_site_id
+
+  -- TO PROJECT
+  LEFT JOIN md_project AS tp
+    ON tp.project_id = sl.to_project_id
+
+  -- TO SITE
+  LEFT JOIN md_project_site AS tps
+    ON tps.project_site_id = sl.to_site_id
+
+  WHERE sl.store_id = ?
+
+  ORDER BY sl.ledger_id ASC
+`;
+
+
+
+
 
     const transactions = await customSelectSqlQuery2(
       transactions_sql,
@@ -2345,6 +1968,10 @@ async deductStockByProjectSite(req, res) {
     return res.status(500).json({ success: false, message: err.message });
   }
 }
+
+
+
+
 
 
 // -----------------------------------------------------------------------
@@ -2867,6 +2494,778 @@ async getStoreProjectSiteStock(req, res) {
     });
   }
 }
+//////////////////////////////////////////////////////////////////////////////
+
+
+// ---------- resolve "Equipment" / "Safety equipment" -> product_type_id ----------
+  // Matches against the existing md_product_type master. Does NOT create new
+  // types — if the frontend sends a name that isn't in this table, that's
+  // treated as a validation error rather than silently inserting a new type.
+  async resolveProductTypeId(materialType) {
+    if (!materialType) return null;
+
+    const safeName = String(materialType).trim().replace(/'/g, "''");
+
+    const existing = await selectOneData(
+      "md_product_type",
+      "product_type_id",
+      `LOWER(product_type_name) = LOWER('${safeName}')`
+    );
+
+    return existing ? existing.product_type_id : null;
+  }
+
+sanitize(obj) {
+  return Object.fromEntries(
+    Object.entries(obj).map(([k, v]) => [k, v === undefined ? null : v])
+  );
+}
+  
+
+
+// ============================================================
+  // issueMaterialToProjectSite
+  // Store -> Project Site issue for machinery/equipment requisitions.
+  // Same stock-clearing pattern as transferStock — decrement source only,
+  // no destination tx_current_stock row (consumed at site).
+  // ============================================================
+//   issueMaterialToProjectSite = async (req, res) => {
+//     try {
+//       const {
+//         from_store_id,
+//         from_project_id,
+//         from_site_id,
+//         to_project_id,
+//         to_site_id,
+//         issue_date,
+//         site_incharge,
+//         overall_remarks,
+//         products, // [{ product_id, qty_issued, material_type, purpose_remarks, unit? }]
+//       } = req.body;
+
+//       const created_by = req.user.id;
+
+//       // ---------------- VALIDATION ----------------
+//       if (!from_store_id || !from_project_id || !from_site_id) {
+//         return res.status(400).json({
+//           success: false,
+//           message: "from_store_id, from_project_id and from_site_id are required",
+//         });
+//       }
+
+//       if (!to_project_id || !to_site_id) {
+//         return res.status(400).json({
+//           success: false,
+//           message: "Destination to_project_id and to_site_id are required",
+//         });
+//       }
+
+//       if (!Array.isArray(products) || products.length === 0) {
+//         return res.status(400).json({
+//           success: false,
+//           message: "products must be a non-empty array",
+//         });
+//       }
+
+//       for (const item of products) {
+//         if (!item.product_id || !item.qty_issued || !item.material_type || !item.purpose_remarks) {
+//           return res.status(400).json({
+//             success: false,
+//             message:
+//               "product_id, qty_issued, material_type and purpose_remarks are required for every material",
+//           });
+//         }
+//       }
+
+//       const txDate = issue_date || dayjs().format("YYYY-MM-DD");
+//       const now = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+//       // ---------------- AUTO ISSUE NUMBER ----------------
+//       // Your table has `issue_no`, not `requisition_no`, so we generate one.
+//       // Swap this for a sequence/counter table if you need strictly sequential numbers.
+//       const issue_no = `SITE-ISS-${dayjs().format("YYYYMMDD")}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+//       // ---------------- HEADER ROW ----------------
+//      const issueHeaderId = await insertData(
+//   "tx_material_issue_store_to_site",
+//   this.sanitize({
+//     issue_no,
+//     from_store_id,
+//     from_project_id,
+//     from_site_id,
+//     to_project_id,
+//     to_site_id,
+//     issue_date: txDate,
+//     site_incharge,
+//     overall_remarks,
+//     status: "ISSUED",
+//     created_by,
+//     created_at: now,
+//   })
+// );
+
+//       const results = [];
+//       const itemRows = [];
+
+//       // ---------------- PER-PRODUCT STOCK CHECK & LEDGER ----------------
+//       for (const item of products) {
+//         const { product_id, qty_issued, material_type, purpose_remarks, unit } = item;
+//         const qty = parseFloat(qty_issued);
+
+//         // ── SOURCE STOCK ──
+//         const sourceStock = await selectOneData(
+//           "tx_current_stock",
+//           "*",
+//           `project_id=${from_project_id}
+//            AND site_id=${from_site_id}
+//            AND store_id=${from_store_id}
+//            AND product_id=${product_id}`
+//         );
+
+//         if (!sourceStock) {
+//           return res.status(400).json({
+//             success: false,
+//             message: `Source stock not found for product_id: ${product_id}`,
+//           });
+//         }
+
+//         const availableQty = parseFloat(sourceStock.invoice_qty);
+
+//         if (qty > availableQty) {
+//           return res.status(400).json({
+//             success: false,
+//             message: `Insufficient stock for product_id: ${product_id}. Available: ${availableQty}`,
+//           });
+//         }
+
+//         const remainingQty = availableQty - qty;
+
+//         // ── DECREMENT SOURCE STOCK (no destination stock — consumed at site) ──
+//         await updateData(
+//           "tx_current_stock",
+//           {
+//             invoice_qty: remainingQty,
+//             updated_by: created_by ?? null,
+//             updated_at: now,
+//           },
+//           `current_stock_id=${sourceStock.current_stock_id}`
+//         );
+
+//         // ── SOURCE LEDGER BALANCE ──
+//         const sourceBalance = await customSelectSqlQuery(
+//           `SELECT COALESCE(SUM(qty_in) - SUM(qty_out), 0) AS balance
+//            FROM tx_store_stock_ledger
+//            WHERE store_id=${from_store_id}
+//              AND project_id=${from_project_id}
+//              AND site_id=${from_site_id}
+//              AND product_id=${product_id}`,
+//           false
+//         );
+//         const sourceLedgerBalance = parseFloat(sourceBalance?.balance || 0);
+
+//         // ── INSERT LEDGER ROW (SITE_ISSUE) ──
+//         const ledgerId = await insertData(
+//           "tx_store_stock_ledger",
+//           this.sanitize({
+//             store_id: from_store_id,
+//             project_id: from_project_id,
+//             site_id: from_site_id,
+//             product_id,
+//             from_store_id,
+//             from_project_id,
+//             from_site_id,
+//             to_store_id: null, // consumed at site, no receiving store
+//             to_project_id,
+//             to_site_id,
+//             transaction_type: "SITE_ISSUE",
+//             qty_in: 0,
+//             qty_out: qty,
+//             balance_qty: sourceLedgerBalance - qty,
+//             transaction_date: txDate,
+//             created_by,
+//           })
+//         );
+
+//         // ── RESOLVE MATERIAL TYPE -> product_type_id ──
+//         const product_type_id = await this.resolveProductTypeId(material_type);
+
+//         itemRows.push(
+//           this.sanitize({
+//             issue_id: issueHeaderId,
+//             ledger_id: ledgerId,
+//             product_type_id,
+//             product_id,
+//             qty_issued: qty,
+//             unit,
+//             purpose_remarks,
+//             created_at: now,
+//           })
+//         );
+
+//         results.push({
+//           product_id,
+//           qty_issued: qty,
+//           material_type,
+//           source_balance_after: remainingQty,
+//         });
+//       }
+
+//       // ---------------- BATCH INSERT ITEM ROWS ----------------
+//       await batchInsertData(
+//         "tx_material_issue_items_store_to_site",
+//         "issue_id, ledger_id, product_type_id, product_id, qty_issued, unit, purpose_remarks, created_at",
+//         itemRows
+//       );
+      
+//       await updateData(
+//   "tx_current_stock",
+//   { invoice_qty: remainingQty, updated_by: created_by ?? null, updated_at: now },
+//   `current_stock_id=${sourceStock.current_stock_id}`
+// );
+
+//       // ---------------- RESPONSE ----------------
+//       return res.status(201).json({
+//         success: true,
+//         message: `${products.length} material(s) issued to project site successfully`,
+//         data: { issue_id: issueHeaderId, issue_no, items: results },
+//       });
+//     } 
+    
+//     // catch (err) {
+//     //   console.error("[issueMaterialToProjectSite]", err);
+//     //   return res.status(500).json({
+//     //     success: false,
+//     //     message: err.message,
+//     //   });
+//     // }
+
+//     catch (err) {
+//   console.error("[issueMaterialToProjectSite]", err.sqlMessage || err.message, err);
+//   return res.status(500).json({
+//     success: false,
+//     message: err.sqlMessage || err.message,
+//   });
+// }
+//   };
+
+
+
+// ---------- resolve "Equipment" / "Safety equipment" -> product_type_id ----------
+// Matches against the existing md_product_type master. Does NOT create new
+// types — if the frontend sends a name that isn't in this table, that's
+// treated as a validation error rather than silently inserting a new type.
+async resolveProductTypeId(materialType) {
+  if (!materialType) return null;
+
+  const safeName = String(materialType).trim().replace(/'/g, "''");
+
+  const existing = await selectOneData(
+    "md_product_type",
+    "product_type_id",
+    `LOWER(product_type_name) = LOWER('${safeName}')`
+  );
+
+  return existing ? existing.product_type_id : null;
+}
+
+sanitize(obj) {
+  return Object.fromEntries(
+    Object.entries(obj).map(([k, v]) => [k, v === undefined ? null : v])
+  );
+}
+
+
+// ============================================================
+// issueMaterialToProjectSite
+// Store -> Project Site issue for machinery/equipment requisitions.
+//
+// Stock handling now mirrors transferStock:
+//   - SOURCE row (from_store_id / from_project_id / from_site_id) is
+//     decremented, same as before.
+//   - DESTINATION row is tracked in tx_current_stock keyed as:
+//       store_id  = from_store_id   (store remains the "owner")
+//       project_id = to_project_id
+//       site_id    = to_site_id
+//     If it exists it's incremented, otherwise it's inserted — same
+//     find-or-create pattern transferStock uses for its dest stock.
+//   - Ledger gets two rows per product now (SITE_ISSUE / SITE_ISSUE_IN),
+//     matching the TRANSFER_OUT / TRANSFER_IN pairing in transferStock,
+//     so the ledger balance stays consistent with the stock movement.
+// ============================================================
+issueMaterialToProjectSite = async (req, res) => {
+  try {
+    const {
+      from_store_id,
+      from_project_id,
+      from_site_id,
+      to_project_id,
+      to_site_id,
+      issue_date,
+      site_incharge,
+      overall_remarks,
+      products, // [{ product_id, qty_issued, material_type, purpose_remarks, unit? }]
+    } = req.body;
+
+    const created_by = req.user.id;
+
+    // ---------------- VALIDATION ----------------
+    if (!from_store_id || !from_project_id || !from_site_id) {
+      return res.status(400).json({
+        success: false,
+        message: "from_store_id, from_project_id and from_site_id are required",
+      });
+    }
+
+    if (!to_project_id || !to_site_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Destination to_project_id and to_site_id are required",
+      });
+    }
+
+    if (!Array.isArray(products) || products.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "products must be a non-empty array",
+      });
+    }
+
+    for (const item of products) {
+      if (!item.product_id || !item.qty_issued || !item.material_type || !item.purpose_remarks) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "product_id, qty_issued, material_type and purpose_remarks are required for every material",
+        });
+      }
+    }
+
+    const txDate = issue_date || dayjs().format("YYYY-MM-DD");
+    const now = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+    // ---------------- AUTO ISSUE NUMBER ----------------
+    // Your table has `issue_no`, not `requisition_no`, so we generate one.
+    // Swap this for a sequence/counter table if you need strictly sequential numbers.
+    const issue_no = `SITE-ISS-${dayjs().format("YYYYMMDD")}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    // ---------------- HEADER ROW ----------------
+    const issueHeaderId = await insertData(
+      "tx_material_issue_store_to_site",
+      this.sanitize({
+        issue_no,
+        from_store_id,
+        from_project_id,
+        from_site_id,
+        to_project_id,
+        to_site_id,
+        issue_date: txDate,
+        site_incharge,
+        overall_remarks,
+        status: "ISSUED",
+        created_by,
+        created_at: now,
+      })
+    );
+
+    const results = [];
+    const itemRows = [];
+    const ledgerRows = [];
+
+    // ---------------- PER-PRODUCT STOCK CHECK & LEDGER ----------------
+    for (const item of products) {
+      const { product_id, qty_issued, material_type, purpose_remarks, unit } = item;
+      const qty = parseFloat(qty_issued);
+
+      // ── SOURCE STOCK ──
+      const sourceStock = await selectOneData(
+        "tx_current_stock",
+        "*",
+        `project_id=${from_project_id}
+         AND site_id=${from_site_id}
+         AND store_id=${from_store_id}
+         AND product_id=${product_id}`
+      );
+
+      if (!sourceStock) {
+        return res.status(400).json({
+          success: false,
+          message: `Source stock not found for product_id: ${product_id}`,
+        });
+      }
+
+      const availableQty = parseFloat(sourceStock.invoice_qty);
+
+      if (qty > availableQty) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient stock for product_id: ${product_id}. Available: ${availableQty}`,
+        });
+      }
+
+      const remainingQty = availableQty - qty;
+
+      // ── DECREMENT SOURCE STOCK ──
+      await updateData(
+        "tx_current_stock",
+        {
+          invoice_qty: remainingQty,
+          updated_by: created_by ?? null,
+          updated_at: now,
+        },
+        `current_stock_id=${sourceStock.current_stock_id}`
+      );
+
+      // ── DESTINATION STOCK ──
+      // Keyed as store_id = from_store_id (store stays the owner),
+      // project_id/site_id = destination site. Find-or-create, same
+      // pattern as transferStock's destStock handling.
+      const destStock = await selectOneData(
+        "tx_current_stock",
+        "*",
+        `project_id=${to_project_id}
+         AND site_id=${to_site_id}
+         AND store_id=${from_store_id}
+         AND product_id=${product_id}`
+      );
+
+      let destFinalQty = 0;
+
+      if (destStock) {
+        destFinalQty = parseFloat(destStock.invoice_qty) + qty;
+
+        await updateData(
+          "tx_current_stock",
+          {
+            invoice_qty: destFinalQty,
+            updated_by: created_by ?? null,
+            updated_at: now,
+          },
+          `current_stock_id=${destStock.current_stock_id}`
+        );
+      } else {
+        destFinalQty = qty;
+
+        await insertData(
+          "tx_current_stock",
+          this.sanitize({
+            project_id: to_project_id,
+            site_id: to_site_id,
+            store_id: from_store_id,
+            product_id,
+            invoice_qty: qty,
+            created_by,
+          })
+        );
+      }
+
+      // ── SOURCE LEDGER BALANCE ──
+      const sourceBalance = await customSelectSqlQuery(
+        `SELECT COALESCE(SUM(qty_in) - SUM(qty_out), 0) AS balance
+         FROM tx_store_stock_ledger
+         WHERE store_id=${from_store_id}
+           AND project_id=${from_project_id}
+           AND site_id=${from_site_id}
+           AND product_id=${product_id}`,
+        false
+      );
+      const sourceLedgerBalance = parseFloat(sourceBalance?.balance || 0);
+
+      // ── DESTINATION LEDGER BALANCE ──
+      const destBalance = await customSelectSqlQuery(
+        `SELECT COALESCE(SUM(qty_in) - SUM(qty_out), 0) AS balance
+         FROM tx_store_stock_ledger
+         WHERE store_id=${from_store_id}
+           AND project_id=${to_project_id}
+           AND site_id=${to_site_id}
+           AND product_id=${product_id}`,
+        false
+      );
+      const destLedgerBalance = parseFloat(destBalance?.balance || 0);
+
+      // ── LEDGER ROW: SITE_ISSUE (source side, qty_out) ──
+      const ledgerOutId = await insertData(
+        "tx_store_stock_ledger",
+        this.sanitize({
+          store_id: from_store_id,
+          project_id: from_project_id,
+          site_id: from_site_id,
+          product_id,
+          from_store_id,
+          from_project_id,
+          from_site_id,
+          to_store_id: from_store_id,
+          to_project_id,
+          to_site_id,
+          transaction_type: "SITE_ISSUE",
+          qty_in: 0,
+          qty_out: qty,
+          balance_qty: sourceLedgerBalance - qty,
+          transaction_date: txDate,
+          created_by,
+        })
+      );
+
+      // ── LEDGER ROW: SITE_ISSUE_IN (destination side, qty_in) ──
+      // Mirrors TRANSFER_IN in transferStock, keeping the ledger
+      // consistent with the destination stock row created/updated above.
+      await insertData(
+        "tx_store_stock_ledger",
+        this.sanitize({
+          store_id: from_store_id,
+          project_id: to_project_id,
+          site_id: to_site_id,
+          product_id,
+          from_store_id,
+          from_project_id,
+          from_site_id,
+          to_store_id: from_store_id,
+          to_project_id,
+          to_site_id,
+          transaction_type: "SITE_ISSUE_IN",
+          qty_in: qty,
+          qty_out: 0,
+          balance_qty: destLedgerBalance + qty,
+          transaction_date: txDate,
+          created_by,
+        })
+      );
+
+      // ── RESOLVE MATERIAL TYPE -> product_type_id ──
+      const product_type_id = await this.resolveProductTypeId(material_type);
+
+      itemRows.push(
+        this.sanitize({
+          issue_id: issueHeaderId,
+          ledger_id: ledgerOutId,
+          product_type_id,
+          product_id,
+          qty_issued: qty,
+          unit,
+          purpose_remarks,
+          created_at: now,
+        })
+      );
+
+      results.push({
+        product_id,
+        qty_issued: qty,
+        material_type,
+        source_balance_after: remainingQty,
+        destination_balance_after: destFinalQty,
+      });
+    }
+
+    // ---------------- BATCH INSERT ITEM ROWS ----------------
+    await batchInsertData(
+      "tx_material_issue_items_store_to_site",
+      "issue_id, ledger_id, product_type_id, product_id, qty_issued, unit, purpose_remarks, created_at",
+      itemRows
+    );
+
+    // ---------------- RESPONSE ----------------
+    return res.status(201).json({
+      success: true,
+      message: `${products.length} material(s) issued to project site successfully`,
+      data: { issue_id: issueHeaderId, issue_no, items: results },
+    });
+  } catch (err) {
+    console.error("[issueMaterialToProjectSite]", err.sqlMessage || err.message, err);
+    return res.status(500).json({
+      success: false,
+      message: err.sqlMessage || err.message,
+    });
+  }
+};
+
+
+// -----------------------------------------------------------------------
+// GET MATERIAL ISSUES BY FROM_STORE_ID (with full joined details)
+// GET /api/stock-ledger/material-issues/by-store/:from_store_id
+//
+// Returns every issue header raised from a given store, with:
+//   - from/to project names (md_project)
+//   - from/to site names (md_project_site)
+//   - store name (md_store)
+//   - created_by name (em_employees)
+//   - nested items[] — each with product name (md_product) and
+//     product type name (md_product_type)
+// -----------------------------------------------------------------------
+async getMaterialIssuesByStore(req, res) {
+  try {
+    const { from_store_id } = req.params;
+
+    if (!from_store_id) {
+      return res.status(400).json({
+        success: false,
+        message: "from_store_id is required",
+      });
+    }
+
+    const sql = `
+      SELECT
+        -- HEADER
+        h.issue_id,
+        h.issue_no,
+        h.from_store_id,
+        fs.store_name          AS from_store_name,
+        fs.store_address       AS from_store_address,
+
+        h.from_project_id,
+        fp.project_name        AS from_project_name,
+
+        h.from_site_id,
+        fsite.project_site_name AS from_site_name,
+        fsite.address           AS from_site_address,
+
+        h.to_project_id,
+        tp.project_name         AS to_project_name,
+
+        h.to_site_id,
+        tsite.project_site_name AS to_site_name,
+        tsite.address            AS to_site_address,
+
+        h.issue_date,
+        h.site_incharge,
+        h.overall_remarks,
+        h.status,
+        h.created_by,
+        emp.first_name           AS created_by_first_name,
+        emp.last_name            AS created_by_last_name,
+        h.created_at,
+        h.updated_by,
+        h.updated_at,
+
+        -- ITEM
+        i.item_id,
+        i.ledger_id,
+        i.qty_issued,
+        i.unit,
+        i.purpose_remarks        AS item_purpose_remarks,
+        i.created_at             AS item_created_at,
+
+        i.product_id,
+        p.product_name,
+        p.model_no,
+
+        i.product_type_id,
+        pt.product_type_name
+
+      FROM tx_material_issue_store_to_site h
+
+      JOIN tx_material_issue_items_store_to_site i
+        ON i.issue_id = h.issue_id
+
+      LEFT JOIN md_store fs
+        ON fs.store_id = h.from_store_id
+
+      LEFT JOIN md_project fp
+        ON fp.project_id = h.from_project_id
+
+      LEFT JOIN md_project_site fsite
+        ON fsite.project_site_id = h.from_site_id
+
+      LEFT JOIN md_project tp
+        ON tp.project_id = h.to_project_id
+
+      LEFT JOIN md_project_site tsite
+        ON tsite.project_site_id = h.to_site_id
+
+      LEFT JOIN md_product p
+        ON p.product_id = i.product_id
+
+      LEFT JOIN md_product_type pt
+        ON pt.product_type_id = i.product_type_id
+
+      LEFT JOIN em_employees emp
+        ON emp.employee_id = h.created_by
+
+      WHERE h.from_store_id = ?
+
+      ORDER BY h.issue_id DESC, i.item_id ASC
+    `;
+
+    const rows = await customSelectSqlQuery2(sql, [from_store_id]);
+
+    // ---------------- GROUP FLAT ROWS INTO issues -> items ----------------
+    const issueMap = new Map();
+
+    for (const row of rows) {
+      if (!issueMap.has(row.issue_id)) {
+        issueMap.set(row.issue_id, {
+          issue_id: row.issue_id,
+          issue_no: row.issue_no,
+
+          from_store_id: row.from_store_id,
+          from_store_name: row.from_store_name,
+          from_store_address: row.from_store_address,
+
+          from_project_id: row.from_project_id,
+          from_project_name: row.from_project_name,
+
+          from_site_id: row.from_site_id,
+          from_site_name: row.from_site_name,
+          from_site_address: row.from_site_address,
+
+          to_project_id: row.to_project_id,
+          to_project_name: row.to_project_name,
+
+          to_site_id: row.to_site_id,
+          to_site_name: row.to_site_name,
+          to_site_address: row.to_site_address,
+
+          issue_date: row.issue_date,
+          site_incharge: row.site_incharge,
+          overall_remarks: row.overall_remarks,
+          status: row.status,
+
+          created_by: row.created_by,
+          created_by_name: [row.created_by_first_name, row.created_by_last_name]
+            .filter(Boolean)
+            .join(" ") || null,
+
+          created_at: row.created_at,
+          updated_by: row.updated_by,
+          updated_at: row.updated_at,
+
+          items: [],
+        });
+      }
+
+      issueMap.get(row.issue_id).items.push({
+        item_id: row.item_id,
+        ledger_id: row.ledger_id,
+        product_id: row.product_id,
+        product_name: row.product_name,
+        model_no: row.model_no,
+        product_type_id: row.product_type_id,
+        product_type_name: row.product_type_name,
+        qty_issued: row.qty_issued,
+        unit: row.unit,
+        purpose_remarks: row.item_purpose_remarks,
+        created_at: row.item_created_at,
+      });
+    }
+
+    const issues = Array.from(issueMap.values());
+
+    return res.status(200).json({
+      success: true,
+      message: issues.length
+        ? "Material issues fetched successfully"
+        : `No material issues found for from_store_id: ${from_store_id}`,
+      data: issues,
+    });
+
+  } catch (err) {
+    console.error("[getMaterialIssuesByStore]", err.sqlMessage || err.message, err);
+    return res.status(500).json({
+      success: false,
+      message: err.sqlMessage || err.message,
+    });
+  }
+}
+
+
 
 
 
