@@ -45,3 +45,6 @@ router.get("/api/getallworkprogressbyprojectwise",controller.getWorkProgressByPr
 router.post("/api/getallworkprogressdetailswithpercent",authcheck,controller.getBomFullDetailsWithProgressByProject_Id)
 
 module.exports = router;
+
+
+
