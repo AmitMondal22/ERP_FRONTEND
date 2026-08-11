@@ -1,7 +1,7 @@
 
-const express    = require("express");
-const router     = express.Router();
-const authcheck  = require("../middleware/auth");
+const express = require("express");
+const router = express.Router();
+const authcheck = require("../middleware/auth");
 const controller = require("../controller/projectSiteStatusController");
 const FileUploader = require("../helper/fileUpload");
 
@@ -9,14 +9,14 @@ const FileUploader = require("../helper/fileUpload");
    FILE UPLOADER CONFIG
    ========================= */
 const fileUploader = new FileUploader({
-  folderName     : "uploads/site_status_images",
-  supportedFiles : [
+  folderName: "uploads/site_status_images",
+  supportedFiles: [
     "image/png",
     "image/jpeg",
     "image/jpg",
     "image/webp",
   ],
-  fieldSize : 1024 * 1024 * 10, // 10MB
+  fieldSize: 1024 * 1024 * 10, // 10MB
 });
 
 const upload = fileUploader.upload();
@@ -109,6 +109,12 @@ router.get(
   authcheck,
   controller.getStatusByFilter
 );
+
+
+router.get("/project-site-status/my-status", authcheck, controller.getStatusByUser);
+
+
+router.get("/api/user_details/loged_in", authcheck, controller.getLoggedInUserDetails);
 
 
 module.exports = router;
