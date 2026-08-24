@@ -142,6 +142,15 @@ createPurchase = async (req, res) => {
     if (connection) await connection.rollback();
     console.error("createPurchase error:", error);
 
+    // Handle Duplicate Invoice Number error (MySQL ER_DUP_ENTRY code 1062)
+    if (error.code === "ER_DUP_ENTRY" || error.errno === 1062 || error.message?.includes("Duplicate entry")) {
+      return res.status(400).json({
+        success: false,
+        message: `Invoice Number '${req.body.invoice_no}' already exists. Please enter a unique Invoice Number.`,
+        error: error.message,
+      });
+    }
+
     return res.status(500).json({
       success: false,
       message: "Internal Error",
@@ -1792,6 +1801,162 @@ getAllTypeOfPurchaseForAllTypeOfProducts = async (req, res) => {
   }
 };
 
+  getCustomPurchaseReport = async (req, res) => {
+    try {
+      const {
+        report_type,
+        purchase_id,
+        fromDate,
+        toDate,
+        project_id,
+        site_id,
+        product_type_id,
+        vendor_id,
+        stor_id,
+        search
+      } = req.body || {};
+
+      let sql = `
+        SELECT
+          p.purchase_id,
+          p.project_id,
+          pr.project_name,
+          p.site_id,
+          ps.project_site_name,
+          p.vendor_id,
+          v.vendor_name,
+          p.stor_id,
+          s.store_name,
+          p.purchase_order_id,
+          po.po_no,
+          p.invoice_no,
+          p.invoice_date,
+          p.delivery_date,
+          p.due_date,
+          p.invoice_image,
+          p.transport_insurance,
+          p.remarks,
+          p.created_by,
+          p.created_at,
+          p.updated_at,
+
+          pp.purchase_product_id,
+          pp.product_id,
+          pn.product_name,
+          pn.hsn_code,
+          pn.product_type_id,
+          pt.product_type_name,
+          pn.unit_id,
+          mu.unit_name,
+          pp.product_qty,
+          pp.invoice_qty,
+          pp.unit_rate,
+          pp.return_id,
+          pp.discount_rate,
+          pp.discount_amount,
+          pp.sgst_rate,
+          pp.cgst_rate,
+          pp.igst_rate,
+          pp.sgst_amt,
+          pp.cgst_amt,
+          pp.igst_amt,
+          pp.total_amount,
+          pp.make_date,
+          pp.ownership_status
+        FROM td_purchase AS p
+        JOIN td_purchase_product AS pp ON p.purchase_id = pp.purchase_id
+        LEFT JOIN md_project AS pr ON p.project_id = pr.project_id
+        LEFT JOIN md_project_site AS ps ON p.site_id = ps.project_site_id
+        LEFT JOIN md_vendor AS v ON p.vendor_id = v.vendor_id
+        LEFT JOIN md_product AS pn ON pp.product_id = pn.product_id
+        LEFT JOIN md_product_type AS pt ON pn.product_type_id = pt.product_type_id
+        LEFT JOIN md_unit AS mu ON pn.unit_id = mu.unit_id
+        LEFT JOIN md_store AS s ON p.stor_id = s.store_id
+        LEFT JOIN td_purchase_order AS po ON p.purchase_order_id = po.purchase_order_id
+      `;
+
+      const whereClauses = [];
+      const params = [];
+
+      if (purchase_id) {
+        whereClauses.push(`p.purchase_id = ?`);
+        params.push(purchase_id);
+      }
+      if (fromDate && toDate) {
+        whereClauses.push(`DATE(p.invoice_date) BETWEEN ? AND ?`);
+        params.push(fromDate, toDate);
+      } else if (fromDate) {
+        whereClauses.push(`DATE(p.invoice_date) >= ?`);
+        params.push(fromDate);
+      } else if (toDate) {
+        whereClauses.push(`DATE(p.invoice_date) <= ?`);
+        params.push(toDate);
+      }
+      if (project_id) {
+        whereClauses.push(`p.project_id = ?`);
+        params.push(project_id);
+      }
+      if (site_id) {
+        whereClauses.push(`p.site_id = ?`);
+        params.push(site_id);
+      }
+      if (product_type_id) {
+        whereClauses.push(`pn.product_type_id = ?`);
+        params.push(product_type_id);
+      }
+      if (vendor_id) {
+        whereClauses.push(`p.vendor_id = ?`);
+        params.push(vendor_id);
+      }
+      if (stor_id) {
+        whereClauses.push(`p.stor_id = ?`);
+        params.push(stor_id);
+      }
+      if (search) {
+        const escapedSearch = `%${search}%`;
+        whereClauses.push(`(
+          p.invoice_no LIKE ? OR
+          pr.project_name LIKE ? OR
+          ps.project_site_name LIKE ? OR
+          v.vendor_name LIKE ? OR
+          pn.product_name LIKE ? OR
+          po.po_no LIKE ? OR
+          s.store_name LIKE ?
+        )`);
+        params.push(escapedSearch, escapedSearch, escapedSearch, escapedSearch, escapedSearch, escapedSearch, escapedSearch);
+      }
+
+      if (whereClauses.length > 0) {
+        sql += ` WHERE ${whereClauses.join(" AND ")}`;
+      }
+
+      if (report_type === "PRODUCT_WISE") {
+        sql += ` ORDER BY pt.product_type_name ASC, pn.product_name ASC, p.invoice_date DESC`;
+      } else if (report_type === "VENDOR_WISE") {
+        sql += ` ORDER BY v.vendor_name ASC, p.invoice_date DESC`;
+      } else if (report_type === "MONTHLY") {
+        sql += ` ORDER BY p.invoice_date DESC, p.purchase_id DESC`;
+      } else {
+        sql += ` ORDER BY p.purchase_id DESC, pp.purchase_product_id ASC`;
+      }
+
+      const result = await customSelectSqlQuery2(sql, params);
+
+      return res.status(200).json({
+        status: "success",
+        total: result ? result.length : 0,
+        data: result || [],
+      });
+    } catch (error) {
+      console.error("Error in getCustomPurchaseReport:", error);
+      return res.status(500).json({
+        status: "error",
+        message: error.message || "Internal server error",
+      });
+    }
+  };
+
 }
 
 module.exports = new PurchaseProductController();
+

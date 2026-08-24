@@ -43,7 +43,7 @@ const generatePoId = async () => {
 };
 
 class purchaseOrderController {
-  
+
   // --------------------------------------------------
   // CREATE
   // --------------------------------------------------
@@ -112,26 +112,26 @@ class purchaseOrderController {
           purchase_order_id,
           product_id: p.product_id,
           unit_id: p.unit_id || null,
-          
+
           quantity: p.quantity,
           unit_price: p.unit_price,
-          
+
           // Discount fields
           discount_rate: p.discount_rate || 0,
           discount_amount: p.discount_amount || 0,
-          
+
           // GST rates
           sgst_rate: p.sgst_rate || 0,
           cgst_rate: p.cgst_rate || 0,
           igst_rate: p.igst_rate || 0,
-          
+
           // GST amounts
           sgst_amt: p.sgst_amt || 0,
           cgst_amt: p.cgst_amt || 0,
           igst_amt: p.igst_amt || 0,
-          
+
           total_amount: p.total_amount || 0,
-          
+
           created_by,
           created_at: now,
           updated_at: now,
@@ -166,7 +166,7 @@ class purchaseOrderController {
       const sql = `
         SELECT 
           p.purchase_order_id,
-          p.po_no,
+          p.po_no, 
           p.vendor_id,
           v.vendor_name,
           p.project_id,
@@ -204,103 +204,103 @@ class purchaseOrderController {
 
 
 
-// async getPurchaseOrderByIdWithFullProductDetailsPo(req, res) {
-//   try {
-//     const { purchase_order_id } = req.params;
+  // async getPurchaseOrderByIdWithFullProductDetailsPo(req, res) {
+  //   try {
+  //     const { purchase_order_id } = req.params;
 
-//     if (!purchase_order_id) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "purchase_order_id is required",
-//       });
-//     }
+  //     if (!purchase_order_id) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "purchase_order_id is required",
+  //       });
+  //     }
 
-//     /* ----------------------------------
-//      * 1️⃣ Fetch Purchase Order (Header)
-//      * ---------------------------------- */
-//     const poSql = `
-//       SELECT
-//         p.purchase_order_id,
-//         p.po_no,
-//         p.vendor_id,
-//         v.vendor_name,
-//         p.project_id,
-//         pr.project_name,
-//         p.project_site_id,
-//         ps.project_site_name,
-//         p.date,
-//         p.delivery_date,
-//         p.remarks,
-//         p.terms_and_condition,
-//         p.total_amount
-//       FROM td_purchase_order p
-//       LEFT JOIN md_vendor v ON p.vendor_id = v.vendor_id
-//       LEFT JOIN md_project pr ON p.project_id = pr.project_id
-//       LEFT JOIN md_project_site ps ON p.project_site_id = ps.project_site_id
-//       WHERE p.purchase_order_id = ${purchase_order_id}
-//       LIMIT 1
-//     `;
+  //     /* ----------------------------------
+  //      * 1️⃣ Fetch Purchase Order (Header)
+  //      * ---------------------------------- */
+  //     const poSql = `
+  //       SELECT
+  //         p.purchase_order_id,
+  //         p.po_no,
+  //         p.vendor_id,
+  //         v.vendor_name,
+  //         p.project_id,
+  //         pr.project_name,
+  //         p.project_site_id,
+  //         ps.project_site_name,
+  //         p.date,
+  //         p.delivery_date,
+  //         p.remarks,
+  //         p.terms_and_condition,
+  //         p.total_amount
+  //       FROM td_purchase_order p
+  //       LEFT JOIN md_vendor v ON p.vendor_id = v.vendor_id
+  //       LEFT JOIN md_project pr ON p.project_id = pr.project_id
+  //       LEFT JOIN md_project_site ps ON p.project_site_id = ps.project_site_id
+  //       WHERE p.purchase_order_id = ${purchase_order_id}
+  //       LIMIT 1
+  //     `;
 
-//     const poRows = await customSelectSqlQuery(poSql);
+  //     const poRows = await customSelectSqlQuery(poSql);
 
-//     if (poRows.length === 0) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Purchase order not found",
-//       });
-//     }
+  //     if (poRows.length === 0) {
+  //       return res.status(404).json({
+  //         success: false,
+  //         message: "Purchase order not found",
+  //       });
+  //     }
 
-//     const purchaseOrder = poRows[0];
+  //     const purchaseOrder = poRows[0];
 
-//     /* ----------------------------------
-//      * 2️⃣ Fetch Purchase Order Products
-//      * ---------------------------------- */
-//     const productSql = `
-//       SELECT
-//         pop.purchase_order_product_id,
-//         pop.product_id,
-//         prod.product_name,
-//         pop.quantity,
-//         pop.unit_price,
-//         pop.unit_id,
-//         u.unit_name,
-//         pop.discount_rate,
-//         pop.discount_amount,
-//         pop.sgst_rate,
-//         pop.cgst_rate,
-//         pop.igst_rate,
-//         pop.sgst_amt,
-//         pop.cgst_amt,
-//         pop.igst_amt,
-//         pop.total_amount
-//       FROM td_purchase_order_product pop
-//       LEFT JOIN md_product prod ON prod.product_id = pop.product_id
-//       LEFT JOIN md_unit u ON u.unit_id = pop.unit_id
-//       WHERE pop.purchase_order_id = ${purchase_order_id}
-//       ORDER BY pop.purchase_order_product_id ASC
-//     `;
+  //     /* ----------------------------------
+  //      * 2️⃣ Fetch Purchase Order Products
+  //      * ---------------------------------- */
+  //     const productSql = `
+  //       SELECT
+  //         pop.purchase_order_product_id,
+  //         pop.product_id,
+  //         prod.product_name,
+  //         pop.quantity,
+  //         pop.unit_price,
+  //         pop.unit_id,
+  //         u.unit_name,
+  //         pop.discount_rate,
+  //         pop.discount_amount,
+  //         pop.sgst_rate,
+  //         pop.cgst_rate,
+  //         pop.igst_rate,
+  //         pop.sgst_amt,
+  //         pop.cgst_amt,
+  //         pop.igst_amt,
+  //         pop.total_amount
+  //       FROM td_purchase_order_product pop
+  //       LEFT JOIN md_product prod ON prod.product_id = pop.product_id
+  //       LEFT JOIN md_unit u ON u.unit_id = pop.unit_id
+  //       WHERE pop.purchase_order_id = ${purchase_order_id}
+  //       ORDER BY pop.purchase_order_product_id ASC
+  //     `;
 
-//     const products = await customSelectSqlQuery(productSql);
+  //     const products = await customSelectSqlQuery(productSql);
 
-//     /* ----------------------------------
-//      * 3️⃣ Final Response
-//      * ---------------------------------- */
-//     res.status(200).json({
-//       success: true,
-//       data: {
-//         ...purchaseOrder,
-//         products,
-//       },
-//     });
+  //     /* ----------------------------------
+  //      * 3️⃣ Final Response
+  //      * ---------------------------------- */
+  //     res.status(200).json({
+  //       success: true,
+  //       data: {
+  //         ...purchaseOrder,
+  //         products,
+  //       },
+  //     });
 
-//   } catch (err) {
-//     console.error("getPurchaseOrderById Error:", err);
-//     res.status(500).json({
-//       success: false,
-//       message: "Internal Server Error",
-//     });
-//   }
-// }
+  //   } catch (err) {
+  //     console.error("getPurchaseOrderById Error:", err);
+  //     res.status(500).json({
+  //       success: false,
+  //       message: "Internal Server Error",
+  //     });
+  //   }
+  // }
 
 
 
@@ -310,14 +310,14 @@ class purchaseOrderController {
   // --------------------------------------------------
   // GET ONE PO BY ID
   // --------------------------------------------------
- 
- 
- 
- 
- 
- 
- 
- 
+
+
+
+
+
+
+
+
   async getPurchaseOrderById(req, res) {
     try {
       const { id } = req.params;//this is purchase_order_id
@@ -433,7 +433,7 @@ class purchaseOrderController {
       const id = Number(req.params.id);
 
       if (!Number.isInteger(id)) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           success: false,
           message: "Invalid purchase order ID"
         });
@@ -520,27 +520,27 @@ class purchaseOrderController {
           purchase_order_id: id,
           product_id: p.product_id,
           unit_id: p.unit_id || null,
-          
+
           quantity: p.quantity,
           unit_price: p.unit_price,
-          
+
           // Discount fields
           discount_rate: p.discount_rate || 0,
           discount_amount: p.discount_amount || 0,
-          
+
           // GST rate fields
           sgst_rate: p.sgst_rate || 0,
           cgst_rate: p.cgst_rate || 0,
           igst_rate: p.igst_rate || 0,
-          
+
           // GST amount fields
           sgst_amt: p.sgst_amt || 0,
           cgst_amt: p.cgst_amt || 0,
           igst_amt: p.igst_amt || 0,
-          
+
           // Total amount
           total_amount: p.total_amount || 0,
-          
+
           created_by: updated_by,
           created_at: now,
           updated_at: now,
@@ -613,30 +613,30 @@ class purchaseOrderController {
 
 
 
-// --------------------------------------------------
-// GET PURCHASE ORDERS BY PROJECT AND SITE
-// --------------------------------------------------
-async getAllPurchaseOrdersByProjectIdAndSiteId(req, res) {
-  try {
-    const { project_id, site_id } = req.params;
+  // --------------------------------------------------
+  // GET PURCHASE ORDERS BY PROJECT AND SITE
+  // --------------------------------------------------
+  async getAllPurchaseOrdersByProjectIdAndSiteId(req, res) {
+    try {
+      const { project_id, site_id } = req.params;
 
-    // Validation
-    if (!project_id) {
-      return res.status(400).json({
-        success: false,
-        message: "project_id is required",
-      });
-    }
+      // Validation
+      if (!project_id) {
+        return res.status(400).json({
+          success: false,
+          message: "project_id is required",
+        });
+      }
 
-    if (!site_id) {
-      return res.status(400).json({
-        success: false,
-        message: "site_id (project_site_id) is required",
-      });
-    }
+      if (!site_id) {
+        return res.status(400).json({
+          success: false,
+          message: "site_id (project_site_id) is required",
+        });
+      }
 
-    // SQL Query
-    const sql = `
+      // SQL Query
+      const sql = `
       SELECT 
         p.purchase_order_id,
         p.po_no,
@@ -662,30 +662,30 @@ async getAllPurchaseOrdersByProjectIdAndSiteId(req, res) {
       ORDER BY p.purchase_order_id DESC
     `;
 
-    const rows = await customSelectSqlQuery(sql);
+      const rows = await customSelectSqlQuery(sql);
 
-    if (rows.length === 0) {
-      return res.status(404).json({
+      if (rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "No purchase orders found for this project and site",
+        });
+      }
+
+      res.json({
+        success: true,
+        count: rows.length,
+        data: rows,
+      });
+
+    } catch (err) {
+      console.error("getPurchaseOrdersByProjectAndSite Error:", err);
+      res.status(500).json({
         success: false,
-        message: "No purchase orders found for this project and site",
+        message: "Internal Server Error",
+        error: err.message
       });
     }
-
-    res.json({
-      success: true,
-      count: rows.length,
-      data: rows,
-    });
-
-  } catch (err) {
-    console.error("getPurchaseOrdersByProjectAndSite Error:", err);
-    res.status(500).json({ 
-      success: false, 
-      message: "Internal Server Error",
-      error: err.message 
-    });
   }
-}
 
 
 }

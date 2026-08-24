@@ -17,7 +17,7 @@ class ClaimsReimbursementsController {
 
 
 
-// CREATE  →  POST /api/claims
+  // CREATE  →  POST /api/claims
   // async create(req, res) {
   //   try {
   //     const {
@@ -93,76 +93,93 @@ class ClaimsReimbursementsController {
   //   }
   // }
 
-async create(req, res) {
-  try {
-    const {
-      employee_id,
-      claimType_id,
-      claim_title,
-      claim_date,
-      claim_amount,
-      submit_date,
-      remarks = null,
-    } = req.body;
+  async create(req, res) {
+    try {
+      const {
+        employee_id,
+        claimType_id,
+        claim_title,
+        claim_date,
+        claim_amount,
+        submit_date,
+        remarks = null,
+      } = req.body;
 
-    // ✅ get uploaded file path
-    let attachment_file = null;
+      // ✅ get uploaded file path
+      let attachment_file = null;
 
-    if (req.files && req.files.length > 0) {
-      attachment_file = req.files[0].path; // or filename depending on multer config
+      if (req.files && req.files.length > 0) {
+        attachment_file = req.files[0].path; // or filename depending on multer config
+      }
+
+      // validation
+      if (!employee_id || !claimType_id || !claim_title || !claim_date || !claim_amount)
+        return res.status(400).json({
+          success: false,
+          message: "Required fields missing",
+        });
+
+      if (Number(claim_amount) <= 0)
+        return res.status(400).json({
+          success: false,
+          message: "claim_amount must be greater than 0",
+        });
+
+      const today = new Date().toISOString().split("T")[0];
+
+      const insertId = await insertData("claims_reimbursements", {
+        employee_id,
+        claimType_id,
+        claim_title,
+        claim_date,
+        claim_amount,
+        submit_date: submit_date || today,
+        attachment_file,   // ✅ now real file path
+        claim_status: "Pending",
+        remarks,
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: "Claim submitted successfully",
+        claim_id: insertId,
+      });
+
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message });
     }
-
-    // validation
-    if (!employee_id || !claimType_id || !claim_title || !claim_date || !claim_amount)
-      return res.status(400).json({
-        success: false,
-        message: "Required fields missing",
-      });
-
-    if (Number(claim_amount) <= 0)
-      return res.status(400).json({
-        success: false,
-        message: "claim_amount must be greater than 0",
-      });
-
-    const today = new Date().toISOString().split("T")[0];
-
-    const insertId = await insertData("claims_reimbursements", {
-      employee_id,
-      claimType_id,
-      claim_title,
-      claim_date,
-      claim_amount,
-      submit_date: submit_date || today,
-      attachment_file,   // ✅ now real file path
-      claim_status: "Pending",
-      remarks,
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: "Claim submitted successfully",
-      claim_id: insertId,
-    });
-
-  } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
   }
-}
 
 
   // GET ALL  →  GET /api/claims
   async getAll(req, res) {
     try {
       const sql = `
-        SELECT 
-          cr.*,
-          ct.claim_type_name,
-          ct.max_limit_amount
-        FROM claims_reimbursements cr
-        LEFT JOIN em_claim_types ct ON cr.claimType_id = ct.claimType_id
-        ORDER BY cr.submit_date DESC
-      `;
+  SELECT 
+    cr.claim_id,
+    cr.employee_id,
+    cr.claimType_id,
+    cr.claim_title,
+    cr.claim_date,
+    cr.claim_amount,
+    cr.submit_date,
+    cr.attachment_file,
+    cr.claim_status,
+    cr.paid_date,
+    cr.remarks,
+    cr.currency,
+    cr.created_at,
+    cr.updated_at,
+    ct.claim_type_name,
+    ct.max_limit_amount,
+    e.first_name AS employee_first_name,
+    e.last_name AS employee_last_name,
+    e.email AS employee_email
+  FROM claims_reimbursements cr
+  LEFT JOIN em_claim_types ct ON cr.claimType_id = ct.claimType_id
+  LEFT JOIN em_employees e ON cr.employee_id = e.employee_id
+  ORDER BY cr.submit_date DESC
+`;
       const data = await customSelectSqlQuery2(sql);
       return res.status(200).json({
         success: true,
@@ -173,6 +190,8 @@ async create(req, res) {
       return res.status(500).json({ success: false, message: err.message });
     }
   }
+
+
 
   // GET BY EMPLOYEE  →  GET /api/claims/employee/:employeeId
   async getByEmployee(req, res) {
@@ -250,10 +269,10 @@ async create(req, res) {
   // PAGINATED  →  GET /api/claims/paginate?page=1&limit=10
   async getPaginated(req, res) {
     try {
-      const page  = parseInt(req.query.page)  || 1;
+      const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 10;
       const start = (page - 1) * limit + 1;
-      const end   = page * limit;
+      const end = page * limit;
 
       const result = await selectDataInRanges(
         `cr.*, ct.claim_type_name`,
@@ -275,7 +294,7 @@ async create(req, res) {
     }
   }
 
-  
+
 
   // UPDATE (employee can edit while Pending)  →  PUT /api/claims/:id
   async update(req, res) {
@@ -308,13 +327,13 @@ async create(req, res) {
         });
 
       const updatePayload = {};
-      if (claimType_id    !== undefined) updatePayload.claimType_id    = claimType_id;
-      if (claim_title     !== undefined) updatePayload.claim_title     = claim_title;
-      if (claim_date      !== undefined) updatePayload.claim_date      = claim_date;
-      if (claim_amount    !== undefined) updatePayload.claim_amount    = claim_amount;
-      if (submit_date     !== undefined) updatePayload.submit_date     = submit_date;
+      if (claimType_id !== undefined) updatePayload.claimType_id = claimType_id;
+      if (claim_title !== undefined) updatePayload.claim_title = claim_title;
+      if (claim_date !== undefined) updatePayload.claim_date = claim_date;
+      if (claim_amount !== undefined) updatePayload.claim_amount = claim_amount;
+      if (submit_date !== undefined) updatePayload.submit_date = submit_date;
       if (attachment_file !== undefined) updatePayload.attachment_file = attachment_file;
-      if (remarks         !== undefined) updatePayload.remarks         = remarks;
+      if (remarks !== undefined) updatePayload.remarks = remarks;
 
       if (Object.keys(updatePayload).length === 0)
         return res
@@ -362,7 +381,7 @@ async create(req, res) {
       };
 
       if (reviewed_by !== undefined) updatePayload.reviewed_by = reviewed_by;
-      if (remarks     !== undefined) updatePayload.remarks     = remarks;
+      if (remarks !== undefined) updatePayload.remarks = remarks;
 
       // auto-set paid_date when marking as Paid
       if (claim_status === "Paid") {
@@ -434,4 +453,4 @@ async create(req, res) {
 }
 
 
-module.exports= new ClaimsReimbursementsController()
+module.exports = new ClaimsReimbursementsController()

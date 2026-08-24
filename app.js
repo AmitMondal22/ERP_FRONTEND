@@ -1,59 +1,60 @@
 require('dotenv').config();
 const express = require('express');
-const router= require('./router/router')
-const assesrouter= require('./router/assesRoutes')
-const vendorrouter= require('./router/vendorRoutes')
-const unit= require('./router/unitRouter');
-const projectRoutes= require('./router/projectRoutes')
-const projectSitesRoutes= require('./router/projectSitesRoutes');
+const router = require('./router/router')
+const assesrouter = require('./router/assesRoutes')
+const vendorrouter = require('./router/vendorRoutes')
+const unit = require('./router/unitRouter');
+const projectRoutes = require('./router/projectRoutes')
+const projectSitesRoutes = require('./router/projectSitesRoutes');
 //const ProductType= require('./router/productTypeRoute')
-const ProductRoutes= require('./router/productRoute');
-const Employee= require('./router/employeeRoutes');
-const Team= require('./router/teamRoutes');
-const Stor= require('./router/storRouter');
-const Relation= require('./router/relationRoutes');
-const Upload= require('./router/uploadsRoutes');
-const Bom= require('./router/bomRoutes');
-const purchaseProduct= require('./router/purchaseProduct');
-const productType= require('./router/productTypeRoute');
-const progressRoutes= require('./router/progressRoutes');
-const employeeTeamRoutes= require('./router/employeeTeamRoutes');
-const employeeAttendence= require('./router/employeeAttendence');
-const leaveRoutes= require('./router/leaveRoutes');
-const leaveRequestRoutes= require('./router/leaveRequestRoutes');
-const employeePaySlipRoutes= require('./router/employeePaySlipRoutes');
-const currentStockRoutes=require('./router/currentStockRoutes');
-const ProjectEstimationRoutes=require('./router/projectEstimationRoutes')
-const WorkProgressAsPerProjectSiteRoutes= require('./router/workProgressAsPerProjectSiteRoutes')
-const ProjectBillingRoutes= require('./router/projectBillingRoutes')
-const ReturnPurchaseRoutes= require('./router/returnPurchaseRoutes')
-const purchaseOrderRoutes= require('./router/purchaseOrderRoutes')
-const billingOrderRoutes= require('./router/billingRoutes')
+const ProductRoutes = require('./router/productRoute');
+const Employee = require('./router/employeeRoutes');
+const Team = require('./router/teamRoutes');
+const Stor = require('./router/storRouter');
+const Relation = require('./router/relationRoutes');
+const Upload = require('./router/uploadsRoutes');
+const Bom = require('./router/bomRoutes');
+const purchaseProduct = require('./router/purchaseProduct');
+const productType = require('./router/productTypeRoute');
+const progressRoutes = require('./router/progressRoutes');
+const employeeTeamRoutes = require('./router/employeeTeamRoutes');
+const employeeAttendence = require('./router/employeeAttendence');
+const leaveRoutes = require('./router/leaveRoutes');
+const leaveRequestRoutes = require('./router/leaveRequestRoutes');
+const employeePaySlipRoutes = require('./router/employeePaySlipRoutes');
+const currentStockRoutes = require('./router/currentStockRoutes');
+const ProjectEstimationRoutes = require('./router/projectEstimationRoutes')
+const WorkProgressAsPerProjectSiteRoutes = require('./router/workProgressAsPerProjectSiteRoutes')
+const ProjectBillingRoutes = require('./router/projectBillingRoutes')
+const ReturnPurchaseRoutes = require('./router/returnPurchaseRoutes')
+const purchaseOrderRoutes = require('./router/purchaseOrderRoutes')
+const billingOrderRoutes = require('./router/billingRoutes')
 const employeeSalaryRoutes = require('./router/employeeSalaryRoutes')
 const employeeleaveassignedRoutes = require("./router/employeeLeaveAssignedRoutes")
-const AnnualLeaveRoutes= require("./router/employeeAnnualLeaveRoutes");
-const documnetUploadRoutes= require("./router/documnetUploadRoutes")
+const AnnualLeaveRoutes = require("./router/employeeAnnualLeaveRoutes");
+const documnetUploadRoutes = require("./router/documnetUploadRoutes")
 const startScheduler = require('./scheduler/payrollScheduler');
-const claimDamageProductRoutes= require("./router/damagedProductClaimRoutes");
-const uploadFileRoutes= require('./router/uploadFilesRoutes');
+const claimDamageProductRoutes = require("./router/damagedProductClaimRoutes");
+const uploadFileRoutes = require('./router/uploadFilesRoutes');
 
-const claimTypeRoutes= require('./router/claimTypeRoutes');
+const claimTypeRoutes = require('./router/claimTypeRoutes');
 
-const claimTypeReimbursementRoutes= require('./router/claimTypeReimbursementRoutes');
+const claimTypeReimbursementRoutes = require('./router/claimTypeReimbursementRoutes');
 
 const clientRoutes = require("./router/clientRoutes");
 
 const ProjectSiteStatusRoutes = require("./router/projectSiteStatusRoutes")
 
-const WorkBillingRoutes= require("./router/Workbillingroutes");
+const WorkBillingRoutes = require("./router/Workbillingroutes");
 
-const dashboardRoutes= require("./router/dashboardRoutes");
-
-
-const projectWorkDescriptionRoutes= require("./router/projectWorkDescriptionRoutes")
+const dashboardRoutes = require("./router/dashboardRoutes");
 
 
-const app= express()
+const projectWorkDescriptionRoutes = require("./router/projectWorkDescriptionRoutes");
+const PurchaseOrderVsActualRoutes = require("./router/PurchaseordervsActualRoutes")
+
+
+const app = express()
 const path = require("path");
 const cors = require('cors');
 
@@ -77,47 +78,48 @@ app.use(express.raw({ type: 'application/octet-stream', limit: '15mb' }));
 
 // app.use(express.raw({ type: 'application/octet-stream', limit: '200kb' }));
 
-app.use('/',router)
-app.use('/',assesrouter)
-app.use('/',vendorrouter)
-app.use('/',unit)
-app.use('/',projectRoutes) 
-app.use('/',projectSitesRoutes)
-app.use('/',ProductRoutes)
-app.use('/',Employee)
-app.use('/',Team)
-app.use('/',Stor)
-app.use('/',Relation)
-app.use('/',Upload)
-app.use('/',Bom)
-app.use('/',purchaseProduct)
-app.use('/',productType); 
-app.use('/',progressRoutes);
-app.use('/',employeeTeamRoutes);
-app.use('/',employeeAttendence);
-app.use('/',leaveRoutes);
-app.use('/',leaveRequestRoutes); 
-app.use('/',employeePaySlipRoutes);
-app.use('/',currentStockRoutes);
-app.use('/',ProjectBillingRoutes);
-app.use('/',ProjectEstimationRoutes);
-app.use('/',WorkProgressAsPerProjectSiteRoutes);
-app.use('/',ReturnPurchaseRoutes);
-app.use('/',purchaseOrderRoutes);
-app.use('/',billingOrderRoutes);
-app.use('/',employeeSalaryRoutes)
-app.use('/',employeeleaveassignedRoutes)
-app.use('/',AnnualLeaveRoutes);
-app.use('/',documnetUploadRoutes);
-app.use('/',claimDamageProductRoutes);
-app.use('/',uploadFileRoutes);
-app.use('/',claimTypeRoutes);
-app.use('/',claimTypeReimbursementRoutes);
-app.use('/',clientRoutes);
-app.use('/',ProjectSiteStatusRoutes);
-app.use('/',WorkBillingRoutes);
-app.use('/',dashboardRoutes);
-app.use('/',projectWorkDescriptionRoutes)
+app.use('/', router)
+app.use('/', assesrouter)
+app.use('/', vendorrouter)
+app.use('/', unit)
+app.use('/', projectRoutes)
+app.use('/', projectSitesRoutes)
+app.use('/', ProductRoutes)
+app.use('/', Employee)
+app.use('/', Team)
+app.use('/', Stor)
+app.use('/', Relation)
+app.use('/', Upload)
+app.use('/', Bom)
+app.use('/', purchaseProduct)
+app.use('/', productType);
+app.use('/', progressRoutes);
+app.use('/', employeeTeamRoutes);
+app.use('/', employeeAttendence);
+app.use('/', leaveRoutes);
+app.use('/', leaveRequestRoutes);
+app.use('/', employeePaySlipRoutes);
+app.use('/', currentStockRoutes);
+app.use('/', ProjectBillingRoutes);
+app.use('/', ProjectEstimationRoutes);
+app.use('/', WorkProgressAsPerProjectSiteRoutes);
+app.use('/', ReturnPurchaseRoutes);
+app.use('/', purchaseOrderRoutes);
+app.use('/', billingOrderRoutes);
+app.use('/', employeeSalaryRoutes)
+app.use('/', employeeleaveassignedRoutes)
+app.use('/', AnnualLeaveRoutes);
+app.use('/', documnetUploadRoutes);
+app.use('/', claimDamageProductRoutes);
+app.use('/', uploadFileRoutes);
+app.use('/', claimTypeRoutes);
+app.use('/', claimTypeReimbursementRoutes);
+app.use('/', clientRoutes);
+app.use('/', ProjectSiteStatusRoutes);
+app.use('/', WorkBillingRoutes);
+app.use('/', dashboardRoutes);
+app.use('/', projectWorkDescriptionRoutes);
+app.use('/', PurchaseOrderVsActualRoutes);
 
 
 

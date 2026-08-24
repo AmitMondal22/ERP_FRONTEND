@@ -33,8 +33,6 @@ router.post('/api/purchases/by-project-site-product', purchaseProductController.
 
 router.get("/api/getalltypeofpurchase",authcheck, purchaseProductController.getAllTypeOfPurchaseForAllTypeOfProducts);
 
-//getAllTypeOfPurchaseForAllTypeOfProducts
+router.post("/api/custom-purchase-report", authcheck, purchaseProductController.getCustomPurchaseReport);
 
-
-//getPurchaseDetailsMonthwise
 module.exports = router;
