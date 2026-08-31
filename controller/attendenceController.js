@@ -210,17 +210,26 @@ class AttendanceController {
   createOrUpdateAttendance = async (req, res) => {
     let conn = null;
     try {
-      const {
+      let {
         project_id,
         site_id = null,
         team_id = null,
         records = [],
       } = req.body;
 
-      const created_by = req.user.id;
+      // Parse JSON stringified records if sent via multipart FormData
+      if (typeof records === "string") {
+        try {
+          records = JSON.parse(records);
+        } catch (e) {
+          records = [];
+        }
+      }
+
+      const created_by = req.user?.id || req.user?.employee_id || req.user?.user_id || 1;
 
       // ----- Basic validation -----
-      if (!records.length) {
+      if (!records || !records.length) {
         return res.status(400).json({
           success: false,
           message: "records array is required",
@@ -273,9 +282,9 @@ class AttendanceController {
 
           if (!existingCheckIn) {
             checkInRecords.push({
-              project_id,
-              site_id,
-              team_id,
+              project_id: Number(project_id),
+              site_id: site_id ? Number(site_id) : null,
+              team_id: team_id ? Number(team_id) : null,
               employee_id,
               work_date,
               check_in: now,
@@ -285,7 +294,7 @@ class AttendanceController {
               in_out_status: "Y",
               status,
               notes,
-              created_by,
+              created_by: Number(created_by) || 1,
               created_at: now,
             });
           } else {
@@ -409,42 +418,76 @@ class AttendanceController {
       // ----- Insert image & geotag metadata into em_attendance_image -----
       const rootLat = req.body.latitude || null;
       const rootLng = req.body.longitude || null;
-      const rootImg = req.body.image_url || (req.files && req.files.length > 0 ? req.files[0].filename : "default_attendance.jpg");
+      const rootImg = req.body.image_url || "default_attendance.jpg";
+      const imageFiles = req.files && req.files.length > 0 ? req.files : [];
+      const uploadedByVal = Number(created_by) || 1;
 
       // Handle newly inserted check-in records
       for (const rec of checkInRecords) {
-        const selectRes = await selectOneData(
-          table,
-          "attendance_id",
-          `employee_id = '${rec.employee_id}' AND work_date = '${rec.work_date}' AND check_out IS NULL`
+        const selectRes = await customSelectSqlQuery(
+          `SELECT attendance_id FROM ${table} 
+           WHERE employee_id = '${rec.employee_id}' AND work_date = '${rec.work_date}' 
+           ORDER BY attendance_id DESC LIMIT 1`
         );
 
-        if (selectRes && selectRes.attendance_id) {
-          await insertData("em_attendance_image", {
-            attendance_id: Number(selectRes.attendance_id),
-            image_url: rootImg,
-            image_type: "check_in",
-            latitude: rootLat ? parseFloat(rootLat) : null,
-            longitude: rootLng ? parseFloat(rootLng) : null,
-            uploaded_by: Number(created_by),
-            created_at: now,
-            updated_at: now,
-          });
+        const attendanceId = selectRes && selectRes.length > 0 ? selectRes[0].attendance_id : null;
+
+        if (attendanceId) {
+          if (imageFiles.length > 0) {
+            for (const file of imageFiles) {
+              await insertData("em_attendance_image", {
+                attendance_id: Number(attendanceId),
+                image_url: file.filename,
+                image_type: "check_in",
+                latitude: rootLat ? parseFloat(rootLat) : null,
+                longitude: rootLng ? parseFloat(rootLng) : null,
+                uploaded_by: uploadedByVal,
+                created_at: now,
+                updated_at: now,
+              });
+            }
+          } else {
+            await insertData("em_attendance_image", {
+              attendance_id: Number(attendanceId),
+              image_url: rootImg,
+              image_type: "check_in",
+              latitude: rootLat ? parseFloat(rootLat) : null,
+              longitude: rootLng ? parseFloat(rootLng) : null,
+              uploaded_by: uploadedByVal,
+              created_at: now,
+              updated_at: now,
+            });
+          }
         }
       }
 
       // Handle checkout records
       for (const upd of checkOutUpdates) {
-        await insertData("em_attendance_image", {
-          attendance_id: Number(upd.attendance_id),
-          image_url: rootImg,
-          image_type: "check_out",
-          latitude: rootLat ? parseFloat(rootLat) : null,
-          longitude: rootLng ? parseFloat(rootLng) : null,
-          uploaded_by: Number(created_by),
-          created_at: now,
-          updated_at: now,
-        });
+        if (imageFiles.length > 0) {
+          for (const file of imageFiles) {
+            await insertData("em_attendance_image", {
+              attendance_id: Number(upd.attendance_id),
+              image_url: file.filename,
+              image_type: "check_out",
+              latitude: rootLat ? parseFloat(rootLat) : null,
+              longitude: rootLng ? parseFloat(rootLng) : null,
+              uploaded_by: uploadedByVal,
+              created_at: now,
+              updated_at: now,
+            });
+          }
+        } else {
+          await insertData("em_attendance_image", {
+            attendance_id: Number(upd.attendance_id),
+            image_url: rootImg,
+            image_type: "check_out",
+            latitude: rootLat ? parseFloat(rootLat) : null,
+            longitude: rootLng ? parseFloat(rootLng) : null,
+            uploaded_by: uploadedByVal,
+            created_at: now,
+            updated_at: now,
+          });
+        }
       }
 
       await conn.commit();
@@ -789,7 +832,7 @@ class AttendanceController {
           };
 
           const insertRes = await insertData(table, checkInObj);
-          attendance_id = insertRes.insertId;
+          attendance_id = typeof insertRes === "object" && insertRes !== null ? insertRes.insertId : insertRes;
         }
       } else {
         // Handle Check-Out
@@ -850,7 +893,7 @@ class AttendanceController {
           };
 
           const insertRes = await insertData(table, checkOutObj);
-          attendance_id = insertRes.insertId;
+          attendance_id = typeof insertRes === "object" && insertRes !== null ? insertRes.insertId : insertRes;
         }
       }
 
@@ -980,8 +1023,8 @@ class AttendanceController {
             WHERE img.attendance_id = a.attendance_id
           ) AS images
         FROM em_attendance a
-        LEFT JOIN em_projects p ON p.project_id = a.project_id
-        LEFT JOIN em_project_sites ps ON ps.project_site_id = a.site_id
+        LEFT JOIN md_project p ON p.project_id = a.project_id
+        LEFT JOIN md_project_site ps ON ps.project_site_id = a.site_id
         WHERE ${whereClause}
         ORDER BY a.work_date DESC, a.check_in DESC
       `;

@@ -19,6 +19,7 @@ const upload = fileUploader.upload();
 router.post(
   "/api/createorupdateattendence",
   authcheck,
+  upload.array("images", 5),
   attendanceController.createOrUpdateAttendance
 );
 

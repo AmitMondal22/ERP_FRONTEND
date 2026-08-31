@@ -751,21 +751,24 @@ getAllEmployeeByTeamIdFromBody = async (req, res) => {
 
     let attendanceFilter;
     if (normalizedStatus === "Y") {
-      // Marking IN → show employees who are:
-      // 1. Have no attendance record today (never checked in) ← a.attendance_id IS NULL
-      // 2. Have checked out (in_out_status = 'N')
+      // Marking IN → show employees who are NOT currently checked in (no check-in today OR already checked out)
       attendanceFilter = `
         AND (
           a.attendance_id IS NULL
+          OR a.check_out IS NOT NULL
           OR a.in_out_status = 'N'
         )
       `;
     } else {
-      // Marking OUT → show employees who are currently IN
+      // Marking OUT → show employees who are currently checked IN (check_in exists AND check_out is NULL)
       attendanceFilter = `
+        AND a.check_in IS NOT NULL
+        AND a.check_out IS NULL
         AND a.in_out_status = 'Y'
       `;
     }
+
+    const todayStr = dayjs().tz("Asia/Kolkata").format("YYYY-MM-DD");
 
     const sql = `
       SELECT 
@@ -782,12 +785,16 @@ getAllEmployeeByTeamIdFromBody = async (req, res) => {
       FROM md_em_employee_team AS t
       INNER JOIN em_employees AS e
         ON t.employee_id = e.employee_id
-      LEFT JOIN em_attendance AS a
-        ON a.employee_id = t.employee_id
-        AND a.team_id = t.team_id
-        AND a.project_id = t.project_id
-        AND a.site_id = t.site_id
-        AND a.work_date = CURDATE()
+      LEFT JOIN (
+        SELECT a1.employee_id, a1.attendance_id, a1.in_out_status, a1.check_in, a1.check_out
+        FROM em_attendance a1
+        INNER JOIN (
+          SELECT employee_id, MAX(attendance_id) AS max_id
+          FROM em_attendance
+          WHERE work_date = ?
+          GROUP BY employee_id
+        ) a2 ON a1.employee_id = a2.employee_id AND a1.attendance_id = a2.max_id
+      ) AS a ON a.employee_id = t.employee_id
       WHERE t.team_id = ?
         AND t.project_id = ?
         AND t.site_id = ?
@@ -796,7 +803,7 @@ getAllEmployeeByTeamIdFromBody = async (req, res) => {
       ORDER BY e.first_name ASC
     `;
 
-    const params = [team_id, project_id, site_id];
+    const params = [todayStr, team_id, project_id, site_id];
 
     const employees = (await customSelectSqlQuery2(sql, params)) ?? [];
 
