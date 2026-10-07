@@ -1434,12 +1434,25 @@ async getProjectsUnderStore(req, res) {
         prd.product_name,
         SUM(sl.qty_in)  AS total_in,
         SUM(sl.qty_out) AS total_out,
-        SUM(sl.qty_in) - SUM(sl.qty_out) AS current_balance
+        SUM(sl.qty_in) - SUM(sl.qty_out) AS current_balance,
+        COALESCE(qi.defective_qty, 0) AS defective_qty,
+        qi.quality_status AS defective_quality_status,
+        GREATEST(0, (SUM(sl.qty_in) - SUM(sl.qty_out) - COALESCE(qi.defective_qty, 0))) AS usable_balance
       FROM tx_store_stock_ledger AS sl
       LEFT JOIN md_product AS prd
         ON prd.product_id = sl.product_id
+      LEFT JOIN (
+        SELECT 
+          product_id, 
+          store_id, 
+          SUM(quantity) AS defective_qty,
+          GROUP_CONCAT(DISTINCT quality_status SEPARATOR ', ') AS quality_status
+        FROM td_purchase_quality_issue
+        WHERE resolution_status = 'PENDING'
+        GROUP BY product_id, store_id
+      ) AS qi ON qi.product_id = sl.product_id AND (qi.store_id = sl.store_id OR qi.store_id IS NULL)
       WHERE sl.store_id = ?
-      GROUP BY sl.product_id, prd.product_name
+      GROUP BY sl.product_id, prd.product_name, qi.defective_qty, qi.quality_status
       HAVING SUM(sl.qty_in) - SUM(sl.qty_out) > 0
       ORDER BY prd.product_name ASC
     `;
@@ -1590,7 +1603,11 @@ async getProjectsUnderStore(req, res) {
     -- TO SITE
     sl.to_site_id,
     tps.project_site_name AS to_site_name,
-    tps.address AS to_site_address
+    tps.address AS to_site_address,
+
+    -- QUALITY ISSUE STATUS
+    qi.quality_status AS item_quality_status,
+    qi.resolution_status AS item_resolution_status
 
   FROM tx_store_stock_ledger sl
 
@@ -1609,6 +1626,10 @@ async getProjectsUnderStore(req, res) {
   -- PURCHASE
   LEFT JOIN td_purchase AS pur
     ON pur.purchase_id = sl.purchase_id
+
+  -- QUALITY ISSUE
+  LEFT JOIN td_purchase_quality_issue AS qi
+    ON qi.purchase_id = sl.purchase_id AND qi.product_id = sl.product_id
 
   -- FROM STORE
   LEFT JOIN md_store AS fs

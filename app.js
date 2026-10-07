@@ -28,6 +28,7 @@ const WorkProgressAsPerProjectSiteRoutes = require('./router/workProgressAsPerPr
 const ProjectBillingRoutes = require('./router/projectBillingRoutes')
 const ReturnPurchaseRoutes = require('./router/returnPurchaseRoutes')
 const purchaseOrderRoutes = require('./router/purchaseOrderRoutes')
+const purchaseOrderTypeRoutes = require('./router/purchaseOrderTypeRoutes')
 const billingOrderRoutes = require('./router/billingRoutes')
 const employeeSalaryRoutes = require('./router/employeeSalaryRoutes')
 const employeeleaveassignedRoutes = require("./router/employeeLeaveAssignedRoutes")
@@ -51,7 +52,8 @@ const dashboardRoutes = require("./router/dashboardRoutes");
 
 
 const projectWorkDescriptionRoutes = require("./router/projectWorkDescriptionRoutes");
-const PurchaseOrderVsActualRoutes = require("./router/PurchaseordervsActualRoutes")
+const PurchaseOrderVsActualRoutes = require("./router/PurchaseordervsActualRoutes");
+const purchaseQualityIssueRoutes = require("./router/purchaseQualityIssueRoutes");
 
 
 const app = express()
@@ -105,6 +107,7 @@ app.use('/', ProjectEstimationRoutes);
 app.use('/', WorkProgressAsPerProjectSiteRoutes);
 app.use('/', ReturnPurchaseRoutes);
 app.use('/', purchaseOrderRoutes);
+app.use('/', purchaseOrderTypeRoutes);
 app.use('/', billingOrderRoutes);
 app.use('/', employeeSalaryRoutes)
 app.use('/', employeeleaveassignedRoutes)
@@ -120,6 +123,7 @@ app.use('/', WorkBillingRoutes);
 app.use('/', dashboardRoutes);
 app.use('/', projectWorkDescriptionRoutes);
 app.use('/', PurchaseOrderVsActualRoutes);
+app.use('/', purchaseQualityIssueRoutes);
 
 
 

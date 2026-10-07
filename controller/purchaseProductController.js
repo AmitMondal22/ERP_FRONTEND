@@ -10,7 +10,152 @@ const utc = require("dayjs/plugin/utc");
 dayjs.extend(utc);
 const now = dayjs.utc().format("YYYY-MM-DD HH:mm:ss");
 const connect = require("../DBConfig/db");
+const { sendVendorDefectiveItemsEmail } = require("../utils/mailer");
 const date = new Date();
+
+const handleDefectiveItems = async ({
+  purchase_id,
+  project_id,
+  site_id,
+  store_id,
+  vendor_id,
+  purchase_order_id,
+  invoice_no,
+  purchase_product,
+  remarks,
+  created_by,
+}) => {
+  try {
+    if (!purchase_product || !Array.isArray(purchase_product)) return;
+
+    // Defective items: return_id == 2 (Quality Not Good) or return_id == 3 (Quality Damage)
+    const defectiveItems = purchase_product.filter(
+      (p) => Number(p.return_id) === 2 || Number(p.return_id) === 3
+    );
+
+    if (defectiveItems.length === 0) return;
+
+    // Fetch vendor details
+    let vendorInfo = { vendor_name: "Vendor", vendor_email: null };
+    if (vendor_id) {
+      const vRows = await selectData("md_vendor", "vendor_name, vendor_email", `vendor_id = ${vendor_id}`);
+      if (vRows && vRows.length > 0) vendorInfo = vRows[0];
+    }
+
+    // Fetch PO No
+    let po_no = null;
+    if (purchase_order_id) {
+      const poRows = await selectData("td_purchase_order", "po_no", `purchase_order_id = ${purchase_order_id}`);
+      if (poRows && poRows.length > 0) po_no = poRows[0].po_no;
+    }
+
+    // Fetch Project, Site, Store Names
+    let projectName = "";
+    if (project_id) {
+      const projRows = await selectData("md_project", "project_name", `project_id = ${project_id}`);
+      if (projRows && projRows.length > 0) projectName = projRows[0].project_name;
+    }
+
+    let siteName = "";
+    if (site_id) {
+      const siteRows = await selectData("md_project_site", "project_site_name", `project_site_id = ${site_id}`);
+      if (siteRows && siteRows.length > 0) siteName = siteRows[0].project_site_name;
+    }
+
+    let storeName = "";
+    if (store_id) {
+      const storeRows = await selectData("md_store", "store_name", `store_id = ${store_id}`);
+      if (storeRows && storeRows.length > 0) storeName = storeRows[0].store_name;
+    }
+
+    // Fetch product names
+    const productIds = defectiveItems.map((p) => p.product_id).filter(Boolean);
+    let productMap = {};
+    if (productIds.length > 0) {
+      const prodRows = await selectData("md_product", "product_id, product_name", `product_id IN (${productIds.join(",")})`);
+      if (prodRows && prodRows.length > 0) {
+        prodRows.forEach((pr) => {
+          productMap[pr.product_id] = pr.product_name;
+        });
+      }
+    }
+
+    const emailItems = [];
+
+    // Insert records into td_purchase_quality_issue
+    for (const item of defectiveItems) {
+      const quality_status = Number(item.return_id) === 3 ? "Quality Damage" : "Quality Not Good";
+      const quantity = parseFloat(item.invoice_qty || item.product_qty || 0);
+      const unit_rate = parseFloat(item.unit_rate || 0);
+      const total_amount = parseFloat(item.total_amount || quantity * unit_rate);
+
+      const issueId = await insertData("td_purchase_quality_issue", {
+        purchase_id,
+        project_id: project_id || 0,
+        site_id: site_id || 0,
+        store_id: store_id || null,
+        vendor_id: vendor_id || 0,
+        product_id: item.product_id,
+        invoice_no,
+        po_no: po_no || null,
+        quantity,
+        unit_rate,
+        total_amount,
+        quality_status,
+        resolution_status: "PENDING",
+        email_sent_status: "NOT_SENT",
+        remarks: item.remarks || remarks || null,
+        created_by: created_by || 1,
+      });
+
+      emailItems.push({
+        issue_id: issueId,
+        product_id: item.product_id,
+        product_name: productMap[item.product_id] || `Product #${item.product_id}`,
+        quantity,
+        unit_rate,
+        total_amount,
+        quality_status,
+      });
+    }
+
+    // Dispatch Vendor Email
+    if (vendorInfo.vendor_email && emailItems.length > 0) {
+      sendVendorDefectiveItemsEmail({
+        to: vendorInfo.vendor_email,
+        vendorName: vendorInfo.vendor_name,
+        invoiceNo: invoice_no,
+        poNo: po_no,
+        projectName,
+        siteName,
+        storeName,
+        items: emailItems,
+        remarks,
+      })
+        .then(async (res) => {
+          const status = res && res.success ? "SENT" : "FAILED";
+          for (const eItem of emailItems) {
+            if (eItem.issue_id) {
+              await updateData(
+                "td_purchase_quality_issue",
+                {
+                  email_sent_status: status,
+                  email_sent_at: new Date(),
+                },
+                `issue_id = ${eItem.issue_id}`
+              );
+            }
+          }
+        })
+        .catch((e) => {
+          console.error("[MAIL DISPATCH ERROR]", e);
+        });
+    }
+  } catch (err) {
+    console.error("[DEFECTIVE ITEMS PROCESSING ERROR]:", err);
+  }
+};
+
 
 
 class PurchaseProductController {
@@ -131,6 +276,20 @@ createPurchase = async (req, res) => {
     }
 
     await connection.commit();
+
+    // Handle Defective / Damaged items asynchronously (Record Issue & Email Vendor)
+    handleDefectiveItems({
+      purchase_id,
+      project_id,
+      site_id,
+      store_id: stor_id,
+      vendor_id,
+      purchase_order_id,
+      invoice_no,
+      purchase_product,
+      remarks,
+      created_by,
+    });
 
     return res.status(201).json({
       success: true,
@@ -640,6 +799,26 @@ updatePurchase = async (req, res) => {
           updated_at = NOW()
       `);
     }
+
+    // Clean up previous pending issues for this purchase to avoid duplication on edit
+    await deleteData(
+      "td_purchase_quality_issue",
+      `purchase_id = ${purchase_id} AND resolution_status = 'PENDING'`
+    );
+
+    // Record Defective Items & Dispatch Email to Vendor
+    handleDefectiveItems({
+      purchase_id,
+      project_id: safeProjectId,
+      site_id: safeSiteId,
+      store_id: safeStoreId,
+      vendor_id,
+      purchase_order_id,
+      invoice_no,
+      purchase_product,
+      remarks,
+      created_by: userId,
+    });
 
     return res.status(200).json({
       success: true,

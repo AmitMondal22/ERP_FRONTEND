@@ -1,20 +1,20 @@
 const express = require("express");
 const router = express.Router();
 const purchaseOrderController = require("../controller/purchaseOrderController");
-const authcheck= require('../middleware/auth')
+const authcheck = require('../middleware/auth')
 
 
-router.post("/api/create-purchase-order",authcheck, purchaseOrderController.createPurchaseOrder);
-router.get("/api/getall-purchase-order",authcheck, purchaseOrderController.getAllPurchaseOrders);
+router.post("/api/create-purchase-order", authcheck, purchaseOrderController.createPurchaseOrder);
+router.get("/api/getall-purchase-order", authcheck, purchaseOrderController.getAllPurchaseOrders);
 
 //router.get("/api/getpurchaseorderdetailswithproduct", authcheck,purchaseOrderController.getPurchaseOrderByIdWithFullProductDetailsPo)
 
-router.get("/api/get-purchase-order-by-id/:id",authcheck, purchaseOrderController.getPurchaseOrderById);
-router.post("/api/update-purchase-order-by-id/:id",authcheck, purchaseOrderController.updatePurchaseOrder);
-router.delete("/api/delete-purchase-order/:id",authcheck, purchaseOrderController.deletePurchaseOrder);
+router.get("/api/get-purchase-order-by-id/:id", authcheck, purchaseOrderController.getPurchaseOrderById);
+router.post("/api/update-purchase-order-by-id/:id", authcheck, purchaseOrderController.updatePurchaseOrder);
+router.delete("/api/delete-purchase-order/:id", authcheck, purchaseOrderController.deletePurchaseOrder);
 //router.get()
 
-router.get('/api/purchase-orders/project/:project_id/site/:site_id',authcheck, purchaseOrderController.getAllPurchaseOrdersByProjectIdAndSiteId);
+router.get('/api/purchase-orders/project/:project_id/site/:site_id', authcheck, purchaseOrderController.getAllPurchaseOrdersByProjectIdAndSiteId);
 
 
 

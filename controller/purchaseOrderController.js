@@ -15,16 +15,17 @@ dayjs.extend(utc);
 const now = dayjs.utc().format("YYYY-MM-DD HH:mm:ss");
 
 // --------------------------------------------------
-// GENERATE PO NUMBER — FORMAT: DD/MM/YYYY/n
+// GENERATE PO NUMBER — FORMAT: po_type/DD/MM/YYYY/n
 // --------------------------------------------------
-const generatePoId = async () => {
+const generatePoId = async (poTypeCode = "PO") => {
   const today = dayjs().format("DD/MM/YYYY");
+  const prefix = `${poTypeCode}/${today}`;
 
   const sql = `
     SELECT po_no
     FROM td_purchase_order
-    WHERE po_no LIKE '${today}%'
-    ORDER BY po_no DESC
+    WHERE po_no LIKE '${prefix}%'
+    ORDER BY purchase_order_id DESC
     LIMIT 1
   `;
 
@@ -32,14 +33,15 @@ const generatePoId = async () => {
 
   // First PO of the day
   if (!lastPo) {
-    return `${today}/1`;
+    return `${prefix}/1`;
   }
 
   const lastPoNo = lastPo.po_no;
-  const lastNumber = parseInt(lastPoNo.split("/")[3] || 1, 10);
-  const newNumber = lastNumber + 1;
+  const parts = lastPoNo.split("/");
+  const lastNumber = parseInt(parts[parts.length - 1] || 1, 10);
+  const newNumber = isNaN(lastNumber) ? 1 : lastNumber + 1;
 
-  return `${today}/${newNumber}`;
+  return `${prefix}/${newNumber}`;
 };
 
 class purchaseOrderController {
@@ -50,6 +52,7 @@ class purchaseOrderController {
   async createPurchaseOrder(req, res) {
     try {
       const {
+        po_type_id,
         vendor_id,
         project_id,
         project_site_id,
@@ -86,19 +89,33 @@ class purchaseOrderController {
       const updated_by = req.user.id;
       const now = new Date();
 
-      // 1️⃣ Generate PO Number
-      const po_no = await generatePoId();
+      // Look up PO Type code/name if po_type_id provided
+      let poTypeCode = "PO";
+      if (po_type_id) {
+        const poType = await selectOneData(
+          "md_purchase_order_type",
+          "*",
+          `po_type_id = ${Number(po_type_id)}`
+        );
+        if (poType) {
+          poTypeCode = poType.po_type_code || poType.po_type_name;
+        }
+      }
+
+      // 1️⃣ Generate PO Number in format: po_type/DD/MM/YYYY/n
+      const po_no = await generatePoId(poTypeCode);
 
       // 2️⃣ Insert Purchase Order (Header)
       const purchase_order_id = await insertData("td_purchase_order", {
         po_no,
+        po_type_id: po_type_id || null,
         vendor_id,
         project_id: project_id || null,
         project_site_id: project_site_id || null,
         date,
         delivery_date,
         remarks,
-        terms_and_condition: terms_and_condition || null,  // ✅ Added
+        terms_and_condition: terms_and_condition || null,  // Added
         total_amount,
         created_by,
         updated_by,
@@ -167,6 +184,9 @@ class purchaseOrderController {
         SELECT 
           p.purchase_order_id,
           p.po_no, 
+          p.po_type_id,
+          pot.po_type_name,
+          pot.po_type_code,
           p.vendor_id,
           v.vendor_name,
           p.project_id,
@@ -181,6 +201,7 @@ class purchaseOrderController {
           p.created_at,
           p.updated_at
         FROM td_purchase_order p
+        LEFT JOIN md_purchase_order_type pot ON p.po_type_id = pot.po_type_id
         LEFT JOIN md_vendor v ON p.vendor_id = v.vendor_id
         LEFT JOIN md_project pr ON p.project_id = pr.project_id
         LEFT JOIN md_project_site ps ON p.project_site_id = ps.project_site_id
@@ -329,6 +350,9 @@ class purchaseOrderController {
         SELECT 
           p.purchase_order_id,
           p.po_no,
+          p.po_type_id,
+          pot.po_type_name,
+          pot.po_type_code,
           p.vendor_id,
           
           -- Vendor details
@@ -351,6 +375,7 @@ class purchaseOrderController {
           p.created_at,
           p.updated_at
         FROM td_purchase_order p
+        LEFT JOIN md_purchase_order_type pot ON p.po_type_id = pot.po_type_id
         LEFT JOIN md_vendor v ON p.vendor_id = v.vendor_id
         LEFT JOIN md_project pr ON p.project_id = pr.project_id
         LEFT JOIN md_project_site ps ON p.project_site_id = ps.project_site_id
@@ -440,6 +465,7 @@ class purchaseOrderController {
       }
 
       const {
+        po_type_id,
         vendor_id,
         project_id,
         project_site_id,
@@ -468,7 +494,7 @@ class purchaseOrderController {
 
       const existing = await selectOneData(
         "td_purchase_order",
-        "purchase_order_id",
+        "purchase_order_id, po_no, po_type_id",
         `purchase_order_id=${id}`
       );
 
@@ -482,10 +508,30 @@ class purchaseOrderController {
       const updated_by = req.user.id;
       const now = new Date();
 
+      // If po_type_id is provided, update po_no prefix (e.g. SPO/21/08/2026/1) keeping the /DD/MM/YYYY/n suffix
+      let updatedPoNo = existing.po_no;
+      if (po_type_id) {
+        const poType = await selectOneData(
+          "md_purchase_order_type",
+          "*",
+          `po_type_id = ${Number(po_type_id)}`
+        );
+        if (poType) {
+          const poTypeCode = poType.po_type_code || poType.po_type_name;
+          if (existing.po_no) {
+            const parts = existing.po_no.split("/");
+            const suffix = parts.length >= 4 ? parts.slice(-4).join("/") : existing.po_no;
+            updatedPoNo = `${poTypeCode}/${suffix}`;
+          }
+        }
+      }
+
       // ---------------------------
       // UPDATE PO HEADER
       // ---------------------------
       const updateObj = {
+        ...(updatedPoNo ? { po_no: updatedPoNo } : {}),
+        ...(po_type_id !== undefined ? { po_type_id: po_type_id || null } : {}),
         vendor_id,
         project_id: project_id || null,
         project_site_id: project_site_id || null,
@@ -640,6 +686,9 @@ class purchaseOrderController {
       SELECT 
         p.purchase_order_id,
         p.po_no,
+        p.po_type_id,
+        pot.po_type_name,
+        pot.po_type_code,
         p.vendor_id,
         v.vendor_name,
         p.project_id,
@@ -654,6 +703,7 @@ class purchaseOrderController {
         p.created_at,
         p.updated_at
       FROM td_purchase_order p
+      LEFT JOIN md_purchase_order_type pot ON p.po_type_id = pot.po_type_id
       LEFT JOIN md_vendor v ON p.vendor_id = v.vendor_id
       LEFT JOIN md_project pr ON p.project_id = pr.project_id
       LEFT JOIN md_project_site ps ON p.project_site_id = ps.project_site_id

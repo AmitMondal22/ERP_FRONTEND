@@ -180,8 +180,6 @@ createWorkProgress = async (req, res) => {
       bom_progress_id: bom_progress_id || null,
       remarks: remarks || null,
       total_progress: total_progress || 0,
-      rep_task: rep_task || 0,
-      packet_qty: packet_qty || 0,
       total_qty_of_material_used: total_qty_of_material_used || 0,
       date: date || dayjs().format("YYYY-MM-DD"),
       billing_status: billing_status || "PENDING",
@@ -189,6 +187,45 @@ createWorkProgress = async (req, res) => {
       created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
       updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
     };
+
+    /* ---------------- VALIDATE USABLE STOCK (BLOCK PENDING DAMAGED ITEMS) ---------------- */
+    if (consumed_products.length > 0) {
+      for (const item of consumed_products) {
+        const qtyToUse = Number(item.Act_Qty || item.Atc_total || 0);
+        if (qtyToUse > 0) {
+          const stockRows = await customSelectSqlQuery(`
+            SELECT 
+              cs.invoice_qty AS current_stock,
+              COALESCE((
+                SELECT SUM(qi.quantity) 
+                FROM td_purchase_quality_issue qi 
+                WHERE qi.project_id = ${project_id} 
+                  AND qi.site_id = ${project_site_id} 
+                  AND qi.product_id = ${item.product_id} 
+                  AND qi.resolution_status = 'PENDING'
+              ), 0) AS pending_defective_qty
+            FROM tx_current_stock cs
+            WHERE cs.project_id = ${project_id}
+              AND cs.site_id = ${project_site_id}
+              AND cs.product_id = ${item.product_id}
+            LIMIT 1
+          `);
+
+          if (stockRows && stockRows.length > 0) {
+            const currentStock = parseFloat(stockRows[0].current_stock || 0);
+            const defectiveQty = parseFloat(stockRows[0].pending_defective_qty || 0);
+            const usableStock = Math.max(0, currentStock - defectiveQty);
+
+            if (qtyToUse > usableStock) {
+              return res.status(400).json({
+                success: false,
+                message: `Insufficient usable stock for Product #${item.product_id}. Available usable: ${usableStock} (Total: ${currentStock}, Quarantined Damaged: ${defectiveQty}). Requested: ${qtyToUse}. Please resolve the quality issue in Defective Stock management before using this material.`,
+              });
+            }
+          }
+        }
+      }
+    }
 
     const insertId = await insertData("tx_work_progress", workProgressData);
 
