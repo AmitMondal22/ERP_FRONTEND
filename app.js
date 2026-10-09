@@ -54,6 +54,8 @@ const dashboardRoutes = require("./router/dashboardRoutes");
 const projectWorkDescriptionRoutes = require("./router/projectWorkDescriptionRoutes");
 const PurchaseOrderVsActualRoutes = require("./router/PurchaseordervsActualRoutes");
 const purchaseQualityIssueRoutes = require("./router/purchaseQualityIssueRoutes");
+const contractualEmployeeRoutes = require("./router/contractualEmployeeRoutes");
+const contractorTeamRoutes = require("./router/contractorTeamRoutes");
 
 
 const app = express()
@@ -62,7 +64,7 @@ const cors = require('cors');
 
 app.use(cors({
   origin: '*', // Consider restricting this in production
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   credentials: true
 }));
 
@@ -124,6 +126,8 @@ app.use('/', dashboardRoutes);
 app.use('/', projectWorkDescriptionRoutes);
 app.use('/', PurchaseOrderVsActualRoutes);
 app.use('/', purchaseQualityIssueRoutes);
+app.use('/', contractualEmployeeRoutes);
+app.use('/', contractorTeamRoutes);
 
 
 

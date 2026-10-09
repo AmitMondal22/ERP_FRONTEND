@@ -31,18 +31,15 @@ router.post("/api/getallworkprogressbyprojectandsiteid",authcheck,controller.get
 
 ////////
 
-// UPDATE
-router.post("/api/update", controller.updateWorkProgress);
-
-// DELETE
-router.delete("/delete", controller.deleteWorkProgress);
-
 //workProgressmonthwise
-router.post("/api/work/progressmonthwise", authcheck,controller.getMonthlyWorkReport);
+router.post("/api/work/progressmonthwise", authcheck, controller.getMonthlyWorkReport);
 
-router.get("/api/getallworkprogressbyprojectwise",controller.getWorkProgressByProjectalltheworkdetails)
+router.get("/api/getallworkprogressbyprojectwise", controller.getWorkProgressByProjectalltheworkdetails);
 
-router.post("/api/getallworkprogressdetailswithpercent",authcheck,controller.getBomFullDetailsWithProgressByProject_Id)
+router.post("/api/getallworkprogressdetailswithpercent", authcheck, controller.getBomFullDetailsWithProgressByProject_Id);
+
+// Contractor Team Work Report
+router.post("/api/reports/contractor-team-work", authcheck, controller.getContractorTeamWorkReport);
 
 module.exports = router;
 

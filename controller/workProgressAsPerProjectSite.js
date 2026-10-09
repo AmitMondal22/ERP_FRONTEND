@@ -144,6 +144,7 @@ createWorkProgress = async (req, res) => {
       project_site_id,
       bom_id,
       bom_progress_id,
+      contractor_team_id,
       remarks,
       total_progress,
       rep_task,
@@ -178,6 +179,7 @@ createWorkProgress = async (req, res) => {
       project_site_id,
       bom_id,
       bom_progress_id: bom_progress_id || null,
+      contractor_team_id: contractor_team_id ? parseInt(contractor_team_id) : null,
       remarks: remarks || null,
       total_progress: total_progress || 0,
       total_qty_of_material_used: total_qty_of_material_used || 0,
@@ -683,6 +685,7 @@ getMonthlyWorkReport = async (req, res) => {
         wp.project_site_id,
         wp.bom_id,
         wp.bom_progress_id,
+        wp.contractor_team_id,
         wp.remarks,
         wp.total_progress,
         wp.rep_task,
@@ -711,6 +714,10 @@ getMonthlyWorkReport = async (req, res) => {
         bp.sl_number AS progress_sl_number,
 
 
+        -- Contractor Team
+        ct.team_name AS contractor_team_name,
+
+
         -- Creator
         u.name AS creator_name,
         u.email AS creator_email,
@@ -726,6 +733,7 @@ getMonthlyWorkReport = async (req, res) => {
       LEFT JOIN lo_states ss ON sc.state_id = ss.id
       LEFT JOIN md_bom b ON wp.bom_id = b.bom_id
       LEFT JOIN md_bom_progress bp ON wp.bom_progress_id = bp.bom_progress_id
+      LEFT JOIN md_contractor_team ct ON wp.contractor_team_id = ct.contractor_team_id
       LEFT JOIN users u ON wp.created_by = u.id
       WHERE wp.project_id = ?
         AND wp.date BETWEEN ? AND ?
@@ -3697,9 +3705,307 @@ getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
 };
 
 
+  /* -------------------------------------------------------------------------- */
+  /* CONTRACTOR TEAM WORK REPORT                                                */
+  /* Filters: fromDate, toDate, contractor_team_id (opt), project_id (opt), site_id (opt) */
+  /* -------------------------------------------------------------------------- */
+  getContractorTeamWorkReport = async (req, res) => {
+    try {
+      const {
+        fromDate,
+        toDate,
+        contractor_team_id,
+        project_id,
+        project_site_id,
+      } = req.body;
 
+      /* 1. Basic Validation */
+      if (!fromDate || !toDate) {
+        return res.status(400).json({
+          success: false,
+          message: "fromDate and toDate are required",
+        });
+      }
 
+      if (!dayjs(fromDate).isValid() || !dayjs(toDate).isValid()) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid date format. Use YYYY-MM-DD",
+        });
+      }
 
+      /* 2. Work Progress Query */
+      let workQuery = `
+        SELECT 
+          wp.work_progress_site_id,
+          wp.project_id,
+          wp.project_site_id,
+          wp.bom_id,
+          wp.bom_progress_id,
+          wp.contractor_team_id,
+          wp.remarks,
+          wp.total_progress,
+          wp.rep_task,
+          wp.packet_qty,
+          wp.total_qty_of_material_used,
+          wp.date,
+          wp.created_by,
+          wp.created_at,
+          wp.updated_at,
+
+          -- Project Info
+          p.project_name,
+
+          -- Project Site Info
+          ps.project_site_name,
+          ps.city_id AS site_city_id,
+          sc.name AS site_city_name,
+          sc.state_id AS site_state_id,
+          ss.name AS site_state_name,
+
+          -- BOM Info
+          b.bom_name,
+
+          -- BOM Progress / Step
+          bp.bom_progress_name,
+          bp.sl_number AS progress_sl_number,
+
+          -- Contractor Team Info
+          ct.team_name AS contractor_team_name,
+          ct.vendor_id,
+          v.vendor_name,
+          lead.full_name AS team_lead_name,
+          lead.phone AS team_lead_phone,
+          lead.email AS team_lead_email,
+
+          -- Creator
+          u.name AS creator_name,
+          u.email AS creator_email,
+
+          DATE_FORMAT(wp.date, '%M %Y') AS month_year,
+          DATE_FORMAT(wp.date, '%d-%m-%Y') AS formatted_date
+
+        FROM tx_work_progress wp
+        LEFT JOIN md_project p ON wp.project_id = p.project_id
+        LEFT JOIN md_project_site ps ON wp.project_site_id = ps.project_site_id
+        LEFT JOIN lo_cities sc ON ps.city_id = sc.id
+        LEFT JOIN lo_states ss ON sc.state_id = ss.id
+        LEFT JOIN md_bom b ON wp.bom_id = b.bom_id
+        LEFT JOIN md_bom_progress bp ON wp.bom_progress_id = bp.bom_progress_id
+        LEFT JOIN md_contractor_team ct ON wp.contractor_team_id = ct.contractor_team_id
+        LEFT JOIN md_vendor v ON ct.vendor_id = v.vendor_id
+        LEFT JOIN md_contractual_employee lead ON ct.team_lead_id = lead.contractual_employee_id
+        LEFT JOIN users u ON wp.created_by = u.id
+        WHERE wp.date BETWEEN ? AND ?
+      `;
+
+      const params = [fromDate, toDate];
+
+      if (contractor_team_id) {
+        workQuery += ` AND wp.contractor_team_id = ?`;
+        params.push(parseInt(contractor_team_id));
+      }
+
+      if (project_id) {
+        workQuery += ` AND wp.project_id = ?`;
+        params.push(parseInt(project_id));
+      }
+
+      if (project_site_id) {
+        workQuery += ` AND wp.project_site_id = ?`;
+        params.push(parseInt(project_site_id));
+      }
+
+      workQuery += ` ORDER BY wp.date DESC, wp.work_progress_site_id DESC`;
+
+      const workRows = await customSelectSqlQuery2(workQuery, params);
+
+      if (!workRows || workRows.length === 0) {
+        return res.status(200).json({
+          success: true,
+          message: "No work progress records found for the given criteria",
+          filters: {
+            fromDate,
+            toDate,
+            contractor_team_id: contractor_team_id || null,
+            project_id: project_id || null,
+            project_site_id: project_site_id || null,
+          },
+          overall_summary: {
+            total_work_entries: 0,
+            total_progress: 0,
+            total_materials_used: 0,
+            unique_teams: 0,
+            unique_projects: 0,
+            unique_sites: 0,
+            unique_boms: 0,
+            unique_products: 0,
+          },
+          materials_summary: [],
+          team_breakdown: [],
+          records: [],
+        });
+      }
+
+      /* 3. Load Consumed Products */
+      const workIds = workRows.map((wp) => wp.work_progress_site_id);
+      const idList = workIds.join(",");
+
+      const consumedQuery = `
+        SELECT 
+          ep.expenses_of_project_site_id,
+          ep.product_id,
+          ep.work_progress_site_id,
+          ep.Atc_total,
+          ep.Act_Qty,
+          ep.created_at,
+          p.product_name,
+          p.model_no,
+          p.hsn_code,
+          p.manufacturer_name,
+          pt.product_type_name,
+          u.unit_name
+        FROM tx_site_used_items ep
+        LEFT JOIN md_product p ON ep.product_id = p.product_id
+        LEFT JOIN md_product_type pt ON p.product_type_id = pt.product_type_id
+        LEFT JOIN md_unit u ON p.unit_id = u.unit_id
+        WHERE ep.work_progress_site_id IN (${idList})
+        ORDER BY ep.work_progress_site_id, ep.product_id
+      `;
+
+      const consumedRows = await customSelectSqlQuery2(consumedQuery, []);
+
+      // Group consumed products by work_progress_site_id
+      const consumedByWorkId = {};
+      const materialsSummaryMap = {};
+
+      if (Array.isArray(consumedRows)) {
+        consumedRows.forEach((item) => {
+          if (!consumedByWorkId[item.work_progress_site_id]) {
+            consumedByWorkId[item.work_progress_site_id] = [];
+          }
+          consumedByWorkId[item.work_progress_site_id].push(item);
+
+          const productKey = `${item.product_id}_${item.unit_name || ""}`;
+          const qty = parseFloat(item.Atc_total || item.Act_Qty || 0);
+
+          if (!materialsSummaryMap[productKey]) {
+            materialsSummaryMap[productKey] = {
+              product_id: item.product_id,
+              product_name: item.product_name || `Product #${item.product_id}`,
+              product_type_name: item.product_type_name || "N/A",
+              unit_name: item.unit_name || "Unit",
+              total_consumed: 0,
+              usage_count: 0,
+            };
+          }
+          materialsSummaryMap[productKey].total_consumed += qty;
+          materialsSummaryMap[productKey].usage_count += 1;
+        });
+      }
+
+      /* 4. Aggregate Stats & Attach Consumed Products */
+      const teamMap = {};
+      const uniqueProjects = new Set();
+      const uniqueSites = new Set();
+      const uniqueBoms = new Set();
+      const uniqueTeams = new Set();
+      let totalProgressSum = 0;
+      let totalMaterialsUsedSum = 0;
+
+      const enrichedRecords = workRows.map((wp) => {
+        const items = consumedByWorkId[wp.work_progress_site_id] || [];
+        const progressNum = parseFloat(wp.total_progress || 0);
+        const matNum = parseFloat(wp.total_qty_of_material_used || 0);
+
+        totalProgressSum += progressNum;
+        totalMaterialsUsedSum += matNum;
+
+        if (wp.project_id) uniqueProjects.add(wp.project_id);
+        if (wp.project_site_id) uniqueSites.add(wp.project_site_id);
+        if (wp.bom_id) uniqueBoms.add(wp.bom_id);
+        if (wp.contractor_team_id) uniqueTeams.add(wp.contractor_team_id);
+
+        // Team breakdown grouping
+        const teamKey = wp.contractor_team_id || "unassigned";
+        if (!teamMap[teamKey]) {
+          teamMap[teamKey] = {
+            contractor_team_id: wp.contractor_team_id || null,
+            team_name: wp.contractor_team_name || "In-house / Unassigned Team",
+            vendor_name: wp.vendor_name || "N/A",
+            team_lead_name: wp.team_lead_name || "N/A",
+            team_lead_phone: wp.team_lead_phone || "N/A",
+            team_lead_email: wp.team_lead_email || "N/A",
+            total_entries: 0,
+            total_progress: 0,
+            total_materials_used: 0,
+            projects: new Set(),
+            sites: new Set(),
+            boms: new Set(),
+            records_count: 0,
+          };
+        }
+
+        const t = teamMap[teamKey];
+        t.total_entries += 1;
+        t.total_progress += progressNum;
+        t.total_materials_used += matNum;
+        t.records_count += 1;
+        if (wp.project_name) t.projects.add(wp.project_name);
+        if (wp.project_site_name) t.sites.add(wp.project_site_name);
+        if (wp.bom_name) t.boms.add(wp.bom_name);
+
+        return {
+          ...wp,
+          consumed_products: items,
+        };
+      });
+
+      // Format team breakdown array
+      const teamBreakdown = Object.values(teamMap).map((t) => ({
+        ...t,
+        projects: Array.from(t.projects),
+        sites: Array.from(t.sites),
+        boms: Array.from(t.boms),
+      }));
+
+      const materialsSummary = Object.values(materialsSummaryMap).sort(
+        (a, b) => b.total_consumed - a.total_consumed
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: "Contractor team work report generated successfully",
+        filters: {
+          fromDate,
+          toDate,
+          contractor_team_id: contractor_team_id || null,
+          project_id: project_id || null,
+          project_site_id: project_site_id || null,
+        },
+        overall_summary: {
+          total_work_entries: workRows.length,
+          total_progress: Math.round(totalProgressSum * 100) / 100,
+          total_materials_used: Math.round(totalMaterialsUsedSum * 100) / 100,
+          unique_teams: uniqueTeams.size,
+          unique_projects: uniqueProjects.size,
+          unique_sites: uniqueSites.size,
+          unique_boms: uniqueBoms.size,
+          unique_products: materialsSummary.length,
+        },
+        materials_summary: materialsSummary,
+        team_breakdown: teamBreakdown,
+        records: enrichedRecords,
+      });
+    } catch (err) {
+      console.error("Error in getContractorTeamWorkReport:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to generate contractor team work report",
+        error: err.message,
+      });
+    }
+  };
 
 }
 

@@ -46,6 +46,9 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+  connectionTimeout: 4000,
+  greetingTimeout: 4000,
+  socketTimeout: 4000,
 });
 
 
@@ -286,4 +289,119 @@ const sendVendorDefectiveItemsEmail = async ({
   }
 };
 
-module.exports = { sendEmployeeCredentials, sendVendorDefectiveItemsEmail };
+const sendClaimStatusEmail = async ({
+  to,
+  employeeName,
+  claimId,
+  claimTitle,
+  claimType,
+  claimedAmount,
+  approvedAmount,
+  status,
+  adminRemarks,
+  paidDate,
+}) => {
+  if (!to) {
+    console.log("[MAILER] No employee recipient email found. Skipping claim status email.");
+    return { success: false, message: "No recipient email" };
+  }
+
+  const isApproved = status === "Approved";
+  const isPaid = status === "Paid";
+  const isRejected = status === "Rejected";
+
+  const statusColor = isPaid ? "#059669" : isApproved ? "#2563eb" : isRejected ? "#dc2626" : "#d97706";
+  const statusBg = isPaid ? "#d1fae5" : isApproved ? "#dbeafe" : isRejected ? "#fee2e2" : "#fef3c7";
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"><title>Claim Reimbursement Status Update</title></head>
+    <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px;">
+      <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);">
+        <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); padding: 24px; color: #ffffff;">
+          <h2 style="margin: 0; font-size: 20px; font-weight: 700;">Expense Claim Status Update</h2>
+          <p style="margin: 6px 0 0 0; opacity: 0.85; font-size: 13px;">Claim ID: #${claimId} &bull; ${claimTitle || 'Reimbursement'}</p>
+        </div>
+        <div style="padding: 24px;">
+          <p style="font-size: 15px; color: #1e293b; margin-top: 0;">
+            Dear <strong>${employeeName || "Employee"}</strong>,
+          </p>
+          <p style="font-size: 14px; color: #475569; line-height: 1.6;">
+            Your reimbursement claim request has been reviewed. Here is the current status:
+          </p>
+
+          <div style="background-color: ${statusBg}; border: 1px solid ${statusColor}40; border-radius: 8px; padding: 14px 18px; margin: 18px 0; text-align: center;">
+            <span style="font-size: 13px; color: #475569; font-weight: 500; display: block; margin-bottom: 4px;">CURRENT STATUS</span>
+            <span style="font-size: 18px; font-weight: 700; color: ${statusColor}; text-transform: uppercase; letter-spacing: 0.5px;">${status}</span>
+          </div>
+
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin: 20px 0; background: #f8fafc; border-radius: 8px; overflow: hidden;">
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 10px 14px; color: #64748b; width: 45%;"><strong>Claim Title / Type:</strong></td>
+              <td style="padding: 10px 14px; color: #1e293b; font-weight: 600;">${claimTitle || "-"} ${claimType ? `(${claimType})` : ""}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 10px 14px; color: #64748b;"><strong>Claimed Amount:</strong></td>
+              <td style="padding: 10px 14px; color: #1e293b; font-weight: 600;">₹${parseFloat(claimedAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 10px 14px; color: #64748b;"><strong>Approved Amount:</strong></td>
+              <td style="padding: 10px 14px; color: ${approvedAmount != null ? "#059669" : "#64748b"}; font-weight: 700; font-size: 15px;">
+                ${approvedAmount != null ? `₹${parseFloat(approvedAmount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "Pending Determination"}
+              </td>
+            </tr>
+            ${paidDate ? `
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 10px 14px; color: #64748b;"><strong>Disbursement / Paid Date:</strong></td>
+              <td style="padding: 10px 14px; color: #1e293b;">${paidDate}</td>
+            </tr>` : ''}
+          </table>
+
+          ${adminRemarks ? `
+          <div style="background-color: #f1f5f9; border-left: 4px solid #3b82f6; padding: 12px 16px; border-radius: 4px; margin: 16px 0;">
+            <strong style="color: #1e293b; font-size: 13px;">Admin / HR Remarks:</strong>
+            <p style="margin: 4px 0 0 0; color: #475569; font-size: 13px; line-height: 1.5;">${adminRemarks}</p>
+          </div>
+          ` : ''}
+
+          <p style="font-size: 14px; color: #475569; line-height: 1.6;">
+            ${isApproved ? "The approved amount has been processed and will be scheduled for disbursement according to company payroll policy." : isPaid ? "Your payment has been successfully disbursed." : isRejected ? "If you have queries or need to provide revised supporting documents, please contact HR." : "Your claim is currently being processed."}
+          </p>
+
+          <p style="font-size: 14px; color: #1e293b; margin-bottom: 0;">
+            Regards,<br>
+            <strong>Finance & HR Department</strong>
+          </p>
+        </div>
+        <div style="background-color: #f8fafc; padding: 14px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8;">
+          This is an automated notification from the ERP Claims & Reimbursements System.
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.log("[MAILER] Email credentials not configured in environment. Skipping email dispatch.");
+    return { success: false, message: "Email credentials not configured" };
+  }
+
+  const mailOptions = {
+    from: `"HR Claims & Reimbursements" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
+    to,
+    subject: `[Claim #${claimId}] Reimbursement Request ${status.toUpperCase()} - ${claimTitle}`,
+    html: htmlContent,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`[MAILER] Claim status email sent to ${to}. MessageId: ${info.messageId}`);
+    return { success: true, messageId: info.messageId };
+  } catch (err) {
+    console.error("[MAILER] Error sending claim status email:", err);
+    return { success: false, error: err.message };
+  }
+};
+
+module.exports = { sendEmployeeCredentials, sendVendorDefectiveItemsEmail, sendClaimStatusEmail };

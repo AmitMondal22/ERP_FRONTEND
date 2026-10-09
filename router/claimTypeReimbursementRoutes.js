@@ -47,7 +47,7 @@ const upload = new FileUploader({
 router.post(
   "/api/create-claim",
   authcheck,
-  upload.array("image", 10),
+  upload.any(),
   ClaimAndReimbursementController.create,
 );
 
@@ -83,6 +83,11 @@ router.get("/claims/:id", authcheck, ClaimAndReimbursementController.getById);
 
 router.put("/claims/:id", authcheck, ClaimAndReimbursementController.update);
 router.patch(
+  "/claims/:id/status",
+  authcheck,
+  ClaimAndReimbursementController.updateStatus,
+);
+router.put(
   "/claims/:id/status",
   authcheck,
   ClaimAndReimbursementController.updateStatus,

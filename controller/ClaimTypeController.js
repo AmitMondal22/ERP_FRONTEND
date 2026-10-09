@@ -15,11 +15,46 @@ const {
 class ClaimTypeController {
 
   // GET ALL  →  GET /api/claim-types
+  // async getAll(req, res) {
+  //   try {
+  //     const data = await selectData(
+  //       "em_claim_types",
+  //       "claimType_id, claim_type_name, is_active, created_at",
+  //       null,
+  //       "created_at DESC"
+  //     );
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: "Claim types fetched successfully",
+  //       data,
+  //     });
+  //   } catch (err) {
+  //     return res.status(500).json({ success: false, message: err.message });
+  //   }
+  // }
+
+  // // GET ACTIVE ONLY  →  GET /api/claim-types/active
+  // async getActive(req, res) {
+  //   try {
+  //     const data = await selectData(
+  //       "em_claim_types",
+  //       "claimType_id, claim_type_name, is_active, created_at",
+  //       "is_active = 1",
+  //       "claim_type_name ASC"
+  //     );
+  //     return res.status(200).json({ success: true, data });
+  //   } catch (err) {
+  //     return res.status(500).json({ success: false, message: err.message });
+  //   }
+  // }
+
+
+  // GET ALL → GET /api/claim-types
   async getAll(req, res) {
     try {
       const data = await selectData(
         "em_claim_types",
-        "*",
+        "claimType_id, claim_type_name, is_active, created_at",
         null,
         "created_at DESC"
       );
@@ -33,12 +68,12 @@ class ClaimTypeController {
     }
   }
 
-  // GET ACTIVE ONLY  →  GET /api/claim-types/active
+  // GET ACTIVE ONLY → GET /api/claim-types/active
   async getActive(req, res) {
     try {
       const data = await selectData(
         "em_claim_types",
-        "*",
+        "claimType_id, claim_type_name, is_active, created_at",
         "is_active = 1",
         "claim_type_name ASC"
       );
@@ -199,5 +234,4 @@ class ClaimTypeController {
 }
 
 module.exports = new ClaimTypeController();
-  
- 
+
