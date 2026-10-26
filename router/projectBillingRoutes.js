@@ -12,6 +12,15 @@ router.get("/api/getprojectbillingdetailsbyId/:id",authcheck,projectBillingContr
 // GET BY PROJECT ID 
 router.get("/api/getprojectbillingbyprojectid/:id",authcheck,projectBillingController.getBillingItemsByProjectId);
 
+// GET BY PROJECT ID AND SITE ID (WITH BOM NAME)
+router.get("/api/getprojectbillingwithbom/:projectId", authcheck, projectBillingController.getBillingItemsWithBomByProjectAndSite);
+router.get("/api/getprojectbillingwithbom/:projectId/:siteId", authcheck, projectBillingController.getBillingItemsWithBomByProjectAndSite);
+router.get("/api/getprojectbillingwithbom/:projectId/:siteId/:project_work_description_id", authcheck, projectBillingController.getBillingItemsWithBomByProjectAndSite);
+
+router.get("/api/getprojectbillingbyprojectsite/:projectId", authcheck, projectBillingController.getBillingItemsWithBomByProjectAndSite);
+router.get("/api/getprojectbillingbyprojectsite/:projectId/:siteId", authcheck, projectBillingController.getBillingItemsWithBomByProjectAndSite);
+router.get("/api/getprojectbillingbyprojectsite/:projectId/:siteId/:project_work_description_id", authcheck, projectBillingController.getBillingItemsWithBomByProjectAndSite);
+
 // UPDATE
 router.post("/api/updateprojectbillingbyprojectid/:id",authcheck,projectBillingController.updateBillingItem);
 

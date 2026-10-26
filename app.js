@@ -56,6 +56,7 @@ const PurchaseOrderVsActualRoutes = require("./router/PurchaseordervsActualRoute
 const purchaseQualityIssueRoutes = require("./router/purchaseQualityIssueRoutes");
 const contractualEmployeeRoutes = require("./router/contractualEmployeeRoutes");
 const contractorTeamRoutes = require("./router/contractorTeamRoutes");
+const contractorManagementRoutes = require("./router/contractorManagementRoutes");
 
 
 const app = express()
@@ -128,6 +129,7 @@ app.use('/', PurchaseOrderVsActualRoutes);
 app.use('/', purchaseQualityIssueRoutes);
 app.use('/', contractualEmployeeRoutes);
 app.use('/', contractorTeamRoutes);
+app.use('/', contractorManagementRoutes);
 
 
 

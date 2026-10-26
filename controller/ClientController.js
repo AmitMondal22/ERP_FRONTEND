@@ -401,34 +401,62 @@ class ClientController {
       } = req.body;
 
       // ── Validation ──
-      if (!client_name) {
+      if (!client_name || !String(client_name).trim()) {
         return res.status(400).json({ success: false, message: "client_name is required" });
       }
 
+      const user_id = req.user?.id || created_by || null;
+
+      // Normalize ENUMs
+      const statusMap = {
+        active: "Active",
+        inactive: "Inactive",
+        blacklisted: "Blacklisted",
+        prospect: "Prospect",
+      };
+      const normStatus = client_status ? (statusMap[String(client_status).toLowerCase()] || "Active") : "Active";
+
+      const typeMap = {
+        individual: "Individual",
+        company: "Company",
+        government: "Government",
+        ngo: "NGO",
+      };
+      const normType = client_type ? (typeMap[String(client_type).toLowerCase()] || null) : null;
+
+      const cat = client_category ? String(client_category).toUpperCase() : "";
+      const normCategory = ["A", "B", "C"].includes(cat) ? cat : null;
+
+      // Sanitize INT fields (convert empty strings or NaN to null)
+      const normCityId = city_id !== undefined && city_id !== null && city_id !== "" && !isNaN(city_id) ? parseInt(city_id, 10) : null;
+      const normStateId = state_id !== undefined && state_id !== null && state_id !== "" && !isNaN(state_id) ? parseInt(state_id, 10) : null;
+      const normCountryId = country_id !== undefined && country_id !== null && country_id !== "" && !isNaN(country_id) ? parseInt(country_id, 10) : null;
+      const normCurrencyId = currency_id !== undefined && currency_id !== null && currency_id !== "" && !isNaN(currency_id) ? parseInt(currency_id, 10) : null;
+
       // ── Step 1: Insert into md_client ──
       const clientData = {
-        ...(client_name     && { client_name }),
-        ...(client_type     && { client_type }),
-        ...(industry_type   && { industry_type }),
-        ...(client_mobile   && { client_mobile }),
-        ...(client_phone    && { client_phone }),
-        ...(client_email    && { client_email }),
-        ...(client_website  && { client_website }),
-        ...(client_address  && { client_address }),
-        ...(city_id         && { city_id }),
-        ...(state_id        && { state_id }),
-        ...(country_id      && { country_id }),
-        ...(pincode         && { pincode }),
-        ...(client_gst_in   && { client_gst_in }),
-        ...(client_pan      && { client_pan }),
-        ...(client_tan      && { client_tan }),
-        ...(client_cin      && { client_cin }),
-        ...(msme_number     && { msme_number }),
-        ...(client_status   && { client_status }),
-        ...(client_category && { client_category }),
-        is_verified: is_verified ?? 0,
-        ...(remarks         && { remarks }),
-        ...(created_by      && { created_by }),
+        client_name: String(client_name).trim(),
+        ...(normType !== null && { client_type: normType }),
+        ...(industry_type && { industry_type }),
+        ...(client_mobile && { client_mobile }),
+        ...(client_phone && { client_phone }),
+        ...(client_email && { client_email }),
+        ...(client_website && { client_website }),
+        ...(client_address && { client_address }),
+        ...(normCityId !== null && { city_id: normCityId }),
+        ...(normStateId !== null && { state_id: normStateId }),
+        ...(normCountryId !== null && { country_id: normCountryId }),
+        ...(pincode && { pincode }),
+        ...(client_gst_in && { client_gst_in }),
+        ...(client_pan && { client_pan }),
+        ...(client_tan && { client_tan }),
+        ...(client_cin && { client_cin }),
+        ...(msme_number && { msme_number }),
+        client_status: normStatus,
+        ...(normCategory !== null && { client_category: normCategory }),
+        is_verified: is_verified ? 1 : 0,
+        ...(remarks && { remarks }),
+        ...(user_id && { created_by: user_id }),
       };
 
       const client_id = await insertData("md_client", clientData);
@@ -436,15 +464,15 @@ class ClientController {
       // ── Step 2: Insert into md_client_details ──
       const detailData = {
         client_id,
-        credit_limit:           credit_limit ?? 0,
-        credit_days:            credit_days  ?? 0,
-        ...(currency_id         && { currency_id }),
-        ...(payment_terms       && { payment_terms }),
-        ...(bank_name           && { bank_name }),
+        credit_limit: credit_limit !== undefined && credit_limit !== null && credit_limit !== "" && !isNaN(credit_limit) ? parseFloat(credit_limit) : 0,
+        credit_days: credit_days !== undefined && credit_days !== null && credit_days !== "" && !isNaN(credit_days) ? parseInt(credit_days, 10) : 0,
+        ...(normCurrencyId !== null && { currency_id: normCurrencyId }),
+        ...(payment_terms && { payment_terms }),
+        ...(bank_name && { bank_name }),
         ...(bank_account_number && { bank_account_number }),
-        ...(bank_ifsc_code      && { bank_ifsc_code }),
-        ...(bank_branch         && { bank_branch }),
-        ...(created_by          && { created_by }),
+        ...(bank_ifsc_code && { bank_ifsc_code }),
+        ...(bank_branch && { bank_branch }),
+        ...(user_id && { created_by: user_id }),
       };
 
       await insertData("md_client_details", detailData);
@@ -452,16 +480,16 @@ class ClientController {
       // ── Step 3: Insert contact persons (if provided) ──
       if (Array.isArray(contact_persons) && contact_persons.length > 0) {
         for (const cp of contact_persons) {
-          if (!cp.contact_person_name) continue; // skip empty entries
+          if (!cp || !cp.contact_person_name || !String(cp.contact_person_name).trim()) continue; // skip empty entries
 
           await insertData("md_client_contact_person", {
             client_id,
-            contact_person_name:        cp.contact_person_name,
-            ...(cp.contact_person_mobile      && { contact_person_mobile: cp.contact_person_mobile }),
-            ...(cp.contact_person_email       && { contact_person_email: cp.contact_person_email }),
-            ...(cp.contact_person_designation && { contact_person_designation: cp.contact_person_designation }),
-            is_primary: cp.is_primary ?? 0,
-            ...(created_by && { created_by }),
+            contact_person_name: String(cp.contact_person_name).trim(),
+            ...(cp.contact_person_mobile && { contact_person_mobile: String(cp.contact_person_mobile).trim() }),
+            ...(cp.contact_person_email && { contact_person_email: String(cp.contact_person_email).trim() }),
+            ...(cp.contact_person_designation && { contact_person_designation: String(cp.contact_person_designation).trim() }),
+            is_primary: cp.is_primary ? 1 : 0,
+            ...(user_id && { created_by: user_id }),
           });
         }
       }
@@ -473,7 +501,7 @@ class ClientController {
       });
     } catch (err) {
       console.error("createClient error:", err);
-      return res.status(500).json({ success: false, message: "Internal server error" });
+      return res.status(500).json({ success: false, message: err.sqlMessage || err.message || "Internal server error" });
     }
   }
 
@@ -698,122 +726,168 @@ class ClientController {
         contact_persons,
       } = req.body;
 
+      const user_id = req.user?.id || updated_by || null;
+
       // Check client exists
-      const existing = await selectOneData("md_client", "*", `client_id = ${id}`);
+      const existing = await selectOneData("md_client", "*", `client_id = ${parseInt(id, 10)}`);
       if (!existing) {
         return res.status(404).json({ success: false, message: "Client not found" });
       }
 
       // ── Step 1: Update md_client ──
-      const clientUpdate = {
-        ...(client_name     !== undefined && { client_name }),
-        ...(client_type     !== undefined && { client_type }),
-        ...(industry_type   !== undefined && { industry_type }),
-        ...(client_mobile   !== undefined && { client_mobile }),
-        ...(client_phone    !== undefined && { client_phone }),
-        ...(client_email    !== undefined && { client_email }),
-        ...(client_website  !== undefined && { client_website }),
-        ...(client_address  !== undefined && { client_address }),
-        ...(city_id         !== undefined && { city_id }),
-        ...(state_id        !== undefined && { state_id }),
-        ...(country_id      !== undefined && { country_id }),
-        ...(pincode         !== undefined && { pincode }),
-        ...(client_gst_in   !== undefined && { client_gst_in }),
-        ...(client_pan      !== undefined && { client_pan }),
-        ...(client_tan      !== undefined && { client_tan }),
-        ...(client_cin      !== undefined && { client_cin }),
-        ...(msme_number     !== undefined && { msme_number }),
-        ...(client_status   !== undefined && { client_status }),
-        ...(client_category !== undefined && { client_category }),
-        ...(is_verified     !== undefined && { is_verified }),
-        ...(remarks         !== undefined && { remarks }),
-        ...(updated_by      !== undefined && { updated_by }),
-      };
+      const clientUpdate = {};
+
+      if (client_name !== undefined) clientUpdate.client_name = String(client_name).trim();
+
+      if (client_type !== undefined) {
+        const typeMap = {
+          individual: "Individual",
+          company: "Company",
+          government: "Government",
+          ngo: "NGO",
+        };
+        const normalizedType = client_type ? (typeMap[String(client_type).toLowerCase()] || null) : null;
+        clientUpdate.client_type = normalizedType;
+      }
+
+      if (industry_type !== undefined) clientUpdate.industry_type = industry_type || null;
+      if (client_mobile !== undefined) clientUpdate.client_mobile = client_mobile || null;
+      if (client_phone !== undefined) clientUpdate.client_phone = client_phone || null;
+      if (client_email !== undefined) clientUpdate.client_email = client_email || null;
+      if (client_website !== undefined) clientUpdate.client_website = client_website || null;
+      if (client_address !== undefined) clientUpdate.client_address = client_address || null;
+
+      if (city_id !== undefined) {
+        clientUpdate.city_id = city_id !== null && city_id !== "" && !isNaN(city_id) ? parseInt(city_id, 10) : null;
+      }
+      if (state_id !== undefined) {
+        clientUpdate.state_id = state_id !== null && state_id !== "" && !isNaN(state_id) ? parseInt(state_id, 10) : null;
+      }
+      if (country_id !== undefined) {
+        clientUpdate.country_id = country_id !== null && country_id !== "" && !isNaN(country_id) ? parseInt(country_id, 10) : null;
+      }
+      if (pincode !== undefined) clientUpdate.pincode = pincode || null;
+      if (client_gst_in !== undefined) clientUpdate.client_gst_in = client_gst_in || null;
+      if (client_pan !== undefined) clientUpdate.client_pan = client_pan || null;
+      if (client_tan !== undefined) clientUpdate.client_tan = client_tan || null;
+      if (client_cin !== undefined) clientUpdate.client_cin = client_cin || null;
+      if (msme_number !== undefined) clientUpdate.msme_number = msme_number || null;
+
+      if (client_status !== undefined) {
+        const statusMap = {
+          active: "Active",
+          inactive: "Inactive",
+          blacklisted: "Blacklisted",
+          prospect: "Prospect",
+        };
+        const normalizedStatus = client_status
+          ? (statusMap[String(client_status).toLowerCase()] || "Active")
+          : "Active";
+        clientUpdate.client_status = normalizedStatus;
+      }
+
+      if (client_category !== undefined) {
+        const cat = client_category ? String(client_category).toUpperCase() : "";
+        clientUpdate.client_category = ["A", "B", "C"].includes(cat) ? cat : null;
+      }
+
+      if (is_verified !== undefined) {
+        clientUpdate.is_verified = is_verified ? 1 : 0;
+      }
+      if (remarks !== undefined) clientUpdate.remarks = remarks || null;
+      if (user_id) clientUpdate.updated_by = user_id;
 
       if (Object.keys(clientUpdate).length > 0) {
-        await updateData("md_client", clientUpdate, `client_id = ${id}`);
+        await updateData("md_client", clientUpdate, `client_id = ${parseInt(id, 10)}`);
       }
 
       // ── Step 2: Upsert md_client_details ──
       const existingDetail = await selectOneData(
-        "md_client_details", "*", `client_id = ${id}`
+        "md_client_details", "*", `client_id = ${parseInt(id, 10)}`
       );
 
-      const detailPayload = {
-        ...(credit_limit        !== undefined && { credit_limit }),
-        ...(credit_days         !== undefined && { credit_days }),
-        ...(currency_id         !== undefined && { currency_id }),
-        ...(payment_terms       !== undefined && { payment_terms }),
-        ...(bank_name           !== undefined && { bank_name }),
-        ...(bank_account_number !== undefined && { bank_account_number }),
-        ...(bank_ifsc_code      !== undefined && { bank_ifsc_code }),
-        ...(bank_branch         !== undefined && { bank_branch }),
-        ...(updated_by          !== undefined && { updated_by }),
-      };
+      const detailPayload = {};
+
+      if (credit_limit !== undefined) {
+        detailPayload.credit_limit = credit_limit !== null && credit_limit !== "" && !isNaN(credit_limit) ? parseFloat(credit_limit) : 0;
+      }
+      if (credit_days !== undefined) {
+        detailPayload.credit_days = credit_days !== null && credit_days !== "" && !isNaN(credit_days) ? parseInt(credit_days, 10) : 0;
+      }
+      if (currency_id !== undefined) {
+        detailPayload.currency_id = currency_id !== null && currency_id !== "" && !isNaN(currency_id) ? parseInt(currency_id, 10) : null;
+      }
+      if (payment_terms !== undefined) detailPayload.payment_terms = payment_terms || null;
+      if (bank_name !== undefined) detailPayload.bank_name = bank_name || null;
+      if (bank_account_number !== undefined) detailPayload.bank_account_number = bank_account_number || null;
+      if (bank_ifsc_code !== undefined) detailPayload.bank_ifsc_code = bank_ifsc_code || null;
+      if (bank_branch !== undefined) detailPayload.bank_branch = bank_branch || null;
+      if (user_id) detailPayload.updated_by = user_id;
 
       if (Object.keys(detailPayload).length > 0) {
         if (existingDetail) {
-          await updateData("md_client_details", detailPayload, `client_id = ${id}`);
+          await updateData("md_client_details", detailPayload, `client_id = ${parseInt(id, 10)}`);
         } else {
-          await insertData("md_client_details", { client_id: parseInt(id), ...detailPayload });
+          await insertData("md_client_details", {
+            client_id: parseInt(id, 10),
+            ...(user_id && { created_by: user_id }),
+            ...detailPayload,
+          });
         }
       }
 
       // ── Step 3: Sync md_client_contact_person ──
       if (Array.isArray(contact_persons)) {
+        // Filter valid contacts (must have non-empty name)
+        const validContacts = contact_persons.filter(
+          (cp) => cp && typeof cp === "object" && cp.contact_person_name && String(cp.contact_person_name).trim() !== ""
+        );
 
-        // 3a. Separate existing (have contact_id) from new (no contact_id)
-        const toUpdate = contact_persons.filter(p => p.contact_id);
-        const toInsert = contact_persons.filter(p => !p.contact_id);
+        const toUpdate = validContacts.filter((p) => p.contact_id && !isNaN(p.contact_id));
+        const toInsert = validContacts.filter((p) => !p.contact_id);
 
-        // 3b. Hard delete contacts that were removed by the user
-        //     (exist in DB but are not present in the incoming payload)
-        const incomingIds = toUpdate.map(p => p.contact_id);
+        const incomingIds = toUpdate.map((p) => parseInt(p.contact_id, 10));
 
         if (incomingIds.length > 0) {
-          // Delete only those NOT in the incoming list
           await deleteData(
             "md_client_contact_person",
-            `client_id = ${id} AND contact_id NOT IN (${incomingIds.join(",")})`
+            `client_id = ${parseInt(id, 10)} AND contact_id NOT IN (${incomingIds.join(",")})`
           );
         } else {
-          // No existing contacts kept — delete all for this client
           await deleteData(
             "md_client_contact_person",
-            `client_id = ${id}`
+            `client_id = ${parseInt(id, 10)}`
           );
         }
 
         // 3c. Update existing contacts
         for (const person of toUpdate) {
           const personPayload = {
-            ...(person.contact_person_name        !== undefined && { contact_person_name: person.contact_person_name }),
-            ...(person.contact_person_mobile      !== undefined && { contact_person_mobile: person.contact_person_mobile }),
-            ...(person.contact_person_email       !== undefined && { contact_person_email: person.contact_person_email }),
-            ...(person.contact_person_designation !== undefined && { contact_person_designation: person.contact_person_designation }),
-            ...(person.is_primary                 !== undefined && { is_primary: person.is_primary }),
-            ...(updated_by                        !== undefined && { updated_by }),
+            contact_person_name: String(person.contact_person_name).trim(),
+            contact_person_mobile: person.contact_person_mobile ? String(person.contact_person_mobile).trim() : null,
+            contact_person_email: person.contact_person_email ? String(person.contact_person_email).trim() : null,
+            contact_person_designation: person.contact_person_designation ? String(person.contact_person_designation).trim() : null,
+            is_primary: person.is_primary ? 1 : 0,
+            ...(user_id && { updated_by: user_id }),
           };
 
-          if (Object.keys(personPayload).length > 0) {
-            await updateData(
-              "md_client_contact_person",
-              personPayload,
-              `contact_id = ${person.contact_id} AND client_id = ${id}`
-            );
-          }
+          await updateData(
+            "md_client_contact_person",
+            personPayload,
+            `contact_id = ${parseInt(person.contact_id, 10)} AND client_id = ${parseInt(id, 10)}`
+          );
         }
 
-        // 3d. Insert new contacts (no contact_id in payload)
+        // 3d. Insert new contacts
         for (const person of toInsert) {
           const newPerson = {
-            client_id: parseInt(id),
-            ...(person.contact_person_name        !== undefined && { contact_person_name: person.contact_person_name }),
-            ...(person.contact_person_mobile      !== undefined && { contact_person_mobile: person.contact_person_mobile }),
-            ...(person.contact_person_email       !== undefined && { contact_person_email: person.contact_person_email }),
-            ...(person.contact_person_designation !== undefined && { contact_person_designation: person.contact_person_designation }),
-            ...(person.is_primary                 !== undefined && { is_primary: person.is_primary }),
-            ...(updated_by                        !== undefined && { created_by: updated_by, updated_by }),
+            client_id: parseInt(id, 10),
+            contact_person_name: String(person.contact_person_name).trim(),
+            contact_person_mobile: person.contact_person_mobile ? String(person.contact_person_mobile).trim() : null,
+            contact_person_email: person.contact_person_email ? String(person.contact_person_email).trim() : null,
+            contact_person_designation: person.contact_person_designation ? String(person.contact_person_designation).trim() : null,
+            is_primary: person.is_primary ? 1 : 0,
+            ...(user_id && { created_by: user_id, updated_by: user_id }),
           };
           await insertData("md_client_contact_person", newPerson);
         }
@@ -825,7 +899,7 @@ class ClientController {
       });
     } catch (err) {
       console.error("updateClient error:", err);
-      return res.status(500).json({ success: false, message: "Internal server error" });
+      return res.status(500).json({ success: false, message: err.sqlMessage || err.message || "Internal server error" });
     }
   }
 

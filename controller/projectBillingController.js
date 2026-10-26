@@ -405,6 +405,97 @@ class projectBillingController {
     }
   };
 
+  /* ============================================================
+     2B. GET BILLING ITEMS & BOM DETAILS BY PROJECT AND SITE
+        — Returns work descriptions along with their mapped BOM name,
+          BOM ID, unit and rates as per project, site, and work description.
+     ============================================================ */
+  getBillingItemsWithBomByProjectAndSite = async (req, res) => {
+    try {
+      const projectId = Number(req.params?.projectId || req.params?.id || req.query?.project_id || req.body?.project_id);
+      const siteId = req.params?.siteId || req.query?.site_id || req.body?.project_site_id || req.body?.site_id;
+      const parsedSiteId = siteId && !isNaN(Number(siteId)) ? Number(siteId) : null;
+      const workDescId = req.params?.project_work_description_id || req.params?.work_description_id || req.query?.work_description_id || req.query?.project_work_description_id || req.body?.project_work_description_id;
+      const parsedWorkDescId = workDescId && !isNaN(Number(workDescId)) ? Number(workDescId) : null;
+
+      if (!projectId || isNaN(projectId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Valid project_id is required",
+        });
+      }
+
+      const sql = `
+        SELECT
+          pb.billing_id,
+          pb.project_id,
+          pb.project_work_description_id,
+          wd.work_description,
+          pb.unit,
+          pb.unit AS billing_unit,
+          pb.hsn_code,
+          pb.quantity,
+          pb.quantity AS billing_quantity,
+          pb.rate,
+          pb.rate AS billing_rate,
+          pb.base_amount,
+          pb.amount,
+          pb.remarks,
+          pb.created_at,
+
+          pr.project_name,
+
+          t.project_estimation_id,
+          t.site_id,
+          s.project_site_name,
+          t.bom_id,
+          COALESCE(t.bom_name, b.bom_name) AS bom_name,
+          t.rep_task AS planned_bom_qty,
+          t.bom_price,
+          COALESCE(t.bom_unit, b.unit, pb.unit) AS bom_unit,
+          t.bom_value_unit
+
+        FROM md_project_billing pb
+
+        LEFT JOIN md_project_work_description wd
+          ON pb.project_work_description_id = wd.project_work_description_id
+
+        LEFT JOIN md_project pr
+          ON pb.project_id = pr.project_id
+
+        LEFT JOIN tx_project_details_with_estimation t
+          ON pb.billing_id = t.billing_id
+          ${parsedSiteId ? `AND t.site_id = ${parsedSiteId}` : ""}
+
+        LEFT JOIN md_project_site s
+          ON t.site_id = s.project_site_id
+
+        LEFT JOIN md_bom b
+          ON t.bom_id = b.bom_id
+
+        WHERE pb.project_id = ${projectId}
+          ${parsedWorkDescId ? `AND pb.project_work_description_id = ${parsedWorkDescId}` : ""}
+
+        ORDER BY pb.billing_id DESC, t.project_estimation_id DESC
+      `;
+
+      const rows = await customSelectSqlQuery(sql, true);
+
+      return res.status(200).json({
+        success: true,
+        data: rows,
+      });
+
+    } catch (err) {
+      console.error("❌ Billing & BOM Fetch Error:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Error fetching billing items with BOM",
+        error: err.message,
+      });
+    }
+  };
+
 
 
 

@@ -1,12 +1,19 @@
-const connect = require("../DBConfig/db");
+const {
+  selectData,
+  selectOneData,
+  insertData,
+  updateData,
+  deleteData,
+  customSelectSqlQuery2,
+} = require("../models/MasterModel");
 
 class ContractorTeamController {
   // Create Contractor Team
   createTeam = async (req, res) => {
-    let conn;
     try {
       const {
         team_name,
+        contractor_company_id,
         vendor_id,
         project_id,
         site_id,
@@ -26,43 +33,38 @@ class ContractorTeamController {
 
       const created_by = req.user?.id || 1;
 
-      conn = await connect();
-      const insertSql = `
-        INSERT INTO md_contractor_team (
-          team_name, vendor_id, project_id, site_id, team_lead_id,
-          date, remarks, status, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `;
-
-      const values = [
+      const teamId = await insertData("md_contractor_team", {
         team_name,
-        vendor_id ? parseInt(vendor_id) : null,
-        project_id ? parseInt(project_id) : null,
-        site_id ? parseInt(site_id) : null,
-        team_lead_id ? parseInt(team_lead_id) : null,
-        date || new Date().toISOString().split("T")[0],
-        remarks || null,
-        status || "ACTIVE",
+        contractor_company_id: contractor_company_id ? parseInt(contractor_company_id) : null,
+        vendor_id: vendor_id ? parseInt(vendor_id) : null,
+        project_id: project_id ? parseInt(project_id) : null,
+        site_id: site_id ? parseInt(site_id) : null,
+        team_lead_id: team_lead_id ? parseInt(team_lead_id) : null,
+        date: date || new Date().toISOString().split("T")[0],
+        remarks: remarks || null,
+        status: status || "ACTIVE",
         created_by,
-      ];
-
-      const [result] = await conn.execute(insertSql, values);
-      const teamId = result.insertId;
+      });
 
       // Assign Team Lead if provided
       if (team_lead_id) {
-        await conn.execute(
-          `UPDATE md_contractual_employee SET contractor_team_id = ?, role_type = 'TEAM_LEAD' WHERE contractual_employee_id = ?`,
-          [teamId, parseInt(team_lead_id)]
+        await updateData(
+          "md_contractual_employee",
+          {
+            contractor_team_id: teamId,
+            role_type: "TEAM_LEAD",
+          },
+          `contractual_employee_id = ${parseInt(team_lead_id)}`
         );
       }
 
       // Assign initial members if provided
       if (Array.isArray(member_ids) && member_ids.length > 0) {
         for (const empId of member_ids) {
-          await conn.execute(
-            `UPDATE md_contractual_employee SET contractor_team_id = ? WHERE contractual_employee_id = ?`,
-            [teamId, parseInt(empId)]
+          await updateData(
+            "md_contractual_employee",
+            { contractor_team_id: teamId },
+            `contractual_employee_id = ${parseInt(empId)}`
           );
         }
       }
@@ -82,20 +84,18 @@ class ContractorTeamController {
         message: "Failed to create contractor team",
         error: error.message,
       });
-    } finally {
-      if (conn) await conn.end();
     }
   };
 
   // Get All Contractor Teams
   getAllTeams = async (req, res) => {
-    let conn;
     try {
-      const { project_id, site_id, vendor_id, status } = req.query;
+      const { project_id, site_id, vendor_id, contractor_company_id, company_id, status } = req.query;
 
       let query = `
         SELECT 
           ct.*,
+          COALESCE(cc.company_name, v.vendor_name) AS company_name,
           v.vendor_name,
           p.project_name,
           ps.project_site_name AS site_name,
@@ -105,6 +105,7 @@ class ContractorTeamController {
           lead.email AS team_lead_email,
           COUNT(ce.contractual_employee_id) AS total_members
         FROM md_contractor_team ct
+        LEFT JOIN md_contractor_company cc ON ct.contractor_company_id = cc.contractor_company_id
         LEFT JOIN md_vendor v ON ct.vendor_id = v.vendor_id
         LEFT JOIN md_project p ON ct.project_id = p.project_id
         LEFT JOIN md_project_site ps ON ct.site_id = ps.project_site_id
@@ -114,6 +115,11 @@ class ContractorTeamController {
       `;
       const params = [];
 
+      const targetCompanyId = contractor_company_id || company_id;
+      if (targetCompanyId) {
+        query += ` AND ct.contractor_company_id = ?`;
+        params.push(parseInt(targetCompanyId));
+      }
       if (project_id) {
         query += ` AND ct.project_id = ?`;
         params.push(parseInt(project_id));
@@ -133,8 +139,7 @@ class ContractorTeamController {
 
       query += ` GROUP BY ct.contractor_team_id ORDER BY ct.contractor_team_id DESC`;
 
-      conn = await connect();
-      const [rows] = await conn.execute(query, params);
+      const rows = await customSelectSqlQuery2(query, params);
 
       res.status(200).json({
         success: true,
@@ -147,21 +152,18 @@ class ContractorTeamController {
         message: "Failed to fetch contractor teams",
         error: error.message,
       });
-    } finally {
-      if (conn) await conn.end();
     }
   };
 
   // Get Team by ID with Member List
   getTeamById = async (req, res) => {
-    let conn;
     try {
       const { id } = req.params;
-      conn = await connect();
 
       const teamQuery = `
         SELECT 
           ct.*,
+          COALESCE(cc.company_name, v.vendor_name) AS company_name,
           v.vendor_name,
           p.project_name,
           ps.project_site_name AS site_name,
@@ -170,6 +172,7 @@ class ContractorTeamController {
           lead.phone AS team_lead_phone,
           lead.email AS team_lead_email
         FROM md_contractor_team ct
+        LEFT JOIN md_contractor_company cc ON ct.contractor_company_id = cc.contractor_company_id
         LEFT JOIN md_vendor v ON ct.vendor_id = v.vendor_id
         LEFT JOIN md_project p ON ct.project_id = p.project_id
         LEFT JOIN md_project_site ps ON ct.site_id = ps.project_site_id
@@ -177,8 +180,8 @@ class ContractorTeamController {
         WHERE ct.contractor_team_id = ?
       `;
 
-      const [teamRows] = await conn.execute(teamQuery, [id]);
-      if (teamRows.length === 0) {
+      const team = await customSelectSqlQuery2(teamQuery, [id], false);
+      if (!team) {
         return res.status(404).json({
           success: false,
           message: "Contractor team not found",
@@ -203,12 +206,12 @@ class ContractorTeamController {
         WHERE contractor_team_id = ?
         ORDER BY (role_type = 'TEAM_LEAD') DESC, full_name ASC
       `;
-      const [members] = await conn.execute(memberQuery, [id]);
+      const members = await customSelectSqlQuery2(memberQuery, [id]);
 
       res.status(200).json({
         success: true,
         data: {
-          ...teamRows[0],
+          ...team,
           members,
         },
       });
@@ -219,18 +222,16 @@ class ContractorTeamController {
         message: "Failed to fetch team details",
         error: error.message,
       });
-    } finally {
-      if (conn) await conn.end();
     }
   };
 
   // Update Contractor Team
   updateTeam = async (req, res) => {
-    let conn;
     try {
       const { id } = req.params;
       const {
         team_name,
+        contractor_company_id,
         vendor_id,
         project_id,
         site_id,
@@ -241,70 +242,62 @@ class ContractorTeamController {
         member_ids,
       } = req.body;
 
-      conn = await connect();
-
-      const [existing] = await conn.execute(
-        `SELECT * FROM md_contractor_team WHERE contractor_team_id = ?`,
-        [id]
+      const current = await selectOneData(
+        "md_contractor_team",
+        "*",
+        `contractor_team_id = ${parseInt(id)}`
       );
 
-      if (existing.length === 0) {
+      if (!current) {
         return res.status(404).json({
           success: false,
           message: "Contractor team not found",
         });
       }
 
-      const current = existing[0];
-
-      const updateSql = `
-        UPDATE md_contractor_team SET
-          team_name = ?,
-          vendor_id = ?,
-          project_id = ?,
-          site_id = ?,
-          team_lead_id = ?,
-          date = ?,
-          remarks = ?,
-          status = ?
-        WHERE contractor_team_id = ?
-      `;
-
-      const values = [
-        team_name || current.team_name,
-        vendor_id !== undefined ? (vendor_id ? parseInt(vendor_id) : null) : current.vendor_id,
-        project_id !== undefined ? (project_id ? parseInt(project_id) : null) : current.project_id,
-        site_id !== undefined ? (site_id ? parseInt(site_id) : null) : current.site_id,
-        team_lead_id !== undefined ? (team_lead_id ? parseInt(team_lead_id) : null) : current.team_lead_id,
-        date || current.date,
-        remarks !== undefined ? remarks : current.remarks,
-        status || current.status,
-        id,
-      ];
-
-      await conn.execute(updateSql, values);
+      await updateData(
+        "md_contractor_team",
+        {
+          team_name: team_name || current.team_name,
+          contractor_company_id: contractor_company_id !== undefined ? (contractor_company_id ? parseInt(contractor_company_id) : null) : current.contractor_company_id,
+          vendor_id: vendor_id !== undefined ? (vendor_id ? parseInt(vendor_id) : null) : current.vendor_id,
+          project_id: project_id !== undefined ? (project_id ? parseInt(project_id) : null) : current.project_id,
+          site_id: site_id !== undefined ? (site_id ? parseInt(site_id) : null) : current.site_id,
+          team_lead_id: team_lead_id !== undefined ? (team_lead_id ? parseInt(team_lead_id) : null) : current.team_lead_id,
+          date: date || current.date,
+          remarks: remarks !== undefined ? remarks : current.remarks,
+          status: status || current.status,
+        },
+        `contractor_team_id = ${parseInt(id)}`
+      );
 
       // If team lead updated, update employee's team and role
       if (team_lead_id && parseInt(team_lead_id) !== current.team_lead_id) {
-        await conn.execute(
-          `UPDATE md_contractual_employee SET contractor_team_id = ?, role_type = 'TEAM_LEAD' WHERE contractual_employee_id = ?`,
-          [id, parseInt(team_lead_id)]
+        await updateData(
+          "md_contractual_employee",
+          {
+            contractor_team_id: parseInt(id),
+            role_type: "TEAM_LEAD",
+          },
+          `contractual_employee_id = ${parseInt(team_lead_id)}`
         );
       }
 
       // If member_ids explicitly passed, re-sync team members
       if (Array.isArray(member_ids)) {
-        // Unassign old members who are not in new member_ids (except team lead)
-        await conn.execute(
-          `UPDATE md_contractual_employee SET contractor_team_id = NULL WHERE contractor_team_id = ?`,
-          [id]
+        // Unassign old members who were in this team
+        await updateData(
+          "md_contractual_employee",
+          { contractor_team_id: null },
+          `contractor_team_id = ${parseInt(id)}`
         );
 
         if (member_ids.length > 0) {
           for (const empId of member_ids) {
-            await conn.execute(
-              `UPDATE md_contractual_employee SET contractor_team_id = ? WHERE contractual_employee_id = ?`,
-              [id, parseInt(empId)]
+            await updateData(
+              "md_contractual_employee",
+              { contractor_team_id: parseInt(id) },
+              `contractual_employee_id = ${parseInt(empId)}`
             );
           }
         }
@@ -312,9 +305,13 @@ class ContractorTeamController {
         // Ensure team lead is also assigned to this team
         if (team_lead_id || current.team_lead_id) {
           const leadId = team_lead_id || current.team_lead_id;
-          await conn.execute(
-            `UPDATE md_contractual_employee SET contractor_team_id = ?, role_type = 'TEAM_LEAD' WHERE contractual_employee_id = ?`,
-            [id, parseInt(leadId)]
+          await updateData(
+            "md_contractual_employee",
+            {
+              contractor_team_id: parseInt(id),
+              role_type: "TEAM_LEAD",
+            },
+            `contractual_employee_id = ${parseInt(leadId)}`
           );
         }
       }
@@ -330,30 +327,27 @@ class ContractorTeamController {
         message: "Failed to update contractor team",
         error: error.message,
       });
-    } finally {
-      if (conn) await conn.end();
     }
   };
 
   // Delete Contractor Team
   deleteTeam = async (req, res) => {
-    let conn;
     try {
       const { id } = req.params;
-      conn = await connect();
 
       // Unassign all members from this team
-      await conn.execute(
-        `UPDATE md_contractual_employee SET contractor_team_id = NULL WHERE contractor_team_id = ?`,
-        [id]
+      await updateData(
+        "md_contractual_employee",
+        { contractor_team_id: null },
+        `contractor_team_id = ${parseInt(id)}`
       );
 
-      const [result] = await conn.execute(
-        `DELETE FROM md_contractor_team WHERE contractor_team_id = ?`,
-        [id]
+      const affected = await deleteData(
+        "md_contractor_team",
+        `contractor_team_id = ${parseInt(id)}`
       );
 
-      if (result.affectedRows === 0) {
+      if (affected === 0) {
         return res.status(404).json({
           success: false,
           message: "Contractor team not found",
@@ -371,14 +365,11 @@ class ContractorTeamController {
         message: "Failed to delete contractor team",
         error: error.message,
       });
-    } finally {
-      if (conn) await conn.end();
     }
   };
 
   // Assign Members to Team
   assignMembers = async (req, res) => {
-    let conn;
     try {
       const { id } = req.params;
       const { employee_ids, action = "ADD" } = req.body; // action: 'ADD' or 'REMOVE'
@@ -390,27 +381,29 @@ class ContractorTeamController {
         });
       }
 
-      conn = await connect();
       const teamIdInt = parseInt(id);
 
       for (const empId of employee_ids) {
         const empIdInt = parseInt(empId);
         if (action === "ADD") {
           // Employee belongs exclusively to this one team
-          await conn.execute(
-            `UPDATE md_contractual_employee SET contractor_team_id = ? WHERE contractual_employee_id = ?`,
-            [teamIdInt, empIdInt]
+          await updateData(
+            "md_contractual_employee",
+            { contractor_team_id: teamIdInt },
+            `contractual_employee_id = ${empIdInt}`
           );
         } else if (action === "REMOVE") {
           // Unassign employee from team
-          await conn.execute(
-            `UPDATE md_contractual_employee SET contractor_team_id = NULL WHERE contractual_employee_id = ?`,
-            [empIdInt]
+          await updateData(
+            "md_contractual_employee",
+            { contractor_team_id: null },
+            `contractual_employee_id = ${empIdInt}`
           );
           // If this employee was the team lead on md_contractor_team, clear team_lead_id
-          await conn.execute(
-            `UPDATE md_contractor_team SET team_lead_id = NULL WHERE contractor_team_id = ? AND team_lead_id = ?`,
-            [teamIdInt, empIdInt]
+          await updateData(
+            "md_contractor_team",
+            { team_lead_id: null },
+            `contractor_team_id = ${teamIdInt} AND team_lead_id = ${empIdInt}`
           );
         }
       }
@@ -426,8 +419,6 @@ class ContractorTeamController {
         message: "Failed to assign members",
         error: error.message,
       });
-    } finally {
-      if (conn) await conn.end();
     }
   };
 }
