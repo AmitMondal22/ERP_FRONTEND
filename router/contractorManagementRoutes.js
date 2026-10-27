@@ -43,4 +43,9 @@ router.delete("/api/contractor-damages/:id", auth, controller.deleteDamage);
 // =========================================================================
 router.get("/api/contractor-financial-summary", auth, controller.getFinancialSummary);
 
+// =========================================================================
+// 6. CONTRACTOR MEASUREMENT BILLING SHEET (Live DPR Progress)
+// =========================================================================
+router.get("/api/contractor-companies/:id/billing-measurement", auth, controller.getCompanyBillingMeasurementSheet);
+
 module.exports = router;

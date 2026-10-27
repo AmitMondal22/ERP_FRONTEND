@@ -1142,6 +1142,329 @@ class ContractorManagementController {
       res.status(500).json({ success: false, message: "Failed to fetch financial summary", error: error.message });
     }
   };
+
+  // =========================================================================
+  // 6. DYNAMIC CONTRACTOR MEASUREMENT BILLING SHEET (Linked to DPR Work Progress)
+  // =========================================================================
+  getCompanyBillingMeasurementSheet = async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { startDate, endDate, team_id } = req.query;
+
+      const company = await selectOneData(
+        "md_contractor_company",
+        "*",
+        `contractor_company_id = ${parseInt(id)}`
+      );
+
+      if (!company) {
+        return res.status(404).json({ success: false, message: "Contractor company not found" });
+      }
+
+      // 1. Fetch all teams belonging to this company
+      let teamQuery = `
+        SELECT t.contractor_team_id, t.team_name, t.project_id, t.site_id, p.project_name, ps.project_site_name
+        FROM md_contractor_team t
+        LEFT JOIN md_project p ON t.project_id = p.project_id
+        LEFT JOIN md_project_site ps ON t.site_id = ps.project_site_id
+        WHERE t.contractor_company_id = ?
+      `;
+      const teamParams = [parseInt(id)];
+      if (team_id && team_id !== "ALL") {
+        teamQuery += ` AND t.contractor_team_id = ?`;
+        teamParams.push(parseInt(team_id));
+      }
+      const teams = await customSelectSqlQuery2(teamQuery, teamParams);
+      const teamIds = teams.map((t) => t.contractor_team_id);
+
+      // 2. Fetch assigned work items from td_contractor_team_bom_assignment & items
+      let workItems = [];
+      if (teamIds.length > 0) {
+        const placeholders = teamIds.map(() => "?").join(",");
+        const assignItemsQuery = `
+          SELECT 
+            bi.assignment_item_id,
+            bi.assignment_id,
+            ba.contractor_team_id,
+            bi.project_work_description_id,
+            bi.bom_id,
+            bi.assigned_qty AS total_work_qty,
+            bi.unit_rate AS rate,
+            bi.unit,
+            bi.total_cost,
+            bi.remarks,
+            ba.assignment_code,
+            ba.project_id,
+            ba.site_id,
+            p.project_name,
+            ps.project_site_name,
+            t.team_name,
+            wd.work_description,
+            COALESCE(wd.work_description, b.bom_name, 'Contract Work Item') AS description_of_work
+          FROM td_contractor_team_bom_items bi
+          JOIN td_contractor_team_bom_assignment ba ON bi.assignment_id = ba.assignment_id
+          LEFT JOIN md_project_work_description wd ON bi.project_work_description_id = wd.project_work_description_id
+          LEFT JOIN md_bom b ON bi.bom_id = b.bom_id
+          LEFT JOIN md_contractor_team t ON ba.contractor_team_id = t.contractor_team_id
+          LEFT JOIN md_project p ON ba.project_id = p.project_id
+          LEFT JOIN md_project_site ps ON ba.site_id = ps.project_site_id
+          WHERE ba.contractor_company_id = ? AND ba.contractor_team_id IN (${placeholders})
+          ORDER BY bi.assignment_item_id ASC
+        `;
+        const itemRows = await customSelectSqlQuery2(assignItemsQuery, [parseInt(id), ...teamIds]);
+
+        const accountedTeamBoms = new Set();
+        for (let i = 0; i < itemRows.length; i++) {
+          const item = itemRows[i];
+          const tId = item.contractor_team_id;
+
+          let targetBomIds = [];
+          if (item.bom_id) {
+            targetBomIds.push(item.bom_id);
+            accountedTeamBoms.add(`${tId}_${item.bom_id}`);
+          }
+          if (item.project_work_description_id) {
+            const linkedBoms = await customSelectSqlQuery2(
+              `SELECT bom_id FROM tx_project_details_with_estimation WHERE billing_id = ?`,
+              [item.project_work_description_id]
+            );
+            linkedBoms.forEach((lb) => {
+              if (lb.bom_id && !targetBomIds.includes(lb.bom_id)) {
+                targetBomIds.push(lb.bom_id);
+                accountedTeamBoms.add(`${tId}_${lb.bom_id}`);
+              }
+            });
+          }
+
+          let prevQty = 0;
+          let currentQty = 0;
+
+          if (targetBomIds.length > 0) {
+            const bomPlaceholders = targetBomIds.map(() => "?").join(",");
+
+            if (startDate) {
+              const prevRes = await customSelectSqlQuery2(`
+                SELECT COALESCE(SUM(total_progress), 0) AS prev_qty
+                FROM tx_work_progress
+                WHERE contractor_team_id = ? AND bom_id IN (${bomPlaceholders}) AND date < ?
+              `, [tId, ...targetBomIds, startDate]);
+              prevQty = parseFloat(prevRes[0]?.prev_qty || 0);
+
+              let currSql = `
+                SELECT COALESCE(SUM(total_progress), 0) AS curr_qty
+                FROM tx_work_progress
+                WHERE contractor_team_id = ? AND bom_id IN (${bomPlaceholders}) AND date >= ?
+              `;
+              const currParams = [tId, ...targetBomIds, startDate];
+              if (endDate) {
+                currSql += ` AND date <= ?`;
+                currParams.push(endDate);
+              }
+              const currRes = await customSelectSqlQuery2(currSql, currParams);
+              currentQty = parseFloat(currRes[0]?.curr_qty || 0);
+            } else {
+              let allSql = `
+                SELECT COALESCE(SUM(total_progress), 0) AS curr_qty
+                FROM tx_work_progress
+                WHERE contractor_team_id = ? AND bom_id IN (${bomPlaceholders})
+              `;
+              const allParams = [tId, ...targetBomIds];
+              if (endDate) {
+                allSql += ` AND date <= ?`;
+                allParams.push(endDate);
+              }
+              const allRes = await customSelectSqlQuery2(allSql, allParams);
+              currentQty = parseFloat(allRes[0]?.curr_qty || 0);
+              prevQty = 0;
+            }
+          }
+
+          const totalWorkQty = parseFloat(item.total_work_qty || 0);
+          const cumulativeWork = prevQty + currentQty;
+          const balanceQty = totalWorkQty > 0 ? (totalWorkQty - cumulativeWork) : 0;
+          const rate = parseFloat(item.rate || 0);
+          const amount = currentQty * rate;
+
+          workItems.push({
+            id: `item-${item.assignment_item_id}`,
+            sn: i + 1,
+            assignment_item_id: item.assignment_item_id,
+            description: item.description_of_work,
+            team_name: item.team_name,
+            project_name: item.project_name,
+            project_site_name: item.project_site_name,
+            unit: item.unit || "RMT",
+            totalWorkQty,
+            prevQty,
+            currentQty,
+            cumulativeWork,
+            balanceQty,
+            rate,
+            amount,
+            remarks: item.remarks || "",
+          });
+        }
+
+        // Check for any additional BOMs executed in tx_work_progress by these teams
+        const extraProgressQuery = `
+          SELECT 
+            wp.bom_id,
+            wp.contractor_team_id,
+            t.team_name,
+            p.project_name,
+            ps.project_site_name,
+            b.bom_name
+          FROM tx_work_progress wp
+          LEFT JOIN md_bom b ON wp.bom_id = b.bom_id
+          LEFT JOIN md_contractor_team t ON wp.contractor_team_id = t.contractor_team_id
+          LEFT JOIN md_project p ON wp.project_id = p.project_id
+          LEFT JOIN md_project_site ps ON wp.project_site_id = ps.project_site_id
+          WHERE wp.contractor_team_id IN (${placeholders})
+          GROUP BY wp.bom_id, wp.contractor_team_id
+        `;
+        const extraRows = await customSelectSqlQuery2(extraProgressQuery, teamIds);
+
+        for (const er of extraRows) {
+          if (!er.bom_id) continue;
+          const key = `${er.contractor_team_id}_${er.bom_id}`;
+          if (accountedTeamBoms.has(key)) continue;
+
+          let prevQty = 0;
+          let currentQty = 0;
+
+          if (startDate) {
+            const pRes = await customSelectSqlQuery2(`
+              SELECT COALESCE(SUM(total_progress), 0) AS prev_qty
+              FROM tx_work_progress
+              WHERE contractor_team_id = ? AND bom_id = ? AND date < ?
+            `, [er.contractor_team_id, er.bom_id, startDate]);
+            prevQty = parseFloat(pRes[0]?.prev_qty || 0);
+
+            let cSql = `
+              SELECT COALESCE(SUM(total_progress), 0) AS curr_qty
+              FROM tx_work_progress
+              WHERE contractor_team_id = ? AND bom_id = ? AND date >= ?
+            `;
+            const cParams = [er.contractor_team_id, er.bom_id, startDate];
+            if (endDate) {
+              cSql += ` AND date <= ?`;
+              cParams.push(endDate);
+            }
+            const cRes = await customSelectSqlQuery2(cSql, cParams);
+            currentQty = parseFloat(cRes[0]?.curr_qty || 0);
+          } else {
+            let aSql = `
+              SELECT COALESCE(SUM(total_progress), 0) AS curr_qty
+              FROM tx_work_progress
+              WHERE contractor_team_id = ? AND bom_id = ?
+            `;
+            const aParams = [er.contractor_team_id, er.bom_id];
+            if (endDate) {
+              aSql += ` AND date <= ?`;
+              aParams.push(endDate);
+            }
+            const aRes = await customSelectSqlQuery2(aSql, aParams);
+            currentQty = parseFloat(aRes[0]?.curr_qty || 0);
+          }
+
+          let estRate = 0;
+          let estTotalQty = 0;
+          let estUnit = "RMT";
+          const estRow = await customSelectSqlQuery2(`
+            SELECT bom_price, rep_task, bom_unit 
+            FROM tx_project_details_with_estimation 
+            WHERE bom_id = ? 
+            ORDER BY project_estimation_id DESC LIMIT 1
+          `, [er.bom_id]);
+          if (estRow && estRow.length > 0) {
+            estRate = parseFloat(estRow[0].bom_price || 0);
+            estTotalQty = parseFloat(estRow[0].rep_task || 0);
+            estUnit = estRow[0].bom_unit || "RMT";
+          }
+
+          const cumulativeWork = prevQty + currentQty;
+          const totalWorkQty = estTotalQty > 0 ? estTotalQty : cumulativeWork;
+          const balanceQty = totalWorkQty > 0 ? (totalWorkQty - cumulativeWork) : 0;
+          const amount = currentQty * estRate;
+
+          workItems.push({
+            id: `item-progress-${er.contractor_team_id}-${er.bom_id}`,
+            sn: workItems.length + 1,
+            assignment_item_id: null,
+            description: (er.bom_name || "Contract Work Item").toUpperCase(),
+            team_name: er.team_name,
+            project_name: er.project_name,
+            project_site_name: er.project_site_name,
+            unit: estUnit,
+            totalWorkQty,
+            prevQty,
+            currentQty,
+            cumulativeWork,
+            balanceQty,
+            rate: estRate,
+            amount,
+            remarks: "",
+          });
+        }
+      }
+
+      // 3. Fetch advances for this company
+      let advQuery = `
+        SELECT * FROM td_contractor_advance_payment 
+        WHERE contractor_company_id = ?
+      `;
+      const advParams = [parseInt(id)];
+      if (team_id && team_id !== "ALL") {
+        advQuery += ` AND contractor_team_id = ?`;
+        advParams.push(parseInt(team_id));
+      }
+      if (startDate) {
+        advQuery += ` AND payment_date >= ?`;
+        advParams.push(startDate);
+      }
+      if (endDate) {
+        advQuery += ` AND payment_date <= ?`;
+        advParams.push(endDate);
+      }
+      advQuery += ` ORDER BY payment_date ASC`;
+      const advances = await customSelectSqlQuery2(advQuery, advParams);
+
+      // 4. Fetch damages / tool penalties
+      let dmgQuery = `
+        SELECT * FROM td_contractor_damage_penalty
+        WHERE contractor_company_id = ?
+      `;
+      const dmgParams = [parseInt(id)];
+      if (team_id && team_id !== "ALL") {
+        dmgQuery += ` AND contractor_team_id = ?`;
+        dmgParams.push(parseInt(team_id));
+      }
+      if (startDate) {
+        dmgQuery += ` AND incident_date >= ?`;
+        dmgParams.push(startDate);
+      }
+      if (endDate) {
+        dmgQuery += ` AND incident_date <= ?`;
+        dmgParams.push(endDate);
+      }
+      dmgQuery += ` ORDER BY incident_date ASC`;
+      const damages = await customSelectSqlQuery2(dmgQuery, dmgParams);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          company,
+          teams,
+          workItems,
+          advances,
+          damages,
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching contractor measurement billing sheet:", error);
+      res.status(500).json({ success: false, message: "Failed to fetch measurement sheet", error: error.message });
+    }
+  };
 }
 
 module.exports = new ContractorManagementController();
