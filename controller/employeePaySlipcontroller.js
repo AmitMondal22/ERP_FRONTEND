@@ -1019,13 +1019,23 @@ async getPayslipsByDateRange(req, res) {
       });
     }
 
-    const startDate = dayjs(fromDate, "DD/MM/YYYY", true);
-    const endDate   = dayjs(toDate, "DD/MM/YYYY", true);
+    const parseFlexibleDate = (dateVal) => {
+      if (!dateVal) return dayjs(null);
+      const formats = ["DD/MM/YYYY", "YYYY-MM-DD", "D/M/YYYY", "DD-MM-YYYY", "YYYY/MM/DD"];
+      for (const fmt of formats) {
+        const parsed = dayjs(dateVal, fmt, true);
+        if (parsed.isValid()) return parsed;
+      }
+      return dayjs(dateVal);
+    };
+
+    const startDate = parseFlexibleDate(fromDate);
+    const endDate   = parseFlexibleDate(toDate);
 
     if (!startDate.isValid() || !endDate.isValid()) {
       return res.status(400).json({
         success: false,
-        message: "Invalid date format. Use DD/MM/YYYY"
+        message: "Invalid date format. Use DD/MM/YYYY or YYYY-MM-DD"
       });
     }
 

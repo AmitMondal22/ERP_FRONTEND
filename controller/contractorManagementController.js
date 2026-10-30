@@ -1143,6 +1143,61 @@ class ContractorManagementController {
     }
   };
 
+  // Helper to compute completed BOM quantity for a contractor team and BOM(s) taking into account multi-step BOMs
+  computeTeamCompletedBomQty = async (teamId, bomIds, { beforeDate, fromDate, upToDate } = {}) => {
+    if (!bomIds || bomIds.length === 0) return 0;
+
+    let totalCompletedAcrossBoms = 0;
+
+    for (const bId of bomIds) {
+      if (!bId) continue;
+      const steps = await customSelectSqlQuery2(
+        `SELECT bom_progress_id FROM md_bom_progress WHERE bom_id = ? ORDER BY sl_number ASC`,
+        [bId]
+      );
+
+      let whereClause = `WHERE contractor_team_id = ? AND bom_id = ?`;
+      const params = [teamId, bId];
+
+      if (beforeDate) {
+        whereClause += ` AND date < ?`;
+        params.push(beforeDate);
+      }
+      if (fromDate) {
+        whereClause += ` AND date >= ?`;
+        params.push(fromDate);
+      }
+      if (upToDate) {
+        whereClause += ` AND date <= ?`;
+        params.push(upToDate);
+      }
+
+      if (!steps || steps.length <= 1) {
+        // Single-step or no sub-steps defined: standard sum
+        const sql = `SELECT COALESCE(SUM(total_progress), 0) AS total FROM tx_work_progress ${whereClause}`;
+        const res = await customSelectSqlQuery2(sql, params);
+        totalCompletedAcrossBoms += parseFloat(res[0]?.total || 0);
+      } else {
+        // Multi-step BOM: completed BOM quantity is min across all defined steps
+        const sql = `
+          SELECT bom_progress_id, COALESCE(SUM(total_progress), 0) AS step_progress
+          FROM tx_work_progress
+          ${whereClause}
+          GROUP BY bom_progress_id
+        `;
+        const progressRows = await customSelectSqlQuery2(sql, params);
+        const progressMap = new Map();
+        progressRows.forEach((r) => {
+          progressMap.set(r.bom_progress_id, parseFloat(r.step_progress || 0));
+        });
+        const stepTotals = steps.map((s) => progressMap.get(s.bom_progress_id) || 0);
+        totalCompletedAcrossBoms += Math.min(...stepTotals);
+      }
+    }
+
+    return totalCompletedAcrossBoms;
+  };
+
   // =========================================================================
   // 6. DYNAMIC CONTRACTOR MEASUREMENT BILLING SHEET (Linked to DPR Work Progress)
   // =========================================================================
@@ -1238,50 +1293,22 @@ class ContractorManagementController {
 
           let prevQty = 0;
           let currentQty = 0;
+          let cumulativeWork = 0;
 
           if (targetBomIds.length > 0) {
-            const bomPlaceholders = targetBomIds.map(() => "?").join(",");
-
             if (startDate) {
-              const prevRes = await customSelectSqlQuery2(`
-                SELECT COALESCE(SUM(total_progress), 0) AS prev_qty
-                FROM tx_work_progress
-                WHERE contractor_team_id = ? AND bom_id IN (${bomPlaceholders}) AND date < ?
-              `, [tId, ...targetBomIds, startDate]);
-              prevQty = parseFloat(prevRes[0]?.prev_qty || 0);
-
-              let currSql = `
-                SELECT COALESCE(SUM(total_progress), 0) AS curr_qty
-                FROM tx_work_progress
-                WHERE contractor_team_id = ? AND bom_id IN (${bomPlaceholders}) AND date >= ?
-              `;
-              const currParams = [tId, ...targetBomIds, startDate];
-              if (endDate) {
-                currSql += ` AND date <= ?`;
-                currParams.push(endDate);
-              }
-              const currRes = await customSelectSqlQuery2(currSql, currParams);
-              currentQty = parseFloat(currRes[0]?.curr_qty || 0);
+              prevQty = await this.computeTeamCompletedBomQty(tId, targetBomIds, { beforeDate: startDate });
+              cumulativeWork = await this.computeTeamCompletedBomQty(tId, targetBomIds, { upToDate: endDate });
+              currentQty = Math.max(0, cumulativeWork - prevQty);
             } else {
-              let allSql = `
-                SELECT COALESCE(SUM(total_progress), 0) AS curr_qty
-                FROM tx_work_progress
-                WHERE contractor_team_id = ? AND bom_id IN (${bomPlaceholders})
-              `;
-              const allParams = [tId, ...targetBomIds];
-              if (endDate) {
-                allSql += ` AND date <= ?`;
-                allParams.push(endDate);
-              }
-              const allRes = await customSelectSqlQuery2(allSql, allParams);
-              currentQty = parseFloat(allRes[0]?.curr_qty || 0);
               prevQty = 0;
+              cumulativeWork = await this.computeTeamCompletedBomQty(tId, targetBomIds, { upToDate: endDate });
+              currentQty = cumulativeWork;
             }
           }
 
           const totalWorkQty = parseFloat(item.total_work_qty || 0);
-          const cumulativeWork = prevQty + currentQty;
-          const balanceQty = totalWorkQty > 0 ? (totalWorkQty - cumulativeWork) : 0;
+          const balanceQty = totalWorkQty > 0 ? Math.max(0, totalWorkQty - cumulativeWork) : 0;
           const rate = parseFloat(item.rate || 0);
           const amount = currentQty * rate;
 
@@ -1331,40 +1358,16 @@ class ContractorManagementController {
 
           let prevQty = 0;
           let currentQty = 0;
+          let cumulativeWork = 0;
 
           if (startDate) {
-            const pRes = await customSelectSqlQuery2(`
-              SELECT COALESCE(SUM(total_progress), 0) AS prev_qty
-              FROM tx_work_progress
-              WHERE contractor_team_id = ? AND bom_id = ? AND date < ?
-            `, [er.contractor_team_id, er.bom_id, startDate]);
-            prevQty = parseFloat(pRes[0]?.prev_qty || 0);
-
-            let cSql = `
-              SELECT COALESCE(SUM(total_progress), 0) AS curr_qty
-              FROM tx_work_progress
-              WHERE contractor_team_id = ? AND bom_id = ? AND date >= ?
-            `;
-            const cParams = [er.contractor_team_id, er.bom_id, startDate];
-            if (endDate) {
-              cSql += ` AND date <= ?`;
-              cParams.push(endDate);
-            }
-            const cRes = await customSelectSqlQuery2(cSql, cParams);
-            currentQty = parseFloat(cRes[0]?.curr_qty || 0);
+            prevQty = await this.computeTeamCompletedBomQty(er.contractor_team_id, [er.bom_id], { beforeDate: startDate });
+            cumulativeWork = await this.computeTeamCompletedBomQty(er.contractor_team_id, [er.bom_id], { upToDate: endDate });
+            currentQty = Math.max(0, cumulativeWork - prevQty);
           } else {
-            let aSql = `
-              SELECT COALESCE(SUM(total_progress), 0) AS curr_qty
-              FROM tx_work_progress
-              WHERE contractor_team_id = ? AND bom_id = ?
-            `;
-            const aParams = [er.contractor_team_id, er.bom_id];
-            if (endDate) {
-              aSql += ` AND date <= ?`;
-              aParams.push(endDate);
-            }
-            const aRes = await customSelectSqlQuery2(aSql, aParams);
-            currentQty = parseFloat(aRes[0]?.curr_qty || 0);
+            prevQty = 0;
+            cumulativeWork = await this.computeTeamCompletedBomQty(er.contractor_team_id, [er.bom_id], { upToDate: endDate });
+            currentQty = cumulativeWork;
           }
 
           let estRate = 0;
@@ -1382,9 +1385,8 @@ class ContractorManagementController {
             estUnit = estRow[0].bom_unit || "RMT";
           }
 
-          const cumulativeWork = prevQty + currentQty;
           const totalWorkQty = estTotalQty > 0 ? estTotalQty : cumulativeWork;
-          const balanceQty = totalWorkQty > 0 ? (totalWorkQty - cumulativeWork) : 0;
+          const balanceQty = totalWorkQty > 0 ? Math.max(0, totalWorkQty - cumulativeWork) : 0;
           const amount = currentQty * estRate;
 
           workItems.push({

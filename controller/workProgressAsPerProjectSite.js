@@ -2,6 +2,8 @@ const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 dayjs.extend(utc);
 
+const connect = require("../DBConfig/db");
+
 const {
   insertData,
   selectData,
@@ -14,6 +16,177 @@ const {
   updateStockQuantities,
 } = require("../models/MasterModel");
 
+/**
+ * Validates usable stock before touching the database or initiating a transaction.
+ * Returns an array of error messages if any consumed material is missing or insufficient.
+ */
+async function validateUsableStockBeforeProgress(projectId, siteId, consumedProducts) {
+  if (!Array.isArray(consumedProducts) || consumedProducts.length === 0) {
+    return [];
+  }
+
+  const itemsWithUsage = consumedProducts
+    .map(item => {
+      const qtyToUse = Number(
+        item.Act_Qty !== undefined && item.Act_Qty !== null
+          ? item.Act_Qty
+          : (item.quantity_of_product || item.Atc_total || 0)
+      );
+      return {
+        product_id: item.product_id,
+        qtyToUse
+      };
+    })
+    .filter(item => item.product_id && item.qtyToUse > 0);
+
+  if (itemsWithUsage.length === 0) {
+    return [];
+  }
+
+  const errors = [];
+
+  for (const item of itemsWithUsage) {
+    const productId = item.product_id;
+    const requestedQty = Number(item.qtyToUse);
+
+    const query = `
+      SELECT 
+        p.product_id,
+        p.product_name,
+        COALESCE((
+          SELECT SUM(cs.invoice_qty)
+          FROM tx_current_stock cs
+          WHERE cs.project_id = ?
+            AND cs.site_id = ?
+            AND cs.product_id = p.product_id
+        ), 0) AS total_current_stock,
+        COALESCE((
+          SELECT SUM(qi.quantity)
+          FROM td_purchase_quality_issue qi
+          WHERE qi.project_id = ?
+            AND qi.site_id = ?
+            AND qi.product_id = p.product_id
+            AND qi.resolution_status = 'PENDING'
+        ), 0) AS pending_defective_qty
+      FROM md_product p
+      WHERE p.product_id = ?
+      LIMIT 1
+    `;
+
+    const productRecord = await customSelectSqlQuery2(
+      query,
+      [projectId, siteId, projectId, siteId, productId],
+      false
+    );
+
+    if (!productRecord) {
+      errors.push(`• Product #${productId} does not exist in master catalog.`);
+      continue;
+    }
+
+    const productName = productRecord.product_name || `Product #${productId}`;
+    const totalCurrentStock = parseFloat(productRecord.total_current_stock || 0);
+    const defectiveQty = parseFloat(productRecord.pending_defective_qty || 0);
+    const usableStock = Math.max(0, totalCurrentStock - defectiveQty);
+
+    if (totalCurrentStock <= 0) {
+      errors.push(`• "${productName}" (ID: ${productId}): No stock available at this site. Available: 0, Requested: ${requestedQty}.`);
+    } else if (requestedQty > usableStock) {
+      if (defectiveQty > 0) {
+        errors.push(`• "${productName}" (ID: ${productId}): Requested ${requestedQty}, but usable stock is only ${usableStock} (Total: ${totalCurrentStock}, Quarantined Defective: ${defectiveQty}). Resolve pending quality issues first.`);
+      } else {
+        errors.push(`• "${productName}" (ID: ${productId}): Requested ${requestedQty}, but available stock is only ${totalCurrentStock}.`);
+      }
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * Atomically deducts stock from tx_current_stock within the active transaction connection.
+ * Row-level locks (FOR UPDATE) prevent concurrent double-spend.
+ * Sequentially deducts across multiple split rows if present.
+ */
+async function deductCurrentStockTransactional(conn, consumedProducts, projectId, siteId) {
+  if (!Array.isArray(consumedProducts) || consumedProducts.length === 0) {
+    return 0;
+  }
+
+  const validItems = consumedProducts
+    .map(item => {
+      const qtyToDeduct = Number(
+        item.Act_Qty !== undefined && item.Act_Qty !== null
+          ? item.Act_Qty
+          : (item.quantity_of_product || item.Atc_total || 0)
+      );
+      return {
+        product_id: item.product_id,
+        qtyToDeduct
+      };
+    })
+    .filter(item => item.product_id && item.qtyToDeduct > 0);
+
+  if (validItems.length === 0) {
+    return 0;
+  }
+
+  const now = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+  for (const item of validItems) {
+    const [stockRows] = await conn.execute(
+      `SELECT current_stock_id, invoice_qty
+       FROM tx_current_stock
+       WHERE project_id = ? AND site_id = ? AND product_id = ?
+       ORDER BY invoice_qty DESC
+       FOR UPDATE`,
+      [projectId, siteId, item.product_id]
+    );
+
+    if (!stockRows || stockRows.length === 0) {
+      const err = new Error(`Stock deduction failed: Product #${item.product_id} has no inventory record for Project #${projectId}, Site #${siteId}.`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const totalAvailable = stockRows.reduce((sum, r) => sum + parseFloat(r.invoice_qty || 0), 0);
+    if (totalAvailable < item.qtyToDeduct) {
+      const err = new Error(`Stock deduction failed for Product #${item.product_id}: Available stock is ${totalAvailable}, but requested deduction is ${item.qtyToDeduct}.`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    let remainingToDeduct = item.qtyToDeduct;
+
+    for (const row of stockRows) {
+      if (remainingToDeduct <= 0) break;
+
+      const currentInvoiceQty = parseFloat(row.invoice_qty || 0);
+      if (currentInvoiceQty <= 0) continue;
+
+      const deductAmount = Math.min(currentInvoiceQty, remainingToDeduct);
+      const newInvoiceQty = currentInvoiceQty - deductAmount;
+
+      await conn.execute(
+        `UPDATE tx_current_stock
+         SET invoice_qty = ?, updated_at = ?
+         WHERE current_stock_id = ?`,
+        [newInvoiceQty, now, row.current_stock_id]
+      );
+
+      remainingToDeduct -= deductAmount;
+    }
+
+    if (remainingToDeduct > 0.0001) {
+      const err = new Error(`Stock deduction failed: Unable to deduct full quantity (${item.qtyToDeduct}) for Product #${item.product_id}.`);
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+
+  return validItems.length;
+}
+
 class WorkProgressAsPerProjectSiteController {
 
   // ------------------------------------------------------------
@@ -22,632 +195,646 @@ class WorkProgressAsPerProjectSiteController {
 
 
 
-// createWorkProgress = async (req, res) => {
-//   try {
-//     const {
-//       project_id,
-//       project_site_id,
-//       bom_id,
-//       bom_progress_id,
-//       remarks,
-//       total_progress,
-//       rep_task,
-//       packet_qty,
-//       total_qty_of_material_used,
-//       date,
-//       created_by,
-//       consumed_products = []
-//     } = req.body;
+  // createWorkProgress = async (req, res) => {
+  //   try {
+  //     const {
+  //       project_id,
+  //       project_site_id,
+  //       bom_id,
+  //       bom_progress_id,
+  //       remarks,
+  //       total_progress,
+  //       rep_task,
+  //       packet_qty,
+  //       total_qty_of_material_used,
+  //       date,
+  //       created_by,
+  //       consumed_products = []
+  //     } = req.body;
 
 
-//     if (!project_id || !project_site_id || !bom_id) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "project_id, project_site_id and bom_id are required"
-//       });
-//     }
+  //     if (!project_id || !project_site_id || !bom_id) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "project_id, project_site_id and bom_id are required"
+  //       });
+  //     }
 
 
-//     if (!Array.isArray(consumed_products)) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "consumed_products must be an array"
-//       });
-//     }
+  //     if (!Array.isArray(consumed_products)) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "consumed_products must be an array"
+  //       });
+  //     }
 
 
-//     const workProgressData = {
-//       project_id,
-//       project_site_id,
-//       bom_id,
-//       bom_progress_id: bom_progress_id || null,
-//       remarks: remarks || null,
-//       total_progress: total_progress || 0,
-//       rep_task: rep_task || null,
-//       packet_qty: packet_qty || 0,
-//       total_qty_of_material_used: total_qty_of_material_used || 0,
-//       date: date || dayjs().format("YYYY-MM-DD"),
-//       created_by: created_by || null,
-//       created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
-//       updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
-//     };
+  //     const workProgressData = {
+  //       project_id,
+  //       project_site_id,
+  //       bom_id,
+  //       bom_progress_id: bom_progress_id || null,
+  //       remarks: remarks || null,
+  //       total_progress: total_progress || 0,
+  //       rep_task: rep_task || null,
+  //       packet_qty: packet_qty || 0,
+  //       total_qty_of_material_used: total_qty_of_material_used || 0,
+  //       date: date || dayjs().format("YYYY-MM-DD"),
+  //       created_by: created_by || null,
+  //       created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
+  //       updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
+  //     };
 
 
-//     const insertId = await insertData("tx_work_progress", workProgressData);
+  //     const insertId = await insertData("tx_work_progress", workProgressData);
 
 
-//     if (consumed_products.length > 0) {
-//       // Validate in single pass
-//       const invalidProduct = consumed_products.find(
-//         item => !item.product_id || !item.quantity_of_product || item.quantity_of_product <= 0
-//       );
-      
-//       if (invalidProduct) {
-//         throw new Error("Each product must have product_id and quantity_of_product > 0");
-//       }
+  //     if (consumed_products.length > 0) {
+  //       // Validate in single pass
+  //       const invalidProduct = consumed_products.find(
+  //         item => !item.product_id || !item.quantity_of_product || item.quantity_of_product <= 0
+  //       );
+
+  //       if (invalidProduct) {
+  //         throw new Error("Each product must have product_id and quantity_of_product > 0");
+  //       }
 
 
-//       const expenseRows = consumed_products.map(item => ({
-//         product_id: item.product_id,
-//         work_progress_site_id: insertId,
-//         quantity_of_product: item.quantity_of_product,
-//         Act_Qty: item.Act_Qty || null,
-//         created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
-//         updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
-//       }));
+  //       const expenseRows = consumed_products.map(item => ({
+  //         product_id: item.product_id,
+  //         work_progress_site_id: insertId,
+  //         quantity_of_product: item.quantity_of_product,
+  //         Act_Qty: item.Act_Qty || null,
+  //         created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
+  //         updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
+  //       }));
 
 
-//       const columns = "product_id, work_progress_site_id, quantity_of_product, Act_Qty, created_at, updated_at";
-//       await batchInsertData("tx_site_used_items", columns, expenseRows);
+  //       const columns = "product_id, work_progress_site_id, quantity_of_product, Act_Qty, created_at, updated_at";
+  //       await batchInsertData("tx_site_used_items", columns, expenseRows);
 
 
-//       // Single fast stock update
-//       await updateStockQuantities(consumed_products, project_id, project_site_id);
-//     }
+  //       // Single fast stock update
+  //       await updateStockQuantities(consumed_products, project_id, project_site_id);
+  //     }
 
 
-//     return res.status(201).json({
-//       success: true,
-//       message: "Work progress created successfully",
-//       work_progress_site_id: insertId
-//     });
+  //     return res.status(201).json({
+  //       success: true,
+  //       message: "Work progress created successfully",
+  //       work_progress_site_id: insertId
+  //     });
 
 
-//   } catch (err) {
-//     console.error("CREATE ERROR:", err);
-    
-//     if (err.message.includes("product_id") || err.message.includes("quantity")) {
-//       return res.status(400).json({
-//         success: false,
-//         message: err.message
-//       });
-//     }
+  //   } catch (err) {
+  //     console.error("CREATE ERROR:", err);
 
-//     return res.status(500).json({
-//       success: false,
-//       message: "Unable to create work progress"
-//     });
-//   }
-// };
+  //     if (err.message.includes("product_id") || err.message.includes("quantity")) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: err.message
+  //       });
+  //     }
 
-
-
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Unable to create work progress"
+  //     });
+  //   }
+  // };
 
 
 
 
 
-createWorkProgress = async (req, res) => {
-  try {
-    const {
-      project_id,
-      project_site_id,
-      bom_id,
-      bom_progress_id,
-      contractor_team_id,
-      remarks,
-      total_progress,
-      rep_task,
-      packet_qty,
-      total_qty_of_material_used,
-      date,
-      billing_status,
-     // created_by,
-      consumed_products = []
-    } = req.body;
 
-        const created_by = req.user?.id || null;
 
-    /* ---------------- BASIC VALIDATION ---------------- */
-    if (!project_id || !project_site_id || !bom_id) {
-      return res.status(400).json({
-        success: false,
-        message: "project_id, project_site_id and bom_id are required"
+
+  createWorkProgress = async (req, res) => {
+    let conn;
+    try {
+      const {
+        project_id,
+        project_site_id,
+        bom_id,
+        bom_progress_id,
+        contractor_team_id,
+        remarks,
+        total_progress,
+        rep_task,
+        packet_qty,
+        total_qty_of_material_used,
+        date,
+        billing_status,
+        consumed_products = []
+      } = req.body;
+
+      const created_by = req.user?.id || null;
+
+      /* ---------------- BASIC VALIDATION ---------------- */
+      if (!project_id || !project_site_id || !bom_id) {
+        return res.status(400).json({
+          success: false,
+          message: "project_id, project_site_id and bom_id are required"
+        });
+      }
+
+      if (!Array.isArray(consumed_products)) {
+        return res.status(400).json({
+          success: false,
+          message: "consumed_products must be an array"
+        });
+      }
+
+      /* ---------------- ITEM VALIDATION ---------------- */
+      if (consumed_products.length > 0) {
+        const invalidItem = consumed_products.find(
+          item =>
+            !item.product_id ||
+            (item.Atc_total !== undefined && item.Atc_total < 0) ||
+            (item.Act_Qty !== undefined && item.Act_Qty < 0)
+        );
+
+        if (invalidItem) {
+          return res.status(400).json({
+            success: false,
+            message: "Each consumed product must have valid product_id and non-negative quantity"
+          });
+        }
+      }
+
+      /* ---------------- EXHAUSTIVE USABLE STOCK PRE-VALIDATION ---------------- */
+      // Verifies stock before touching the database or creating progress records
+      const stockErrors = await validateUsableStockBeforeProgress(
+        project_id,
+        project_site_id,
+        consumed_products
+      );
+
+      if (stockErrors.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient usable stock for work progress:\n${stockErrors.join("\n")}`
+        });
+      }
+
+      /* ---------------- ATOMIC DATABASE TRANSACTION ---------------- */
+      conn = await connect();
+      await conn.beginTransaction();
+
+      /* 1. Insert tx_work_progress */
+      const nowFormatted = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+      const progressSql = `
+        INSERT INTO tx_work_progress (
+          project_id,
+          project_site_id,
+          bom_id,
+          bom_progress_id,
+          contractor_team_id,
+          remarks,
+          total_progress,
+          rep_task,
+          packet_qty,
+          total_qty_of_material_used,
+          date,
+          billing_status,
+          created_by,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+
+      const progressValues = [
+        project_id,
+        project_site_id,
+        bom_id,
+        bom_progress_id || null,
+        contractor_team_id ? parseInt(contractor_team_id) : null,
+        remarks || null,
+        total_progress || 0,
+        rep_task || 0,
+        packet_qty || 0,
+        total_qty_of_material_used || 0,
+        date || dayjs().format("YYYY-MM-DD"),
+        billing_status || "PENDING",
+        created_by || null,
+        nowFormatted,
+        nowFormatted
+      ];
+
+      const [progressResult] = await conn.execute(progressSql, progressValues);
+      const insertId = progressResult.insertId;
+
+      /* 2. Insert tx_site_used_items and deduct stock */
+      if (consumed_products.length > 0) {
+        const expenseRows = consumed_products.map(item => ({
+          expenses_of_project_site_id: item.expenses_of_project_site_id || null,
+          work_progress_site_id: insertId,
+          product_id: item.product_id,
+          bom_product_qty: item.bom_product_qty || 0,
+          Atc_total: item.Atc_total || 0,
+          Act_Qty: item.Act_Qty || 0,
+          created_at: nowFormatted,
+          updated_at: nowFormatted
+        }));
+
+        const placeholders = expenseRows.map(
+          row => `(${Object.keys(row).map(() => "?").join(",")})`
+        ).join(",");
+        const values = expenseRows.flatMap(row => Object.values(row));
+        const columns = `expenses_of_project_site_id, work_progress_site_id, product_id, bom_product_qty, Atc_total, Act_Qty, created_at, updated_at`;
+        const usedItemsSql = `INSERT INTO tx_site_used_items (${columns}) VALUES ${placeholders}`;
+
+        await conn.execute(usedItemsSql, values);
+
+        /* 3. Deduct stock atomically within this transaction */
+        await deductCurrentStockTransactional(conn, consumed_products, project_id, project_site_id);
+      }
+
+      /* Commit transaction when all operations succeed */
+      await conn.commit();
+
+      return res.status(201).json({
+        success: true,
+        message: "Work progress created successfully",
+        work_progress_site_id: insertId
       });
-    }
 
-    if (!Array.isArray(consumed_products)) {
-      return res.status(400).json({
+    } catch (err) {
+      if (conn) {
+        try {
+          await conn.rollback();
+        } catch (rbErr) {
+          console.error("Rollback error:", rbErr);
+        }
+      }
+
+      console.error("CREATE WORK PROGRESS ERROR:", err);
+      return res.status(err.statusCode || 500).json({
         success: false,
-        message: "consumed_products must be an array"
+        message: err.message || `Unable to create work progress ${err}`
       });
-    }
-
-    /* ---------------- INSERT tx_work_progress ---------------- */
-    const workProgressData = {
-      project_id,
-      project_site_id,
-      bom_id,
-      bom_progress_id: bom_progress_id || null,
-      contractor_team_id: contractor_team_id ? parseInt(contractor_team_id) : null,
-      remarks: remarks || null,
-      total_progress: total_progress || 0,
-      total_qty_of_material_used: total_qty_of_material_used || 0,
-      date: date || dayjs().format("YYYY-MM-DD"),
-      billing_status: billing_status || "PENDING",
-      created_by: created_by || null,
-      created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
-      updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
-    };
-
-    /* ---------------- VALIDATE USABLE STOCK (BLOCK PENDING DAMAGED ITEMS) ---------------- */
-    if (consumed_products.length > 0) {
-      for (const item of consumed_products) {
-        const qtyToUse = Number(item.Act_Qty || item.Atc_total || 0);
-        if (qtyToUse > 0) {
-          const stockRows = await customSelectSqlQuery(`
-            SELECT 
-              cs.invoice_qty AS current_stock,
-              COALESCE((
-                SELECT SUM(qi.quantity) 
-                FROM td_purchase_quality_issue qi 
-                WHERE qi.project_id = ${project_id} 
-                  AND qi.site_id = ${project_site_id} 
-                  AND qi.product_id = ${item.product_id} 
-                  AND qi.resolution_status = 'PENDING'
-              ), 0) AS pending_defective_qty
-            FROM tx_current_stock cs
-            WHERE cs.project_id = ${project_id}
-              AND cs.site_id = ${project_site_id}
-              AND cs.product_id = ${item.product_id}
-            LIMIT 1
-          `);
-
-          if (stockRows && stockRows.length > 0) {
-            const currentStock = parseFloat(stockRows[0].current_stock || 0);
-            const defectiveQty = parseFloat(stockRows[0].pending_defective_qty || 0);
-            const usableStock = Math.max(0, currentStock - defectiveQty);
-
-            if (qtyToUse > usableStock) {
-              return res.status(400).json({
-                success: false,
-                message: `Insufficient usable stock for Product #${item.product_id}. Available usable: ${usableStock} (Total: ${currentStock}, Quarantined Damaged: ${defectiveQty}). Requested: ${qtyToUse}. Please resolve the quality issue in Defective Stock management before using this material.`,
-              });
-            }
-          }
+    } finally {
+      if (conn) {
+        try {
+          await conn.end();
+        } catch (closeErr) {
+          console.error("Connection close error:", closeErr);
         }
       }
     }
-
-    const insertId = await insertData("tx_work_progress", workProgressData);
-
-    /* ---------------- INSERT tx_site_used_items ---------------- */
-    if (consumed_products.length > 0) {
-
-     const invalidItem = consumed_products.find(item =>
-  !item.product_id ||
-  item.Atc_total === undefined ||
-  item.Atc_total < 0
-);
+  };
 
 
-      if (invalidItem) {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  // getMonthlyWorkReport = async (req, res) => {
+  //   try {
+  //     const { project_id, project_site_id, fromDate, toDate } = req.body;
+
+  //     /* 1. Basic validation */
+  //     if (!project_id || !fromDate || !toDate) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "project_id, fromDate and toDate are required",
+  //       });
+  //     }
+
+  //     if (!dayjs(fromDate).isValid() || !dayjs(toDate).isValid()) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "Invalid date format. Use YYYY-MM-DD",
+  //       });
+  //     }
+
+  //     /* 2. Load project header info */
+  //     const projectQuery = `
+  //       SELECT 
+  //         p.project_id,
+  //         p.project_name,
+  //         p.city_id,
+  //         c.name AS city_name,
+  //         c.state_id,
+  //         s.name AS state_name,
+  //         p.create_by,
+  //         u.name AS created_by_name,
+  //         p.created_at
+  //       FROM md_project p
+  //       LEFT JOIN lo_cities c ON p.city_id = c.id
+  //       LEFT JOIN lo_states s ON c.state_id = s.id
+  //       LEFT JOIN users u ON p.create_by = u.id
+  //       WHERE p.project_id = ?
+  //     `;
+
+  //     const project = await customSelectSqlQuery2(projectQuery, [project_id], false);
+
+  //     if (!project) {
+  //       return res.status(404).json({
+  //         success: false,
+  //         message: "Project not found",
+  //       });
+  //     }
+
+  //     /* 3. Load work progress rows in the given period */
+  //     let workProgressQuery = `
+  //       SELECT 
+  //         wp.work_progress_site_id,
+  //         wp.project_id,
+  //         wp.project_site_id,
+  //         wp.bom_id,
+  //         wp.bom_progress_id,
+
+  //         wp.remarks,
+  //         wp.total_progress,
+  //         wp.rep_task,
+  //         wp.packet_qty,
+  //         wp.total_qty_of_material_used,
+  //         wp.date,
+  //         wp.created_by,
+  //         wp.created_at,
+  //         wp.updated_at,
+
+  //         -- Project Site
+  //         ps.project_site_name,
+  //         ps.city_id AS site_city_id,
+  //         sc.name AS site_city_name,
+  //         sc.state_id AS site_state_id,
+  //         ss.name AS site_state_name,
+
+  //         -- BOM
+  //         b.bom_name,
+
+  //         -- BOM Progress
+  //         bp.bom_progress_name,
+  //         bp.sl_number AS progress_sl_number,
+
+  //         -- Creator
+  //         u.name AS creator_name,
+  //         u.email AS creator_email,
+
+  //         -- Month keys
+  //         DATE_FORMAT(wp.date, '%M %Y') AS month_year,
+  //         DATE_FORMAT(wp.date, '%Y-%m') AS year_month_sort
+
+  //       FROM tx_work_progress wp
+  //       LEFT JOIN md_project_site ps ON wp.project_site_id = ps.project_site_id
+  //       LEFT JOIN lo_cities sc ON ps.city_id = sc.id
+  //       LEFT JOIN lo_states ss ON sc.state_id = ss.id
+  //       LEFT JOIN md_bom b ON wp.bom_id = b.bom_id
+  //       LEFT JOIN md_bom_progress bp ON wp.bom_progress_id = bp.bom_progress_id
+  //       LEFT JOIN users u ON wp.created_by = u.id
+  //       WHERE wp.project_id = ?
+  //         AND wp.date BETWEEN ? AND ?
+  //     `;
+
+  //     const workParams = [project_id, fromDate, toDate];
+
+  //     if (project_site_id) {
+  //       workProgressQuery += ` AND wp.project_site_id = ?`;
+  //       workParams.push(project_site_id);
+  //     }
+
+  //     workProgressQuery += ` ORDER BY wp.date DESC, wp.work_progress_site_id DESC`;
+
+  //     const workRows = await customSelectSqlQuery2(workProgressQuery, workParams);
+
+  //     if (!workRows || workRows.length === 0) {
+  //       return res.status(200).json({
+  //         success: true,
+  //         message: "No work progress found for the given criteria",
+  //         report_info: {
+  //           project,
+  //           from_date: fromDate,
+  //           to_date: toDate,
+  //           total_records: 0,
+  //         },
+  //         monthly_data: [],
+  //         overall_summary: {
+  //           total_months: 0,
+  //           total_work_entries: 0,
+  //           total_progress: 0,
+  //           total_packets: 0,
+  //           total_materials_used: 0,
+  //           total_products_consumed: 0,
+  //           unique_sites: 0,
+  //           unique_boms: 0,
+  //         },
+  //       });
+  //     }
+
+  //     /* 4. Load all consumed products - FIXED QUERY */
+  //     const workIds = workRows.map((wp) => wp.work_progress_site_id);
+  //     const idList = workIds.join(",");
+
+  //     // ✅ REMOVED md_manufacturer JOIN - assuming manufacturer info is in md_product
+  //     const consumedQuery = `
+  //       SELECT 
+  //         ep.expenses_of_project_site_id,
+  //         ep.product_id,
+  //         ep.work_progress_site_id,
+  //         ep.Atc_total,
+  //         ep.created_at,
+
+  //         p.product_name,
+  //         p.model_no,
+  //         p.hsn_code,
+  //         p.manufacturer_name,
+
+  //         pt.product_type_name,
+  //         u.unit_name
+
+  //       FROM tx_site_used_items ep      --tx_site_used_items--
+  //       LEFT JOIN md_product p ON ep.product_id = p.product_id
+  //       LEFT JOIN md_product_type pt ON p.product_type_id = pt.product_type_id
+  //       LEFT JOIN md_unit u ON p.unit_id = u.unit_id
+  //       WHERE ep.work_progress_site_id IN (${idList})
+  //       ORDER BY ep.work_progress_site_id, ep.product_id
+  //     `;
+
+  //     const consumedRows = await customSelectSqlQuery2(consumedQuery, []);
+
+  //     /* 5. Build a map: work_progress_site_id -> list of products */
+  //     const productsByWorkId = {};
+  //     for (const row of consumedRows) {
+  //       const key = row.work_progress_site_id;
+  //       if (!productsByWorkId[key]) productsByWorkId[key] = [];
+
+  //       productsByWorkId[key].push({
+  //         expenses_id: row.expenses_of_project_site_id,
+  //         product_id: row.product_id,
+  //         product_name: row.product_name,
+  //         model_no: row.model_no,
+  //         hsn_code: row.hsn_code,
+  //         product_type: row.product_type_name,
+  //         manufacturer: row.manufacturer_name, // ✅ Now from md_product
+  //         unit: row.unit_name,
+  //         quantity_consumed: parseFloat(row.Atc_total || 0),
+  //         consumed_at: row.created_at,
+  //       });
+  //     }
+
+  //     /* 6. Group work rows by month and attach products */
+  //     const monthBuckets = {};
+
+  //     for (const wp of workRows) {
+  //       const monthKey = wp.year_month_sort;
+
+  //       if (!monthBuckets[monthKey]) {
+  //         monthBuckets[monthKey] = {
+  //           month_year: wp.month_year,
+  //           year_month: wp.year_month_sort,
+  //           work_progress_entries: [],
+  //           summary: {
+  //             total_entries: 0,
+  //             total_progress: 0,
+  //             total_packets: 0,
+  //             total_materials_used: 0,
+  //             total_products_consumed: 0,
+  //           },
+  //         };
+  //       }
+
+  //       const entry = {
+  //         work_progress_site_id: wp.work_progress_site_id,
+  //         date: wp.date,
+  //         project_site: {
+  //           site_id: wp.project_site_id,
+  //           site_name: wp.project_site_name,
+  //           city: wp.site_city_name,
+  //           state: wp.site_state_name,
+  //         },
+  //         bom: {
+  //           bom_id: wp.bom_id,
+  //           bom_name: wp.bom_name,
+  //         },
+  //         bom_progress: {
+  //           progress_id: wp.bom_progress_id,
+  //           progress_name: wp.bom_progress_name,
+  //           sl_number: wp.progress_sl_number,
+  //         },
+  //         work_details: {
+  //           remarks: wp.remarks,
+  //           total_progress: parseFloat(wp.total_progress || 0),
+  //           rep_task: wp.rep_task,
+  //           packet_qty: parseFloat(wp.packet_qty || 0),
+  //           total_qty_of_material_used: parseFloat(wp.total_qty_of_material_used || 0),
+  //         },
+  //         consumed_products: productsByWorkId[wp.work_progress_site_id] || [],
+  //         created_by: {
+  //           user_id: wp.created_by,
+  //           user_name: wp.creator_name,
+  //           user_email: wp.creator_email,
+  //         },
+  //         timestamps: {
+  //           created_at: wp.created_at,
+  //           updated_at: wp.updated_at,
+  //         },
+  //       };
+
+  //       monthBuckets[monthKey].work_progress_entries.push(entry);
+
+  //       monthBuckets[monthKey].summary.total_entries += 1;
+  //       monthBuckets[monthKey].summary.total_progress += entry.work_details.total_progress;
+  //       monthBuckets[monthKey].summary.total_packets += entry.work_details.packet_qty;
+  //       monthBuckets[monthKey].summary.total_materials_used += entry.work_details.total_qty_of_material_used;
+  //       monthBuckets[monthKey].summary.total_products_consumed += entry.consumed_products.length;
+  //     }
+
+  //     const monthly_data = Object.values(monthBuckets).sort((a, b) =>
+  //       b.year_month.localeCompare(a.year_month)
+  //     );
+
+  //     /* 7. Build overall summary */
+  //     const overall_summary = {
+  //       total_months: monthly_data.length,
+  //       total_work_entries: workRows.length,
+  //       total_progress: workRows.reduce(
+  //         (sum, wp) => sum + parseFloat(wp.total_progress || 0),
+  //         0
+  //       ),
+  //       total_packets: workRows.reduce(
+  //         (sum, wp) => sum + parseFloat(wp.packet_qty || 0),
+  //         0
+  //       ),
+  //       total_materials_used: workRows.reduce(
+  //         (sum, wp) => sum + parseFloat(wp.total_qty_of_material_used || 0),
+  //         0
+  //       ),
+  //       total_products_consumed: consumedRows.length,
+  //       unique_sites: new Set(workRows.map((wp) => wp.project_site_id)).size,
+  //       unique_boms: new Set(workRows.map((wp) => wp.bom_id)).size,
+  //     };
+
+  //     /* 8. Final response */
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: "Monthly work report generated successfully",
+  //       report_info: {
+  //         project,
+  //         from_date: fromDate,
+  //         to_date: toDate,
+  //         report_period: `${dayjs(fromDate).format("DD MMM YYYY")} to ${dayjs(toDate).format(
+  //           "DD MMM YYYY"
+  //         )}`,
+  //         generated_at: dayjs().format("YYYY-MM-DD HH:mm:ss"),
+  //       },
+  //       overall_summary,
+  //       monthly_data,
+  //     });
+  //   } catch (error) {
+  //     console.error("Error generating monthly work report:", error);
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Failed to generate monthly work report",
+  //       error: error.message,
+  //     });
+  //   }
+  // };
+
+
+
+
+
+
+
+
+
+  getMonthlyWorkReport = async (req, res) => {
+    try {
+      const { project_id, project_site_id, fromDate, toDate } = req.body;
+
+
+      /* 1. Basic validation */
+      if (!project_id || !fromDate || !toDate) {
         return res.status(400).json({
           success: false,
-          message: "Each consumed product must have valid product_id and quantity_of_product"
+          message: "project_id, fromDate and toDate are required",
         });
       }
-const expenseRows = consumed_products.map(item => ({
-  expenses_of_project_site_id: item.expenses_of_project_site_id || null,
-  work_progress_site_id: insertId,
-  product_id: item.product_id,
 
-  //  quantity_of_product REMOVED
-  //  Atc_total is the total consumed qty (replacement)
 
-  bom_product_qty: item.bom_product_qty || 0,
-  Atc_total: item.Atc_total || 0,     // <-- MAIN VALUE
-  Act_Qty: item.Act_Qty || 0,          // per-unit / step qty
+      if (!dayjs(fromDate).isValid() || !dayjs(toDate).isValid()) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid date format. Use YYYY-MM-DD",
+        });
+      }
 
-  created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
-  updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
-}));
 
-
-
-      // quantity_of_product,--->Atc_total  same 
-      const columns = `
-      expenses_of_project_site_id,
-      work_progress_site_id,
-      product_id,      
-      bom_product_qty,
-      Atc_total,
-      Act_Qty,
-      created_at,
-     updated_at
-     `;
-
-      await batchInsertData("tx_site_used_items", columns, expenseRows);
-
-      await updateStockQuantities(consumed_products, project_id, project_site_id);
-    }
-
-    /* ---------------- RESPONSE ---------------- */
-    return res.status(201).json({
-      success: true,
-      message: "Work progress created successfully",
-      work_progress_site_id: insertId
-    });
-
-  } catch (err) {
-    console.error("CREATE WORK PROGRESS ERROR:", err);
-    return res.status(500).json({
-      success: false,
-      message: `Unable to create work progress ${err}`
-    });
-  }
-};
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// getMonthlyWorkReport = async (req, res) => {
-//   try {
-//     const { project_id, project_site_id, fromDate, toDate } = req.body;
-
-//     /* 1. Basic validation */
-//     if (!project_id || !fromDate || !toDate) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "project_id, fromDate and toDate are required",
-//       });
-//     }
-
-//     if (!dayjs(fromDate).isValid() || !dayjs(toDate).isValid()) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Invalid date format. Use YYYY-MM-DD",
-//       });
-//     }
-
-//     /* 2. Load project header info */
-//     const projectQuery = `
-//       SELECT 
-//         p.project_id,
-//         p.project_name,
-//         p.city_id,
-//         c.name AS city_name,
-//         c.state_id,
-//         s.name AS state_name,
-//         p.create_by,
-//         u.name AS created_by_name,
-//         p.created_at
-//       FROM md_project p
-//       LEFT JOIN lo_cities c ON p.city_id = c.id
-//       LEFT JOIN lo_states s ON c.state_id = s.id
-//       LEFT JOIN users u ON p.create_by = u.id
-//       WHERE p.project_id = ?
-//     `;
-
-//     const project = await customSelectSqlQuery2(projectQuery, [project_id], false);
-
-//     if (!project) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Project not found",
-//       });
-//     }
-
-//     /* 3. Load work progress rows in the given period */
-//     let workProgressQuery = `
-//       SELECT 
-//         wp.work_progress_site_id,
-//         wp.project_id,
-//         wp.project_site_id,
-//         wp.bom_id,
-//         wp.bom_progress_id,
-        
-//         wp.remarks,
-//         wp.total_progress,
-//         wp.rep_task,
-//         wp.packet_qty,
-//         wp.total_qty_of_material_used,
-//         wp.date,
-//         wp.created_by,
-//         wp.created_at,
-//         wp.updated_at,
-
-//         -- Project Site
-//         ps.project_site_name,
-//         ps.city_id AS site_city_id,
-//         sc.name AS site_city_name,
-//         sc.state_id AS site_state_id,
-//         ss.name AS site_state_name,
-
-//         -- BOM
-//         b.bom_name,
-
-//         -- BOM Progress
-//         bp.bom_progress_name,
-//         bp.sl_number AS progress_sl_number,
-
-//         -- Creator
-//         u.name AS creator_name,
-//         u.email AS creator_email,
-
-//         -- Month keys
-//         DATE_FORMAT(wp.date, '%M %Y') AS month_year,
-//         DATE_FORMAT(wp.date, '%Y-%m') AS year_month_sort
-        
-//       FROM tx_work_progress wp
-//       LEFT JOIN md_project_site ps ON wp.project_site_id = ps.project_site_id
-//       LEFT JOIN lo_cities sc ON ps.city_id = sc.id
-//       LEFT JOIN lo_states ss ON sc.state_id = ss.id
-//       LEFT JOIN md_bom b ON wp.bom_id = b.bom_id
-//       LEFT JOIN md_bom_progress bp ON wp.bom_progress_id = bp.bom_progress_id
-//       LEFT JOIN users u ON wp.created_by = u.id
-//       WHERE wp.project_id = ?
-//         AND wp.date BETWEEN ? AND ?
-//     `;
-
-//     const workParams = [project_id, fromDate, toDate];
-
-//     if (project_site_id) {
-//       workProgressQuery += ` AND wp.project_site_id = ?`;
-//       workParams.push(project_site_id);
-//     }
-
-//     workProgressQuery += ` ORDER BY wp.date DESC, wp.work_progress_site_id DESC`;
-
-//     const workRows = await customSelectSqlQuery2(workProgressQuery, workParams);
-
-//     if (!workRows || workRows.length === 0) {
-//       return res.status(200).json({
-//         success: true,
-//         message: "No work progress found for the given criteria",
-//         report_info: {
-//           project,
-//           from_date: fromDate,
-//           to_date: toDate,
-//           total_records: 0,
-//         },
-//         monthly_data: [],
-//         overall_summary: {
-//           total_months: 0,
-//           total_work_entries: 0,
-//           total_progress: 0,
-//           total_packets: 0,
-//           total_materials_used: 0,
-//           total_products_consumed: 0,
-//           unique_sites: 0,
-//           unique_boms: 0,
-//         },
-//       });
-//     }
-
-//     /* 4. Load all consumed products - FIXED QUERY */
-//     const workIds = workRows.map((wp) => wp.work_progress_site_id);
-//     const idList = workIds.join(",");
-
-//     // ✅ REMOVED md_manufacturer JOIN - assuming manufacturer info is in md_product
-//     const consumedQuery = `
-//       SELECT 
-//         ep.expenses_of_project_site_id,
-//         ep.product_id,
-//         ep.work_progress_site_id,
-//         ep.Atc_total,
-//         ep.created_at,
-
-//         p.product_name,
-//         p.model_no,
-//         p.hsn_code,
-//         p.manufacturer_name,
-
-//         pt.product_type_name,
-//         u.unit_name
-        
-//       FROM tx_site_used_items ep      --tx_site_used_items--
-//       LEFT JOIN md_product p ON ep.product_id = p.product_id
-//       LEFT JOIN md_product_type pt ON p.product_type_id = pt.product_type_id
-//       LEFT JOIN md_unit u ON p.unit_id = u.unit_id
-//       WHERE ep.work_progress_site_id IN (${idList})
-//       ORDER BY ep.work_progress_site_id, ep.product_id
-//     `;
-
-//     const consumedRows = await customSelectSqlQuery2(consumedQuery, []);
-
-//     /* 5. Build a map: work_progress_site_id -> list of products */
-//     const productsByWorkId = {};
-//     for (const row of consumedRows) {
-//       const key = row.work_progress_site_id;
-//       if (!productsByWorkId[key]) productsByWorkId[key] = [];
-
-//       productsByWorkId[key].push({
-//         expenses_id: row.expenses_of_project_site_id,
-//         product_id: row.product_id,
-//         product_name: row.product_name,
-//         model_no: row.model_no,
-//         hsn_code: row.hsn_code,
-//         product_type: row.product_type_name,
-//         manufacturer: row.manufacturer_name, // ✅ Now from md_product
-//         unit: row.unit_name,
-//         quantity_consumed: parseFloat(row.Atc_total || 0),
-//         consumed_at: row.created_at,
-//       });
-//     }
-
-//     /* 6. Group work rows by month and attach products */
-//     const monthBuckets = {};
-
-//     for (const wp of workRows) {
-//       const monthKey = wp.year_month_sort;
-
-//       if (!monthBuckets[monthKey]) {
-//         monthBuckets[monthKey] = {
-//           month_year: wp.month_year,
-//           year_month: wp.year_month_sort,
-//           work_progress_entries: [],
-//           summary: {
-//             total_entries: 0,
-//             total_progress: 0,
-//             total_packets: 0,
-//             total_materials_used: 0,
-//             total_products_consumed: 0,
-//           },
-//         };
-//       }
-
-//       const entry = {
-//         work_progress_site_id: wp.work_progress_site_id,
-//         date: wp.date,
-//         project_site: {
-//           site_id: wp.project_site_id,
-//           site_name: wp.project_site_name,
-//           city: wp.site_city_name,
-//           state: wp.site_state_name,
-//         },
-//         bom: {
-//           bom_id: wp.bom_id,
-//           bom_name: wp.bom_name,
-//         },
-//         bom_progress: {
-//           progress_id: wp.bom_progress_id,
-//           progress_name: wp.bom_progress_name,
-//           sl_number: wp.progress_sl_number,
-//         },
-//         work_details: {
-//           remarks: wp.remarks,
-//           total_progress: parseFloat(wp.total_progress || 0),
-//           rep_task: wp.rep_task,
-//           packet_qty: parseFloat(wp.packet_qty || 0),
-//           total_qty_of_material_used: parseFloat(wp.total_qty_of_material_used || 0),
-//         },
-//         consumed_products: productsByWorkId[wp.work_progress_site_id] || [],
-//         created_by: {
-//           user_id: wp.created_by,
-//           user_name: wp.creator_name,
-//           user_email: wp.creator_email,
-//         },
-//         timestamps: {
-//           created_at: wp.created_at,
-//           updated_at: wp.updated_at,
-//         },
-//       };
-
-//       monthBuckets[monthKey].work_progress_entries.push(entry);
-
-//       monthBuckets[monthKey].summary.total_entries += 1;
-//       monthBuckets[monthKey].summary.total_progress += entry.work_details.total_progress;
-//       monthBuckets[monthKey].summary.total_packets += entry.work_details.packet_qty;
-//       monthBuckets[monthKey].summary.total_materials_used += entry.work_details.total_qty_of_material_used;
-//       monthBuckets[monthKey].summary.total_products_consumed += entry.consumed_products.length;
-//     }
-
-//     const monthly_data = Object.values(monthBuckets).sort((a, b) =>
-//       b.year_month.localeCompare(a.year_month)
-//     );
-
-//     /* 7. Build overall summary */
-//     const overall_summary = {
-//       total_months: monthly_data.length,
-//       total_work_entries: workRows.length,
-//       total_progress: workRows.reduce(
-//         (sum, wp) => sum + parseFloat(wp.total_progress || 0),
-//         0
-//       ),
-//       total_packets: workRows.reduce(
-//         (sum, wp) => sum + parseFloat(wp.packet_qty || 0),
-//         0
-//       ),
-//       total_materials_used: workRows.reduce(
-//         (sum, wp) => sum + parseFloat(wp.total_qty_of_material_used || 0),
-//         0
-//       ),
-//       total_products_consumed: consumedRows.length,
-//       unique_sites: new Set(workRows.map((wp) => wp.project_site_id)).size,
-//       unique_boms: new Set(workRows.map((wp) => wp.bom_id)).size,
-//     };
-
-//     /* 8. Final response */
-//     return res.status(200).json({
-//       success: true,
-//       message: "Monthly work report generated successfully",
-//       report_info: {
-//         project,
-//         from_date: fromDate,
-//         to_date: toDate,
-//         report_period: `${dayjs(fromDate).format("DD MMM YYYY")} to ${dayjs(toDate).format(
-//           "DD MMM YYYY"
-//         )}`,
-//         generated_at: dayjs().format("YYYY-MM-DD HH:mm:ss"),
-//       },
-//       overall_summary,
-//       monthly_data,
-//     });
-//   } catch (error) {
-//     console.error("Error generating monthly work report:", error);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Failed to generate monthly work report",
-//       error: error.message,
-//     });
-//   }
-// };
-
-
-
-
-
-
-
-
-
-getMonthlyWorkReport = async (req, res) => {
-  try {
-    const { project_id, project_site_id, fromDate, toDate } = req.body;
-
-
-    /* 1. Basic validation */
-    if (!project_id || !fromDate || !toDate) {
-      return res.status(400).json({
-        success: false,
-        message: "project_id, fromDate and toDate are required",
-      });
-    }
-
-
-    if (!dayjs(fromDate).isValid() || !dayjs(toDate).isValid()) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid date format. Use YYYY-MM-DD",
-      });
-    }
-
-
-    /* 2. Load project header info */
-    const projectQuery = `
+      /* 2. Load project header info */
+      const projectQuery = `
       SELECT 
         p.project_id,
         p.project_name,
@@ -666,19 +853,19 @@ getMonthlyWorkReport = async (req, res) => {
     `;
 
 
-    const project = await customSelectSqlQuery2(projectQuery, [project_id], false);
+      const project = await customSelectSqlQuery2(projectQuery, [project_id], false);
 
 
-    if (!project) {
-      return res.status(404).json({
-        success: false,
-        message: "Project not found",
-      });
-    }
+      if (!project) {
+        return res.status(404).json({
+          success: false,
+          message: "Project not found",
+        });
+      }
 
-//work_details_id
-    /* 3. Load work progress rows in the given period */
-    let workProgressQuery = `
+      //work_details_id
+      /* 3. Load work progress rows in the given period */
+      let workProgressQuery = `
       SELECT 
         wp.work_progress_site_id,
         wp.project_id,
@@ -740,56 +927,56 @@ getMonthlyWorkReport = async (req, res) => {
     `;
 
 
-    const workParams = [project_id, fromDate, toDate];
+      const workParams = [project_id, fromDate, toDate];
 
 
-    if (project_site_id) {
-      workProgressQuery += ` AND wp.project_site_id = ?`;
-      workParams.push(project_site_id);
-    }
+      if (project_site_id) {
+        workProgressQuery += ` AND wp.project_site_id = ?`;
+        workParams.push(project_site_id);
+      }
 
 
-    workProgressQuery += ` ORDER BY wp.date DESC, wp.work_progress_site_id DESC`;
+      workProgressQuery += ` ORDER BY wp.date DESC, wp.work_progress_site_id DESC`;
 
 
-    const workRows = await customSelectSqlQuery2(workProgressQuery, workParams);
+      const workRows = await customSelectSqlQuery2(workProgressQuery, workParams);
 
 
-    if (!workRows || workRows.length === 0) {
-      return res.status(200).json({
-        success: true,
-        message: "No work progress found for the given criteria",
-        report_info: {
-          project,
-          from_date: fromDate,
-          to_date: toDate,
-          total_records: 0,
-        },
-        monthly_data: [],
-        overall_summary: {
-          total_months: 0,
-          total_work_entries: 0,
-          total_progress: 0,
-          total_packets: 0,
-          total_materials_used: 0,
-          // total_products_consumed: 0,
-          unique_sites: 0,
-          unique_boms: 0,
-        },
-        duplicate_steps_analysis: {
-          total_duplicate_steps_found: 0,
-          duplicate_steps: []
-        }
-      });
-    }
+      if (!workRows || workRows.length === 0) {
+        return res.status(200).json({
+          success: true,
+          message: "No work progress found for the given criteria",
+          report_info: {
+            project,
+            from_date: fromDate,
+            to_date: toDate,
+            total_records: 0,
+          },
+          monthly_data: [],
+          overall_summary: {
+            total_months: 0,
+            total_work_entries: 0,
+            total_progress: 0,
+            total_packets: 0,
+            total_materials_used: 0,
+            // total_products_consumed: 0,
+            unique_sites: 0,
+            unique_boms: 0,
+          },
+          duplicate_steps_analysis: {
+            total_duplicate_steps_found: 0,
+            duplicate_steps: []
+          }
+        });
+      }
 
 
-    /* 4. Load all consumed products */
-    const workIds = workRows.map((wp) => wp.work_progress_site_id);
-    const idList = workIds.join(",");
+      /* 4. Load all consumed products */
+      const workIds = workRows.map((wp) => wp.work_progress_site_id);
+      const idList = workIds.join(",");
 
 
-    const consumedQuery = `
+      const consumedQuery = `
       SELECT 
         ep.expenses_of_project_site_id,
         ep.product_id,
@@ -816,252 +1003,252 @@ getMonthlyWorkReport = async (req, res) => {
     `;
 
 
-    const consumedRows = await customSelectSqlQuery2(consumedQuery, []);
+      const consumedRows = await customSelectSqlQuery2(consumedQuery, []);
 
 
-    /* 5. Build a map: work_progress_site_id -> list of products */
-    const productsByWorkId = {};
-    for (const row of consumedRows) {
-      const key = row.work_progress_site_id;
-      if (!productsByWorkId[key]) productsByWorkId[key] = [];
+      /* 5. Build a map: work_progress_site_id -> list of products */
+      const productsByWorkId = {};
+      for (const row of consumedRows) {
+        const key = row.work_progress_site_id;
+        if (!productsByWorkId[key]) productsByWorkId[key] = [];
 
 
-      productsByWorkId[key].push({
-        expenses_id: row.expenses_of_project_site_id,
-        product_id: row.product_id,
-        product_name: row.product_name,
-        model_no: row.model_no,
-        hsn_code: row.hsn_code,
-        product_type: row.product_type_name,
-        manufacturer: row.manufacturer_name,
-        unit: row.unit_name,
-        act_qty: parseFloat(row.Act_Qty || 0),       // ✅ per-step qty
-         total_qty: parseFloat(row.Atc_total || 0),   // ✅ total consumed qty
+        productsByWorkId[key].push({
+          expenses_id: row.expenses_of_project_site_id,
+          product_id: row.product_id,
+          product_name: row.product_name,
+          model_no: row.model_no,
+          hsn_code: row.hsn_code,
+          product_type: row.product_type_name,
+          manufacturer: row.manufacturer_name,
+          unit: row.unit_name,
+          act_qty: parseFloat(row.Act_Qty || 0),       // ✅ per-step qty
+          total_qty: parseFloat(row.Atc_total || 0),   // ✅ total consumed qty
 
-        quantity_consumed: parseFloat(row.Act_Qty),
-        consumed_at: row.created_at,
-      });
-    }
-
-
-    /* 6. Group work rows by month and attach products */
-    const monthBuckets = {};
-
-
-    for (const wp of workRows) {
-      const monthKey = wp.year_month_sort;
-
-
-      if (!monthBuckets[monthKey]) {
-        monthBuckets[monthKey] = {
-          month_year: wp.month_year,
-          year_month: wp.year_month_sort,
-          work_progress_entries: [],
-          summary: {
-            total_entries: 0,
-            total_progress: 0,
-            total_packets: 0,
-            total_materials_used: 0,
-           // total_products_consumed: 0,
-          },
-        };
+          quantity_consumed: parseFloat(row.Act_Qty),
+          consumed_at: row.created_at,
+        });
       }
 
 
-      const entry = {
-        work_progress_site_id: wp.work_progress_site_id,
-        date: wp.date,
-        project_site: {
-          site_id: wp.project_site_id,
-          site_name: wp.project_site_name,
-          city: wp.site_city_name,
-          state: wp.site_state_name,
-        },
-        bom: {
-          bom_id: wp.bom_id,
-          bom_name: wp.bom_name,
-        },
-        bom_progress: {
-          progress_id: wp.bom_progress_id,
-          progress_name: wp.bom_progress_name,
-          sl_number: wp.progress_sl_number,
-        },
-        work_details: {
-          remarks: wp.remarks,
-          total_progress: parseFloat(wp.total_progress || 0),
-          rep_task: wp.rep_task,
-          packet_qty: parseFloat(wp.packet_qty || 0),
-          total_qty_of_material_used: parseFloat(wp.total_qty_of_material_used || 0),
-        },
-        consumed_products: productsByWorkId[wp.work_progress_site_id] || [],
-        created_by: {
-          user_id: wp.created_by,
-          user_name: wp.creator_name,
-          user_email: wp.creator_email,
-        },
-        timestamps: {
-          created_at: wp.created_at,
-          updated_at: wp.updated_at,
-        },
+      /* 6. Group work rows by month and attach products */
+      const monthBuckets = {};
+
+
+      for (const wp of workRows) {
+        const monthKey = wp.year_month_sort;
+
+
+        if (!monthBuckets[monthKey]) {
+          monthBuckets[monthKey] = {
+            month_year: wp.month_year,
+            year_month: wp.year_month_sort,
+            work_progress_entries: [],
+            summary: {
+              total_entries: 0,
+              total_progress: 0,
+              total_packets: 0,
+              total_materials_used: 0,
+              // total_products_consumed: 0,
+            },
+          };
+        }
+
+
+        const entry = {
+          work_progress_site_id: wp.work_progress_site_id,
+          date: wp.date,
+          project_site: {
+            site_id: wp.project_site_id,
+            site_name: wp.project_site_name,
+            city: wp.site_city_name,
+            state: wp.site_state_name,
+          },
+          bom: {
+            bom_id: wp.bom_id,
+            bom_name: wp.bom_name,
+          },
+          bom_progress: {
+            progress_id: wp.bom_progress_id,
+            progress_name: wp.bom_progress_name,
+            sl_number: wp.progress_sl_number,
+          },
+          work_details: {
+            remarks: wp.remarks,
+            total_progress: parseFloat(wp.total_progress || 0),
+            rep_task: wp.rep_task,
+            packet_qty: parseFloat(wp.packet_qty || 0),
+            total_qty_of_material_used: parseFloat(wp.total_qty_of_material_used || 0),
+          },
+          consumed_products: productsByWorkId[wp.work_progress_site_id] || [],
+          created_by: {
+            user_id: wp.created_by,
+            user_name: wp.creator_name,
+            user_email: wp.creator_email,
+          },
+          timestamps: {
+            created_at: wp.created_at,
+            updated_at: wp.updated_at,
+          },
+        };
+
+
+        monthBuckets[monthKey].work_progress_entries.push(entry);
+
+
+        monthBuckets[monthKey].summary.total_entries += 1;
+        monthBuckets[monthKey].summary.total_progress += entry.work_details.total_progress;
+        monthBuckets[monthKey].summary.total_packets += entry.work_details.packet_qty;
+        monthBuckets[monthKey].summary.total_materials_used += entry.work_details.total_qty_of_material_used;
+        //monthBuckets[monthKey].summary.total_products_consumed += entry.consumed_products.length;
+      }
+
+
+      const monthly_data = Object.values(monthBuckets).sort((a, b) =>
+        b.year_month.localeCompare(a.year_month)
+      );
+
+
+      /* 7. Build overall summary */
+      const overall_summary = {
+        total_months: monthly_data.length,
+        total_work_entries: workRows.length,
+        total_progress: workRows.reduce(
+          (sum, wp) => sum + parseFloat(wp.total_progress || 0),
+          0
+        ),
+        total_packets: workRows.reduce(
+          (sum, wp) => sum + parseFloat(wp.packet_qty || 0),
+          0
+        ),
+        total_materials_used: workRows.reduce(
+          (sum, wp) => sum + parseFloat(wp.total_qty_of_material_used || 0),
+          0
+        ),
+        // total_products_consumed: consumedRows.length,
+        unique_sites: new Set(workRows.map((wp) => wp.project_site_id)).size,
+        unique_boms: new Set(workRows.map((wp) => wp.bom_id)).size,
       };
 
 
-      monthBuckets[monthKey].work_progress_entries.push(entry);
+      /* 8. Detect duplicate STEPS (BOM Progress) per project site */
+      const stepUsageByProjectSite = {};
 
+      for (const wp of workRows) {
+        const siteId = wp.project_site_id;
+        const stepId = wp.bom_progress_id;
 
-      monthBuckets[monthKey].summary.total_entries += 1;
-      monthBuckets[monthKey].summary.total_progress += entry.work_details.total_progress;
-      monthBuckets[monthKey].summary.total_packets += entry.work_details.packet_qty;
-      monthBuckets[monthKey].summary.total_materials_used += entry.work_details.total_qty_of_material_used;
-      //monthBuckets[monthKey].summary.total_products_consumed += entry.consumed_products.length;
-    }
+        if (!stepUsageByProjectSite[siteId]) {
+          stepUsageByProjectSite[siteId] = {};
+        }
 
+        if (!stepUsageByProjectSite[siteId][stepId]) {
+          stepUsageByProjectSite[siteId][stepId] = {
+            step_id: stepId,
+            step_name: wp.bom_progress_name,
+            sl_number: wp.progress_sl_number,
+            site_id: siteId,
+            site_name: wp.project_site_name,
+            site_city: wp.site_city_name,
+            site_state: wp.site_state_name,
+            usage_count: 0,
+            used_in_boms: []
+          };
+        }
 
-    const monthly_data = Object.values(monthBuckets).sort((a, b) =>
-      b.year_month.localeCompare(a.year_month)
-    );
-
-
-    /* 7. Build overall summary */
-    const overall_summary = {
-      total_months: monthly_data.length,
-      total_work_entries: workRows.length,
-      total_progress: workRows.reduce(
-        (sum, wp) => sum + parseFloat(wp.total_progress || 0),
-        0
-      ),
-      total_packets: workRows.reduce(
-        (sum, wp) => sum + parseFloat(wp.packet_qty || 0),
-        0
-      ),
-      total_materials_used: workRows.reduce(
-        (sum, wp) => sum + parseFloat(wp.total_qty_of_material_used || 0),
-        0
-      ),
-     // total_products_consumed: consumedRows.length,
-      unique_sites: new Set(workRows.map((wp) => wp.project_site_id)).size,
-      unique_boms: new Set(workRows.map((wp) => wp.bom_id)).size,
-    };
-
-
-    /* 8. Detect duplicate STEPS (BOM Progress) per project site */
-    const stepUsageByProjectSite = {};
-
-    for (const wp of workRows) {
-      const siteId = wp.project_site_id;
-      const stepId = wp.bom_progress_id;
-      
-      if (!stepUsageByProjectSite[siteId]) {
-        stepUsageByProjectSite[siteId] = {};
+        stepUsageByProjectSite[siteId][stepId].usage_count += 1;
+        stepUsageByProjectSite[siteId][stepId].used_in_boms.push({
+          work_progress_site_id: wp.work_progress_site_id,
+          date: wp.date,
+          bom_id: wp.bom_id,
+          bom_name: wp.bom_name,
+          remarks: wp.remarks,
+          total_progress: parseFloat(wp.total_progress || 0),
+          packet_qty: parseFloat(wp.packet_qty || 0),
+          total_qty_of_material_used: parseFloat(wp.total_qty_of_material_used || 0),
+          created_by: wp.creator_name
+        });
       }
-      
-      if (!stepUsageByProjectSite[siteId][stepId]) {
-        stepUsageByProjectSite[siteId][stepId] = {
-          step_id: stepId,
-          step_name: wp.bom_progress_name,
-          sl_number: wp.progress_sl_number,
-          site_id: siteId,
-          site_name: wp.project_site_name,
-          site_city: wp.site_city_name,
-          site_state: wp.site_state_name,
-          usage_count: 0,
-          used_in_boms: []
-        };
-      }
-      
-      stepUsageByProjectSite[siteId][stepId].usage_count += 1;
-      stepUsageByProjectSite[siteId][stepId].used_in_boms.push({
-        work_progress_site_id: wp.work_progress_site_id,
-        date: wp.date,
-        bom_id: wp.bom_id,
-        bom_name: wp.bom_name,
-        remarks: wp.remarks,
-        total_progress: parseFloat(wp.total_progress || 0),
-        packet_qty: parseFloat(wp.packet_qty || 0),
-        total_qty_of_material_used: parseFloat(wp.total_qty_of_material_used || 0),
-        created_by: wp.creator_name
-      });
-    }
 
-    // Extract only duplicate steps (used more than once)
-    const duplicate_steps_report = [];
+      // Extract only duplicate steps (used more than once)
+      const duplicate_steps_report = [];
 
-    for (const siteId in stepUsageByProjectSite) {
-      for (const stepId in stepUsageByProjectSite[siteId]) {
-        const stepData = stepUsageByProjectSite[siteId][stepId];
-        
-        if (stepData.usage_count > 1) {
-          duplicate_steps_report.push({
-            project_site: {
-              site_id: stepData.site_id,
-              site_name: stepData.site_name,
-              city: stepData.site_city,
-              state: stepData.site_state
-            },
-            step: {
-              step_id: stepData.step_id,
-              step_name: stepData.step_name,
-              sl_number: stepData.sl_number
-            },
-            duplicate_count: stepData.usage_count,
-            used_in_boms: stepData.used_in_boms.sort((a, b) => 
-              new Date(b.date) - new Date(a.date)
-            )
-          });
+      for (const siteId in stepUsageByProjectSite) {
+        for (const stepId in stepUsageByProjectSite[siteId]) {
+          const stepData = stepUsageByProjectSite[siteId][stepId];
+
+          if (stepData.usage_count > 1) {
+            duplicate_steps_report.push({
+              project_site: {
+                site_id: stepData.site_id,
+                site_name: stepData.site_name,
+                city: stepData.site_city,
+                state: stepData.site_state
+              },
+              step: {
+                step_id: stepData.step_id,
+                step_name: stepData.step_name,
+                sl_number: stepData.sl_number
+              },
+              duplicate_count: stepData.usage_count,
+              used_in_boms: stepData.used_in_boms.sort((a, b) =>
+                new Date(b.date) - new Date(a.date)
+              )
+            });
+          }
         }
       }
-    }
 
-    // Sort by duplicate count (highest first)
-    duplicate_steps_report.sort((a, b) => b.duplicate_count - a.duplicate_count);
-
-
-    /* 9. Final response */
-    return res.status(200).json({
-      success: true,
-      message: "Monthly work report generated successfully",
-      report_info: {
-        project,
-        from_date: fromDate,
-        to_date: toDate,
-        report_period: `${dayjs(fromDate).format("DD MMM YYYY")} to ${dayjs(toDate).format(
-          "DD MMM YYYY"
-        )}`,
-        generated_at: dayjs().format("YYYY-MM-DD HH:mm:ss"),
-      },
-      overall_summary,
-      monthly_data,
-      duplicate_steps_analysis: {
-        total_duplicate_steps_found: duplicate_steps_report.length,
-        duplicate_steps: duplicate_steps_report
-      }
-    });
-  } catch (error) {
-    console.error("Error generating monthly work report:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to generate monthly work report",
-      error: error.message,
-    });
-  }
-};
+      // Sort by duplicate count (highest first)
+      duplicate_steps_report.sort((a, b) => b.duplicate_count - a.duplicate_count);
 
 
-////////////////////////////////////////////////////
-
-
-getBomItemsByProjectAndSiteForComparison = async (req, res) => {
-  try {
-    const { project_id, project_site_id } = req.body;
-
-    if (!project_id || !project_site_id) {
-      return res.status(400).json({
+      /* 9. Final response */
+      return res.status(200).json({
+        success: true,
+        message: "Monthly work report generated successfully",
+        report_info: {
+          project,
+          from_date: fromDate,
+          to_date: toDate,
+          report_period: `${dayjs(fromDate).format("DD MMM YYYY")} to ${dayjs(toDate).format(
+            "DD MMM YYYY"
+          )}`,
+          generated_at: dayjs().format("YYYY-MM-DD HH:mm:ss"),
+        },
+        overall_summary,
+        monthly_data,
+        duplicate_steps_analysis: {
+          total_duplicate_steps_found: duplicate_steps_report.length,
+          duplicate_steps: duplicate_steps_report
+        }
+      });
+    } catch (error) {
+      console.error("Error generating monthly work report:", error);
+      return res.status(500).json({
         success: false,
-        message: "project_id and project_site_id are required",
+        message: "Failed to generate monthly work report",
+        error: error.message,
       });
     }
+  };
 
-    const sql = `
+
+  ////////////////////////////////////////////////////
+
+
+  getBomItemsByProjectAndSiteForComparison = async (req, res) => {
+    try {
+      const { project_id, project_site_id } = req.body;
+
+      if (!project_id || !project_site_id) {
+        return res.status(400).json({
+          success: false,
+          message: "project_id and project_site_id are required",
+        });
+      }
+
+      const sql = `
       SELECT 
           bi.product_id,
           p.product_name,
@@ -1098,39 +1285,39 @@ getBomItemsByProjectAndSiteForComparison = async (req, res) => {
       ORDER BY bi.product_id;
     `;
 
-    const rows = await customSelectSqlQuery2(sql, [
-      project_id,
-      project_site_id,
-    ]);
+      const rows = await customSelectSqlQuery2(sql, [
+        project_id,
+        project_site_id,
+      ]);
 
-    return res.status(200).json({
-      success: true,
-      data: rows,
-    });
+      return res.status(200).json({
+        success: true,
+        data: rows,
+      });
 
-  } catch (error) {
-    console.error("FETCH GROUPED BOM ITEMS ERROR:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Unable to fetch grouped BOM items",
-    });
-  }
-};
-//////*************** */
-
-
-getBomItemsByProjectComparisonData = async (req, res) => {
-  try {
-    const { project_id, project_site_id } = req.body;
-
-    if (!project_id || !project_site_id) {
-      return res.status(400).json({
+    } catch (error) {
+      console.error("FETCH GROUPED BOM ITEMS ERROR:", error);
+      return res.status(500).json({
         success: false,
-        message: "project_id and project_site_id are required"
+        message: "Unable to fetch grouped BOM items",
       });
     }
+  };
+  //////*************** */
 
-    const sql = `
+
+  getBomItemsByProjectComparisonData = async (req, res) => {
+    try {
+      const { project_id, project_site_id } = req.body;
+
+      if (!project_id || !project_site_id) {
+        return res.status(400).json({
+          success: false,
+          message: "project_id and project_site_id are required"
+        });
+      }
+
+      const sql = `
       SELECT 
         t.project_id,
         p.project_name,
@@ -1168,92 +1355,92 @@ getBomItemsByProjectComparisonData = async (req, res) => {
       ORDER BY t.bom_id, bp.sl_number, bi.bom_item_id
     `;
 
-    const rows = await customSelectSqlQuery2(sql, [
-      project_id,
-      project_site_id
-    ]);
+      const rows = await customSelectSqlQuery2(sql, [
+        project_id,
+        project_site_id
+      ]);
 
-    const map = new Map();
+      const map = new Map();
 
-    for (const row of rows) {
+      for (const row of rows) {
 
-      if (!map.has(row.bom_id)) {
-        map.set(row.bom_id, {
-          project_id: row.project_id,
-          project_name: row.project_name,
-          site_id: row.site_id,
-          site_name: row.project_site_name,
-          bom_id: row.bom_id,
-          bom_name: row.bom_name,
-          rep_task: row.rep_task,
-          progresses: new Map()
-        });
+        if (!map.has(row.bom_id)) {
+          map.set(row.bom_id, {
+            project_id: row.project_id,
+            project_name: row.project_name,
+            site_id: row.site_id,
+            site_name: row.project_site_name,
+            bom_id: row.bom_id,
+            bom_name: row.bom_name,
+            rep_task: row.rep_task,
+            progresses: new Map()
+          });
+        }
+
+        const bom = map.get(row.bom_id);
+
+        if (row.bom_progress_id && !bom.progresses.has(row.bom_progress_id)) {
+          bom.progresses.set(row.bom_progress_id, {
+            bom_progress_id: row.bom_progress_id,
+            bom_progress_name: row.bom_progress_name,
+            items: []
+          });
+        }
+
+        if (row.bom_progress_id && row.product_name) {
+
+          const totalQty = Number(row.total_qty || 0);
+          const repTask = Number(row.rep_task || 0);
+
+          bom.progresses.get(row.bom_progress_id).items.push({
+            total_qty: totalQty,
+            product_name: row.product_name,
+            unit: row.unit_name,
+            product_type_id: row.product_type_id,
+
+            // ✅ THIS IS YOUR REQUIRED VALUE
+            calculated_total_qty: totalQty * repTask
+          });
+        }
       }
 
-      const bom = map.get(row.bom_id);
-
-      if (row.bom_progress_id && !bom.progresses.has(row.bom_progress_id)) {
-        bom.progresses.set(row.bom_progress_id, {
-          bom_progress_id: row.bom_progress_id,
-          bom_progress_name: row.bom_progress_name,
-          items: []
-        });
+      const result = [];
+      for (const bom of map.values()) {
+        bom.progresses = Array.from(bom.progresses.values());
+        result.push(bom);
       }
 
-      if (row.bom_progress_id && row.product_name) {
+      return res.status(200).json({
+        success: true,
+        data: result
+      });
 
-        const totalQty = Number(row.total_qty || 0);
-        const repTask = Number(row.rep_task || 0);
-
-        bom.progresses.get(row.bom_progress_id).items.push({
-          total_qty: totalQty,
-          product_name: row.product_name,
-          unit: row.unit_name,
-          product_type_id: row.product_type_id,
-
-          // ✅ THIS IS YOUR REQUIRED VALUE
-          calculated_total_qty: totalQty * repTask
-        });
-      }
-    }
-
-    const result = [];
-    for (const bom of map.values()) {
-      bom.progresses = Array.from(bom.progresses.values());
-      result.push(bom);
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: result
-    });
-
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({
-      success: false,
-      message: "Unable to fetch BOM comparison data"
-    });
-  }
-};
-/******** */
-
-
-/////////////////////
-
-
-getUsedQuantityTillDate = async (req, res) => {
-  try {
-    const { project_id, project_site_id } = req.body;
-
-    if (!project_id || !project_site_id) {
-      return res.status(400).json({
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
         success: false,
-        message: "project_id and project_site_id are required",
+        message: "Unable to fetch BOM comparison data"
       });
     }
+  };
+  /******** */
 
-    const sql = `
+
+  /////////////////////
+
+
+  getUsedQuantityTillDate = async (req, res) => {
+    try {
+      const { project_id, project_site_id } = req.body;
+
+      if (!project_id || !project_site_id) {
+        return res.status(400).json({
+          success: false,
+          message: "project_id and project_site_id are required",
+        });
+      }
+
+      const sql = `
       SELECT 
         sui.product_id,
         pr.product_name,
@@ -1324,404 +1511,404 @@ getUsedQuantityTillDate = async (req, res) => {
         sui.product_id
     `;
 
-    const rows = await customSelectSqlQuery2(sql, [
-      project_id,
-      project_site_id,
-    ]);
+      const rows = await customSelectSqlQuery2(sql, [
+        project_id,
+        project_site_id,
+      ]);
 
-    const bomMap = new Map();
+      const bomMap = new Map();
 
-    for (const row of rows) {
-      if (!bomMap.has(row.bom_id)) {
-        bomMap.set(row.bom_id, {
-          bom_id: row.bom_id,
-          bom_name: row.bom_name,
-          progresses: new Map(),
+      for (const row of rows) {
+        if (!bomMap.has(row.bom_id)) {
+          bomMap.set(row.bom_id, {
+            bom_id: row.bom_id,
+            bom_name: row.bom_name,
+            progresses: new Map(),
+          });
+        }
+
+        const bom = bomMap.get(row.bom_id);
+
+        if (!bom.progresses.has(row.bom_progress_id)) {
+          bom.progresses.set(row.bom_progress_id, {
+            bom_progress_id: row.bom_progress_id,
+            bom_progress_name: row.bom_progress_name,
+            products: [],
+          });
+        }
+
+        const estimatedQty = Number(row.total_required_qty || 0);
+        const usedQty = Number(row.total_used_qty || 0);
+
+        bom.progresses.get(row.bom_progress_id).products.push({
+          product_id: row.product_id,
+          product_name: row.product_name,
+          unit_name: row.unit_name,
+
+          // Estimation Qty
+          estimated_qty: estimatedQty,
+
+          // Actual Used Qty
+          total_used_qty: usedQty,
+
+          // BOM Qty Used
+          total_bom_product_qty: Number(
+            row.total_bom_product_qty || 0
+          ),
+
+          // Remaining
+          remaining_qty: estimatedQty - usedQty,
+
+          // Over Consumption Flag
+          is_exceeded: usedQty > estimatedQty,
+
+          over_used_qty:
+            usedQty > estimatedQty
+              ? usedQty - estimatedQty
+              : 0,
+
+          entry_count: Number(row.entry_count || 0),
         });
       }
 
-      const bom = bomMap.get(row.bom_id);
+      const result = [];
 
-      if (!bom.progresses.has(row.bom_progress_id)) {
-        bom.progresses.set(row.bom_progress_id, {
-          bom_progress_id: row.bom_progress_id,
-          bom_progress_name: row.bom_progress_name,
-          products: [],
-        });
+      for (const bom of bomMap.values()) {
+        bom.progresses = Array.from(bom.progresses.values());
+        result.push(bom);
       }
 
-      const estimatedQty = Number(row.total_required_qty || 0);
-      const usedQty = Number(row.total_used_qty || 0);
-
-      bom.progresses.get(row.bom_progress_id).products.push({
-        product_id: row.product_id,
-        product_name: row.product_name,
-        unit_name: row.unit_name,
-
-        // Estimation Qty
-        estimated_qty: estimatedQty,
-
-        // Actual Used Qty
-        total_used_qty: usedQty,
-
-        // BOM Qty Used
-        total_bom_product_qty: Number(
-          row.total_bom_product_qty || 0
-        ),
-
-        // Remaining
-        remaining_qty: estimatedQty - usedQty,
-
-        // Over Consumption Flag
-        is_exceeded: usedQty > estimatedQty,
-
-        over_used_qty:
-          usedQty > estimatedQty
-            ? usedQty - estimatedQty
-            : 0,
-
-        entry_count: Number(row.entry_count || 0),
+      return res.status(200).json({
+        success: true,
+        data: result,
       });
-    }
 
-    const result = [];
+    } catch (error) {
+      console.error("GET USED QTY TILL DATE ERROR:", error);
 
-    for (const bom of bomMap.values()) {
-      bom.progresses = Array.from(bom.progresses.values());
-      result.push(bom);
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: result,
-    });
-
-  } catch (error) {
-    console.error("GET USED QTY TILL DATE ERROR:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Unable to fetch used quantity till date",
-    });
-  }
-};
-/////////
-
-
-/////////////////////////////////////
-
-
-
-// getWorkProgressByProjectAndSite = async (req, res) => { 
-//   try {
-//     const { project_id, project_site_id } = req.body;
-
-//     if (!project_id || !project_site_id) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "project_id and project_site_id are required",
-//       });
-//     }
- 
-//     const sql = `
-//       SELECT DISTINCT
-//           w.work_progress_site_id,
-//           w.project_id,
-//           w.project_site_id,
-//           w.bom_id,
-//           w.bom_progress_id,
-//           w.remarks,
-//           w.total_progress,
-//           w.rep_task,
-//           w.packet_qty,
-//           w.total_qty_of_material_used,
-//           w.date,
-//           w.created_at,
-//           w.updated_at,
-//           w.created_by,
-
-//           CONCAT(e.first_name, ' ', e.last_name) AS created_by_name,
-//           p.project_name,
-//           s.project_site_name,
-//           b.bom_name,
-
-//           bi.bom_item_id,
-//           bi.bom_progress_id AS bom_item_progress_id,
-//           bi.product_id AS bom_product_id,
-//           bi.qty AS bom_item_qty,
-//           bi.total_qty AS bom_item_total_qty,
-
-//           bp.bom_progress_name AS bom_progress_name,
-
-//           pr.product_name
-
-//       FROM tx_work_progress w
-//       LEFT JOIN md_project p ON w.project_id = p.project_id
-//       LEFT JOIN md_project_site s ON w.project_site_id = s.project_site_id
-//       LEFT JOIN md_bom b ON w.bom_id = b.bom_id
-//       LEFT JOIN em_employees e ON w.created_by = e.employee_id
-
-//       -- FIXED JOIN ↓↓↓
-//       LEFT JOIN md_bom_item bi 
-//              ON bi.bom_id = w.bom_id
-//             AND bi.bom_progress_id = w.bom_progress_id  -- IMPORTANT JOIN FIX
-
-//       LEFT JOIN md_bom_progress bp 
-//              ON w.bom_progress_id = bp.bom_progress_id 
-
-//       LEFT JOIN md_product pr 
-//              ON bi.product_id = pr.product_id
-
-//       WHERE w.project_id = ${project_id}
-//         AND w.project_site_id = ${project_site_id}
-
-//       ORDER BY w.bom_id, w.bom_progress_id, bi.bom_item_id;
-//     `;
-
-//     const rows = await customSelectSqlQuery(sql);
-
-//     return res.status(200).json({
-//       success: true,
-//       data: rows,
-//     });
-//   } catch (err) {
-//     console.error("FETCH ERROR:", err);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Unable to fetch work progress",
-//     });
-//   }
-// };
-
-
-
-// getWorkProgressByProjectAndSite = async (req, res) => {
-//   try {
-//     const { project_id, project_site_id } = req.body;
-
-//     if (!project_id || !project_site_id) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "project_id and project_site_id are required",
-//       });
-//     }
-
-//     const sql = `
-//       SELECT DISTINCT
-//           w.work_progress_site_id,
-//           w.project_id,
-//           w.project_site_id,
-//           w.bom_id,
-//           w.bom_progress_id,
-//           w.remarks,
-//           w.total_progress,
-//           w.rep_task,
-//           w.packet_qty,
-//           w.total_qty_of_material_used,
-//           w.date,
-//           w.created_at,
-//           w.updated_at,
-
-//           p.project_name,
-//           s.project_site_name,
-//           b.bom_name,
-
-//           bi.bom_item_id,
-//           bi.bom_progress_id AS bom_item_progress_id,
-//           bi.product_id AS bom_product_id,
-//           bi.qty AS bom_item_qty,
-//           bi.total_qty AS bom_item_total_qty,
-
-//           bp.bom_progress_name AS bom_progress_name,
-//           pr.product_name,
-
-//           t.project_estimation_id,
-//           t.billing_id,
-//           t.rep_task AS estimated_rep_task,
-//           t.bom_price,
-//           t.bom_unit,
-//           t.bom_value_unit,
-
-//           pb.project_work_description,
-//           pb.unit AS billing_unit,
-//           pb.hsn_code
-
-//       FROM tx_work_progress w
-//       LEFT JOIN md_project p ON w.project_id = p.project_id
-//       LEFT JOIN md_project_site s ON w.project_site_id = s.project_site_id
-//       LEFT JOIN md_bom b ON w.bom_id = b.bom_id
-
-//       LEFT JOIN md_bom_item bi 
-//              ON bi.bom_id = w.bom_id
-//             AND bi.bom_progress_id = w.bom_progress_id
-
-//       LEFT JOIN md_bom_progress bp 
-//              ON w.bom_progress_id = bp.bom_progress_id 
-
-//       LEFT JOIN md_product pr 
-//              ON bi.product_id = pr.product_id
-
-//       LEFT JOIN tx_project_details_with_estimation t
-//              ON t.project_id = w.project_id
-//             AND t.bom_id = w.bom_id
-//             AND t.site_id = w.project_site_id
-
-//       LEFT JOIN md_project_billing pb
-//              ON pb.billing_id = t.billing_id
-
-//       WHERE w.project_id = ?
-//         AND w.project_site_id = ?
-
-//       ORDER BY w.bom_id, w.bom_progress_id, w.work_progress_site_id, bi.bom_item_id;
-//     `;
-
-//     const rows = await customSelectSqlQuery2(sql, [project_id, project_site_id]);
-
-//     /* ---------------- GROUP ROWS BY work_progress_site_id ---------------- */
-//     const workProgressMap = new Map();
-
-//     for (const row of rows) {
-//       const key = row.work_progress_site_id;
-
-//       if (!workProgressMap.has(key)) {
-//         workProgressMap.set(key, {
-//           work_progress_site_id: row.work_progress_site_id,
-//           project_id: row.project_id,
-//           project_site_id: row.project_site_id,
-//           bom_id: row.bom_id,
-//           bom_progress_id: row.bom_progress_id,
-//           remarks: row.remarks,
-//           total_progress: row.total_progress,
-//           rep_task: row.rep_task,
-//           packet_qty: row.packet_qty,
-//           total_qty_of_material_used: row.total_qty_of_material_used,
-//           date: row.date,
-//           created_at: row.created_at,
-//           updated_at: row.updated_at,
-
-//           project_name: row.project_name,
-//           project_site_name: row.project_site_name,
-//           bom_name: row.bom_name,
-//           bom_progress_name: row.bom_progress_name,
-
-//           project_estimation_id: row.project_estimation_id,
-//           billing_id: row.billing_id,
-//           estimated_rep_task: row.estimated_rep_task,
-//           bom_price: row.bom_price,
-//           bom_unit: row.bom_unit,
-//           bom_value_unit: row.bom_value_unit,
-
-//           project_work_description: row.project_work_description,
-//           billing_unit: row.billing_unit,
-//           hsn_code: row.hsn_code,
-
-//           bom_items: [],
-//         });
-//       }
-
-//       const entry = workProgressMap.get(key);
-
-//       if (row.bom_item_id != null) {
-//         const alreadyAdded = entry.bom_items.some(
-//           (i) => i.bom_item_id === row.bom_item_id
-//         );
-
-//         if (!alreadyAdded) {
-//           entry.bom_items.push({
-//             bom_item_id: row.bom_item_id,
-//             bom_item_progress_id: row.bom_item_progress_id,
-//             product_id: row.bom_product_id,
-//             product_name: row.product_name,
-//             qty: row.bom_item_qty,
-//             total_qty: row.bom_item_total_qty,
-//           });
-//         }
-//       }
-//     }
-
-//     const data = Array.from(workProgressMap.values());
-
-//     return res.status(200).json({
-//       success: true,
-//       data,
-//     });
-//   } catch (err) {
-//     console.error("FETCH ERROR:", err);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Unable to fetch work progress",
-//     });
-//   }
-// };
-
-
-
-
-getWorkProgressByProjectAndSite = async (req, res) => {
-  try {
-    const { project_id, project_site_id } = req.body;
-
-    if (!project_id || !project_site_id) {
-      return res.status(400).json({
+      return res.status(500).json({
         success: false,
-        message: "project_id and project_site_id are required",
+        message: "Unable to fetch used quantity till date",
       });
     }
+  };
+  /////////
 
-    /* ---------------- BOM STRUCTURE DATA ---------------- */
-    // const bomSql = `
-    //   SELECT
-    //     t.project_estimation_id,
-    //     t.project_id,
-    //     p.project_name,
-    //     t.site_id,
-    //     s.project_site_name,
-    //     t.bom_id,
-    //     b.bom_name,
-    //     t.rep_task,
-    //     t.billing_id,
-    //     t.bom_price,
-    //     t.bom_unit,
-    //     t.bom_value_unit,
 
-    //     pb.project_work_description,
-    //     pb.unit AS billing_unit,
-
-    //     bp.bom_progress_id,
-    //     bp.bom_progress_name,
-    //     bp.sl_number,
-
-    //     bi.bom_item_id,
-    //     bi.product_id,
-    //     bi.qty AS per_unit_qty,
-    //     bi.total_qty,
-
-    //     pr.product_name,
-    //     pr.product_type_id,
-    //     pr.hsn_code,
-    //     uom.unit_name AS unit
-
-    //   FROM tx_project_details_with_estimation t
-    //   LEFT JOIN md_project p ON t.project_id = p.project_id
-    //   LEFT JOIN md_project_site s ON t.site_id = s.project_site_id
-    //   LEFT JOIN md_bom b ON t.bom_id = b.bom_id
-    //   LEFT JOIN md_project_billing pb ON t.billing_id = pb.billing_id
-    //   LEFT JOIN md_bom_progress bp ON t.bom_id = bp.bom_id
-    //   LEFT JOIN md_bom_item bi 
-    //     ON bp.bom_progress_id = bi.bom_progress_id
-    //    AND t.bom_id = bi.bom_id
-    //   LEFT JOIN md_product pr ON bi.product_id = pr.product_id
-    //   LEFT JOIN md_unit uom ON pr.unit_id = uom.unit_id
-
-    //   WHERE t.project_id = ?
-    //     AND t.site_id = ?
-
-    //   ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
-    // `;
+  /////////////////////////////////////
 
 
 
-    const bomSql = `
+  // getWorkProgressByProjectAndSite = async (req, res) => { 
+  //   try {
+  //     const { project_id, project_site_id } = req.body;
+
+  //     if (!project_id || !project_site_id) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "project_id and project_site_id are required",
+  //       });
+  //     }
+
+  //     const sql = `
+  //       SELECT DISTINCT
+  //           w.work_progress_site_id,
+  //           w.project_id,
+  //           w.project_site_id,
+  //           w.bom_id,
+  //           w.bom_progress_id,
+  //           w.remarks,
+  //           w.total_progress,
+  //           w.rep_task,
+  //           w.packet_qty,
+  //           w.total_qty_of_material_used,
+  //           w.date,
+  //           w.created_at,
+  //           w.updated_at,
+  //           w.created_by,
+
+  //           CONCAT(e.first_name, ' ', e.last_name) AS created_by_name,
+  //           p.project_name,
+  //           s.project_site_name,
+  //           b.bom_name,
+
+  //           bi.bom_item_id,
+  //           bi.bom_progress_id AS bom_item_progress_id,
+  //           bi.product_id AS bom_product_id,
+  //           bi.qty AS bom_item_qty,
+  //           bi.total_qty AS bom_item_total_qty,
+
+  //           bp.bom_progress_name AS bom_progress_name,
+
+  //           pr.product_name
+
+  //       FROM tx_work_progress w
+  //       LEFT JOIN md_project p ON w.project_id = p.project_id
+  //       LEFT JOIN md_project_site s ON w.project_site_id = s.project_site_id
+  //       LEFT JOIN md_bom b ON w.bom_id = b.bom_id
+  //       LEFT JOIN em_employees e ON w.created_by = e.employee_id
+
+  //       -- FIXED JOIN ↓↓↓
+  //       LEFT JOIN md_bom_item bi 
+  //              ON bi.bom_id = w.bom_id
+  //             AND bi.bom_progress_id = w.bom_progress_id  -- IMPORTANT JOIN FIX
+
+  //       LEFT JOIN md_bom_progress bp 
+  //              ON w.bom_progress_id = bp.bom_progress_id 
+
+  //       LEFT JOIN md_product pr 
+  //              ON bi.product_id = pr.product_id
+
+  //       WHERE w.project_id = ${project_id}
+  //         AND w.project_site_id = ${project_site_id}
+
+  //       ORDER BY w.bom_id, w.bom_progress_id, bi.bom_item_id;
+  //     `;
+
+  //     const rows = await customSelectSqlQuery(sql);
+
+  //     return res.status(200).json({
+  //       success: true,
+  //       data: rows,
+  //     });
+  //   } catch (err) {
+  //     console.error("FETCH ERROR:", err);
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Unable to fetch work progress",
+  //     });
+  //   }
+  // };
+
+
+
+  // getWorkProgressByProjectAndSite = async (req, res) => {
+  //   try {
+  //     const { project_id, project_site_id } = req.body;
+
+  //     if (!project_id || !project_site_id) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "project_id and project_site_id are required",
+  //       });
+  //     }
+
+  //     const sql = `
+  //       SELECT DISTINCT
+  //           w.work_progress_site_id,
+  //           w.project_id,
+  //           w.project_site_id,
+  //           w.bom_id,
+  //           w.bom_progress_id,
+  //           w.remarks,
+  //           w.total_progress,
+  //           w.rep_task,
+  //           w.packet_qty,
+  //           w.total_qty_of_material_used,
+  //           w.date,
+  //           w.created_at,
+  //           w.updated_at,
+
+  //           p.project_name,
+  //           s.project_site_name,
+  //           b.bom_name,
+
+  //           bi.bom_item_id,
+  //           bi.bom_progress_id AS bom_item_progress_id,
+  //           bi.product_id AS bom_product_id,
+  //           bi.qty AS bom_item_qty,
+  //           bi.total_qty AS bom_item_total_qty,
+
+  //           bp.bom_progress_name AS bom_progress_name,
+  //           pr.product_name,
+
+  //           t.project_estimation_id,
+  //           t.billing_id,
+  //           t.rep_task AS estimated_rep_task,
+  //           t.bom_price,
+  //           t.bom_unit,
+  //           t.bom_value_unit,
+
+  //           pb.project_work_description,
+  //           pb.unit AS billing_unit,
+  //           pb.hsn_code
+
+  //       FROM tx_work_progress w
+  //       LEFT JOIN md_project p ON w.project_id = p.project_id
+  //       LEFT JOIN md_project_site s ON w.project_site_id = s.project_site_id
+  //       LEFT JOIN md_bom b ON w.bom_id = b.bom_id
+
+  //       LEFT JOIN md_bom_item bi 
+  //              ON bi.bom_id = w.bom_id
+  //             AND bi.bom_progress_id = w.bom_progress_id
+
+  //       LEFT JOIN md_bom_progress bp 
+  //              ON w.bom_progress_id = bp.bom_progress_id 
+
+  //       LEFT JOIN md_product pr 
+  //              ON bi.product_id = pr.product_id
+
+  //       LEFT JOIN tx_project_details_with_estimation t
+  //              ON t.project_id = w.project_id
+  //             AND t.bom_id = w.bom_id
+  //             AND t.site_id = w.project_site_id
+
+  //       LEFT JOIN md_project_billing pb
+  //              ON pb.billing_id = t.billing_id
+
+  //       WHERE w.project_id = ?
+  //         AND w.project_site_id = ?
+
+  //       ORDER BY w.bom_id, w.bom_progress_id, w.work_progress_site_id, bi.bom_item_id;
+  //     `;
+
+  //     const rows = await customSelectSqlQuery2(sql, [project_id, project_site_id]);
+
+  //     /* ---------------- GROUP ROWS BY work_progress_site_id ---------------- */
+  //     const workProgressMap = new Map();
+
+  //     for (const row of rows) {
+  //       const key = row.work_progress_site_id;
+
+  //       if (!workProgressMap.has(key)) {
+  //         workProgressMap.set(key, {
+  //           work_progress_site_id: row.work_progress_site_id,
+  //           project_id: row.project_id,
+  //           project_site_id: row.project_site_id,
+  //           bom_id: row.bom_id,
+  //           bom_progress_id: row.bom_progress_id,
+  //           remarks: row.remarks,
+  //           total_progress: row.total_progress,
+  //           rep_task: row.rep_task,
+  //           packet_qty: row.packet_qty,
+  //           total_qty_of_material_used: row.total_qty_of_material_used,
+  //           date: row.date,
+  //           created_at: row.created_at,
+  //           updated_at: row.updated_at,
+
+  //           project_name: row.project_name,
+  //           project_site_name: row.project_site_name,
+  //           bom_name: row.bom_name,
+  //           bom_progress_name: row.bom_progress_name,
+
+  //           project_estimation_id: row.project_estimation_id,
+  //           billing_id: row.billing_id,
+  //           estimated_rep_task: row.estimated_rep_task,
+  //           bom_price: row.bom_price,
+  //           bom_unit: row.bom_unit,
+  //           bom_value_unit: row.bom_value_unit,
+
+  //           project_work_description: row.project_work_description,
+  //           billing_unit: row.billing_unit,
+  //           hsn_code: row.hsn_code,
+
+  //           bom_items: [],
+  //         });
+  //       }
+
+  //       const entry = workProgressMap.get(key);
+
+  //       if (row.bom_item_id != null) {
+  //         const alreadyAdded = entry.bom_items.some(
+  //           (i) => i.bom_item_id === row.bom_item_id
+  //         );
+
+  //         if (!alreadyAdded) {
+  //           entry.bom_items.push({
+  //             bom_item_id: row.bom_item_id,
+  //             bom_item_progress_id: row.bom_item_progress_id,
+  //             product_id: row.bom_product_id,
+  //             product_name: row.product_name,
+  //             qty: row.bom_item_qty,
+  //             total_qty: row.bom_item_total_qty,
+  //           });
+  //         }
+  //       }
+  //     }
+
+  //     const data = Array.from(workProgressMap.values());
+
+  //     return res.status(200).json({
+  //       success: true,
+  //       data,
+  //     });
+  //   } catch (err) {
+  //     console.error("FETCH ERROR:", err);
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Unable to fetch work progress",
+  //     });
+  //   }
+  // };
+
+
+
+
+  getWorkProgressByProjectAndSite = async (req, res) => {
+    try {
+      const { project_id, project_site_id } = req.body;
+
+      if (!project_id || !project_site_id) {
+        return res.status(400).json({
+          success: false,
+          message: "project_id and project_site_id are required",
+        });
+      }
+
+      /* ---------------- BOM STRUCTURE DATA ---------------- */
+      // const bomSql = `
+      //   SELECT
+      //     t.project_estimation_id,
+      //     t.project_id,
+      //     p.project_name,
+      //     t.site_id,
+      //     s.project_site_name,
+      //     t.bom_id,
+      //     b.bom_name,
+      //     t.rep_task,
+      //     t.billing_id,
+      //     t.bom_price,
+      //     t.bom_unit,
+      //     t.bom_value_unit,
+
+      //     pb.project_work_description,
+      //     pb.unit AS billing_unit,
+
+      //     bp.bom_progress_id,
+      //     bp.bom_progress_name,
+      //     bp.sl_number,
+
+      //     bi.bom_item_id,
+      //     bi.product_id,
+      //     bi.qty AS per_unit_qty,
+      //     bi.total_qty,
+
+      //     pr.product_name,
+      //     pr.product_type_id,
+      //     pr.hsn_code,
+      //     uom.unit_name AS unit
+
+      //   FROM tx_project_details_with_estimation t
+      //   LEFT JOIN md_project p ON t.project_id = p.project_id
+      //   LEFT JOIN md_project_site s ON t.site_id = s.project_site_id
+      //   LEFT JOIN md_bom b ON t.bom_id = b.bom_id
+      //   LEFT JOIN md_project_billing pb ON t.billing_id = pb.billing_id
+      //   LEFT JOIN md_bom_progress bp ON t.bom_id = bp.bom_id
+      //   LEFT JOIN md_bom_item bi 
+      //     ON bp.bom_progress_id = bi.bom_progress_id
+      //    AND t.bom_id = bi.bom_id
+      //   LEFT JOIN md_product pr ON bi.product_id = pr.product_id
+      //   LEFT JOIN md_unit uom ON pr.unit_id = uom.unit_id
+
+      //   WHERE t.project_id = ?
+      //     AND t.site_id = ?
+
+      //   ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
+      // `;
+
+
+
+      const bomSql = `
       SELECT
         t.project_estimation_id,
         t.project_id,
@@ -1774,14 +1961,14 @@ getWorkProgressByProjectAndSite = async (req, res) => {
     `;
 
 
-    /* ---------------- MATERIAL USED PER WORK-PROGRESS ENTRY ---------------- */
-    // FIX: DATE_FORMAT forces MySQL to return a plain 'YYYY-MM-DD' STRING,
-    // instead of DATE(...) which many drivers (e.g. mysql2 without
-    // `dateStrings: true`) hand back as a JS Date object. Comparing a Date
-    // object to a string with !== always returns true, which is why
-    // bom_completed_today was always coming back as 0 previously.
-    // ⚠️ Replace w.created_at below with your actual date column if different.
-    const materialSql = `
+      /* ---------------- MATERIAL USED PER WORK-PROGRESS ENTRY ---------------- */
+      // FIX: DATE_FORMAT forces MySQL to return a plain 'YYYY-MM-DD' STRING,
+      // instead of DATE(...) which many drivers (e.g. mysql2 without
+      // `dateStrings: true`) hand back as a JS Date object. Comparing a Date
+      // object to a string with !== always returns true, which is why
+      // bom_completed_today was always coming back as 0 previously.
+      // ⚠️ Replace w.created_at below with your actual date column if different.
+      const materialSql = `
       SELECT
         w.work_progress_site_id,
         w.bom_id,
@@ -1802,291 +1989,291 @@ getWorkProgressByProjectAndSite = async (req, res) => {
         si.product_id
     `;
 
-    // FIX: derive "today" from the DATABASE's own clock (same source as
-    // created_at), not from Node's `new Date()`. If the app server and DB
-    // server ever run in different timezones, computing "today" locally in
-    // Node can silently put today's rows in the wrong bucket. Also returned
-    // as a plain string via DATE_FORMAT so it's directly comparable.
-    const todaySql = `SELECT DATE_FORMAT(NOW(), '%Y-%m-%d') AS today_date`;
+      // FIX: derive "today" from the DATABASE's own clock (same source as
+      // created_at), not from Node's `new Date()`. If the app server and DB
+      // server ever run in different timezones, computing "today" locally in
+      // Node can silently put today's rows in the wrong bucket. Also returned
+      // as a plain string via DATE_FORMAT so it's directly comparable.
+      const todaySql = `SELECT DATE_FORMAT(NOW(), '%Y-%m-%d') AS today_date`;
 
-    const [bomRows, materialRows, todayRows] = await Promise.all([
-      customSelectSqlQuery2(bomSql, [project_id, project_site_id]),
-      customSelectSqlQuery2(materialSql, [project_id, project_site_id]),
-      customSelectSqlQuery2(todaySql, []),
-    ]);
+      const [bomRows, materialRows, todayRows] = await Promise.all([
+        customSelectSqlQuery2(bomSql, [project_id, project_site_id]),
+        customSelectSqlQuery2(materialSql, [project_id, project_site_id]),
+        customSelectSqlQuery2(todaySql, []),
+      ]);
 
-    if (!bomRows || bomRows.length === 0) {
+      if (!bomRows || bomRows.length === 0) {
+        return res.status(200).json({
+          success: true,
+          message: "No work progress data found",
+          data: [],
+        });
+      }
+
+      // Safe fallback: if the todaySql call somehow returns nothing, fall back
+      // to Node's own date rather than crashing.
+      const todayStr =
+        (todayRows && todayRows[0] && todayRows[0].today_date) ||
+        new Date().toISOString().slice(0, 10);
+
+      // Start of the current month, e.g. '2026-07-01', derived from the same
+      // DB-clock string used for "today" so both boundaries share one
+      // timezone source. No extra query needed.
+      const monthStartStr = `${todayStr.slice(0, 7)}-01`;
+
+      // Defensive normalizer: guarantees a 'YYYY-MM-DD' string no matter what
+      // the driver/DB gives back (string, Date object, or null), so this code
+      // stays correct even if the SQL/driver config changes later.
+      const normalizeDateStr = (value) => {
+        if (!value) return null;
+        if (typeof value === "string") return value.slice(0, 10);
+        if (value instanceof Date && !isNaN(value.getTime())) {
+          return value.toISOString().slice(0, 10);
+        }
+        return String(value).slice(0, 10);
+      };
+
+      // Safe numeric parser used throughout instead of bare parseFloat, so a
+      // null/undefined/garbage value never turns into NaN and poisons a sum.
+      const toNum = (value, fallback = 0) => {
+        const n = parseFloat(value);
+        return Number.isFinite(n) ? n : fallback;
+      };
+
+      /* ---------------- WORK MAP: bom_id_progress_id_product_id -> [{site, used, date}] ---------------- */
+      const workMap = new Map();
+
+      for (const row of materialRows || []) {
+        if (!row.bom_id || !row.bom_progress_id || !row.product_id) continue;
+
+        const key = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
+
+        if (!workMap.has(key)) {
+          workMap.set(key, []);
+        }
+
+        workMap.get(key).push({
+          work_progress_site_id: row.work_progress_site_id,
+          used: toNum(row.total_material_used, 0),
+          work_date: normalizeDateStr(row.work_date), // always 'YYYY-MM-DD' or null
+        });
+      }
+
+      // FIX: "BOM completed N times" means EVERY individual bom_item line, in
+      // EVERY progress step, has enough material used for N repetitions of
+      // that specific line (using that line's own total_qty as the
+      // per-completion requirement). It is the min across ALL bom_item rows —
+      // never merged/summed across progress steps by product, and never
+      // divided by per_unit_qty. Merging by product previously let a
+      // fast-moving step mask a slow bottleneck step, which both inflated
+      // bom_completed_till_date and made bom_completed_today overcount.
+      //
+      // FIX (composite key): these maps are now keyed by
+      // `${project_estimation_id}_${bom_id}` instead of bare `bom_id`. The
+      // same bom_id can legitimately appear under more than one
+      // project_estimation_id (e.g. the same BOM template reused across
+      // different billing lines / estimations). Keying by bom_id alone would
+      // let their completion counts bleed into each other through the
+      // Math.min merge below. The composite key keeps every BOM instance
+      // isolated.
+      // composite key -> minimum "times completed" across all its bom_item lines
+      const bomCompletedTillDateMin = new Map(); // includes today
+      const bomCompletedYesterdayMin = new Map(); // excludes today
+      const bomCompletedBeforeThisMonthMin = new Map(); // excludes this month
+
+      /* ---------------- BUILD NESTED STRUCTURE ---------------- */
+      const billingMap = new Map();
+
+      for (const row of bomRows) {
+        if (!billingMap.has(row.billing_id)) {
+          billingMap.set(row.billing_id, {
+            billing_id: row.billing_id,
+            project_id: row.project_id,
+            project_name: row.project_name,
+            site_id: row.site_id,
+            site_name: row.project_site_name,
+            project_work_description: row.project_work_description,
+            billing_unit: row.billing_unit,
+            boms: new Map(),
+          });
+        }
+        const billing = billingMap.get(row.billing_id);
+
+        if (!billing.boms.has(row.project_estimation_id)) {
+          billing.boms.set(row.project_estimation_id, {
+            project_estimation_id: row.project_estimation_id,
+            bom_id: row.bom_id,
+            bom_name: row.bom_name,
+            rep_task: row.rep_task,
+            bom_price: row.bom_price,
+            bom_unit: row.bom_unit || null,
+            bom_value_unit: row.bom_value_unit,
+            bom_completed_till_date: 0, // filled in after the loop
+            remaining_bom_quantity: 0, // filled in after the loop
+            bom_completed_today: 0, // filled in after the loop
+            bom_completed_this_month: 0, // filled in after the loop
+            progresses: new Map(),
+          });
+        }
+        const bom = billing.boms.get(row.project_estimation_id);
+
+        // Composite key for this BOM *instance* (this estimation's use of this bom_id).
+        const bomInstanceKey = `${row.project_estimation_id}_${row.bom_id}`;
+
+        if (row.bom_progress_id && !bom.progresses.has(row.bom_progress_id)) {
+          bom.progresses.set(row.bom_progress_id, {
+            bom_progress_id: row.bom_progress_id,
+            bom_progress_name: row.bom_progress_name,
+            sl_number: row.sl_number,
+            items: [],
+          });
+        }
+
+        if (!row.bom_item_id || !row.bom_progress_id) continue;
+
+        const totalQty = toNum(row.total_qty, 0);
+        const repTask = toNum(row.rep_task, 1);
+        const requiredQty = totalQty * repTask;
+
+        const key = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
+        const workEntries = workMap.get(key) || [];
+
+        const totalUsed = workEntries.reduce((sum, w) => sum + w.used, 0);
+        const totalUsedYesterday = workEntries
+          .filter((w) => w.work_date !== todayStr) // both sides are now plain strings
+          .reduce((sum, w) => sum + w.used, 0);
+        const totalUsedBeforeThisMonth = workEntries
+          .filter((w) => w.work_date && w.work_date < monthStartStr)
+          .reduce((sum, w) => sum + w.used, 0);
+
+        const work_progress_site_ids = workEntries.map((w) => w.work_progress_site_id);
+
+        const consumption_details = workEntries.map((w) => ({
+          work_progress_site_id: w.work_progress_site_id,
+          used_qty: w.used,
+          work_date: w.work_date,
+        }));
+
+        bom.progresses.get(row.bom_progress_id).items.push({
+          bom_item_id: row.bom_item_id,
+          product_id: row.product_id,
+          qty: row.per_unit_qty,
+          total_qty: row.total_qty,
+
+          total_Material_required_for_bom_quantity: requiredQty.toFixed(2),
+          total_material_used_in_site: totalUsed.toFixed(2),
+
+          work_progress_site_ids,
+          consumption_details,
+
+          product: {
+            product_id: row.product_id,
+            product_name: row.product_name,
+            unit: row.unit || "Pc",
+            product_type_id: row.product_type_id,
+            hsn_code: row.hsn_code,
+          },
+        });
+
+        // How many times THIS SPECIFIC line (this product, in this exact
+        // progress step) has been fulfilled — using its own total_qty as the
+        // per-completion requirement. Every bom_item line must independently
+        // clear N repetitions for the whole BOM to count as completed N times.
+        const timesCompletedTillDate = totalQty > 0 ? Math.floor(totalUsed / totalQty) : 0;
+        const timesCompletedYesterday = totalQty > 0 ? Math.floor(totalUsedYesterday / totalQty) : 0;
+        const timesCompletedBeforeThisMonth =
+          totalQty > 0 ? Math.floor(totalUsedBeforeThisMonth / totalQty) : 0;
+
+        const prevTillDateMin = bomCompletedTillDateMin.has(bomInstanceKey)
+          ? bomCompletedTillDateMin.get(bomInstanceKey)
+          : null;
+        bomCompletedTillDateMin.set(
+          bomInstanceKey,
+          prevTillDateMin === null ? timesCompletedTillDate : Math.min(prevTillDateMin, timesCompletedTillDate)
+        );
+
+        const prevYesterdayMin = bomCompletedYesterdayMin.has(bomInstanceKey)
+          ? bomCompletedYesterdayMin.get(bomInstanceKey)
+          : null;
+        bomCompletedYesterdayMin.set(
+          bomInstanceKey,
+          prevYesterdayMin === null ? timesCompletedYesterday : Math.min(prevYesterdayMin, timesCompletedYesterday)
+        );
+
+        const prevBeforeMonthMin = bomCompletedBeforeThisMonthMin.has(bomInstanceKey)
+          ? bomCompletedBeforeThisMonthMin.get(bomInstanceKey)
+          : null;
+        bomCompletedBeforeThisMonthMin.set(
+          bomInstanceKey,
+          prevBeforeMonthMin === null
+            ? timesCompletedBeforeThisMonth
+            : Math.min(prevBeforeMonthMin, timesCompletedBeforeThisMonth)
+        );
+      }
+
+      /* ---------------- FINAL FORMAT ---------------- */
+      const result = [];
+
+      for (const billing of billingMap.values()) {
+        const bomsArray = [];
+
+        for (const bom of billing.boms.values()) {
+          const bomInstanceKey = `${bom.project_estimation_id}_${bom.bom_id}`;
+
+          const completedTillDate = bomCompletedTillDateMin.get(bomInstanceKey) || 0;
+          const completedTillYesterday = bomCompletedYesterdayMin.get(bomInstanceKey) || 0;
+          const completedBeforeThisMonth = bomCompletedBeforeThisMonthMin.get(bomInstanceKey) || 0;
+          const repTaskNum = toNum(bom.rep_task, 0);
+
+          bom.bom_completed_till_date = completedTillDate;
+          // Clamped at 0 — a BOM can't be "over-completed" in a negative sense
+          // from this metric's point of view (guards against bad/legacy data).
+          bom.remaining_bom_quantity = Math.max(0, repTaskNum - completedTillDate);
+          // Clamped at 0 too — a negative value would only occur if usage
+          // records were edited/deleted after being counted, which shouldn't
+          // be surfaced as "negative progress today".
+          bom.bom_completed_today = Math.max(0, completedTillDate - completedTillYesterday);
+          // Same clamping rationale as bom_completed_today, but measured
+          // against the start of the current month instead of yesterday.
+          bom.bom_completed_this_month = Math.max(0, completedTillDate - completedBeforeThisMonth);
+
+          bom.progresses = Array.from(bom.progresses.values());
+          bomsArray.push(bom);
+        }
+
+        billing.boms = bomsArray;
+        result.push(billing);
+      }
+
       return res.status(200).json({
         success: true,
-        message: "No work progress data found",
-        data: [],
+        data: result,
       });
-    }
-
-    // Safe fallback: if the todaySql call somehow returns nothing, fall back
-    // to Node's own date rather than crashing.
-    const todayStr =
-      (todayRows && todayRows[0] && todayRows[0].today_date) ||
-      new Date().toISOString().slice(0, 10);
-
-    // Start of the current month, e.g. '2026-07-01', derived from the same
-    // DB-clock string used for "today" so both boundaries share one
-    // timezone source. No extra query needed.
-    const monthStartStr = `${todayStr.slice(0, 7)}-01`;
-
-    // Defensive normalizer: guarantees a 'YYYY-MM-DD' string no matter what
-    // the driver/DB gives back (string, Date object, or null), so this code
-    // stays correct even if the SQL/driver config changes later.
-    const normalizeDateStr = (value) => {
-      if (!value) return null;
-      if (typeof value === "string") return value.slice(0, 10);
-      if (value instanceof Date && !isNaN(value.getTime())) {
-        return value.toISOString().slice(0, 10);
-      }
-      return String(value).slice(0, 10);
-    };
-
-    // Safe numeric parser used throughout instead of bare parseFloat, so a
-    // null/undefined/garbage value never turns into NaN and poisons a sum.
-    const toNum = (value, fallback = 0) => {
-      const n = parseFloat(value);
-      return Number.isFinite(n) ? n : fallback;
-    };
-
-    /* ---------------- WORK MAP: bom_id_progress_id_product_id -> [{site, used, date}] ---------------- */
-    const workMap = new Map();
-
-    for (const row of materialRows || []) {
-      if (!row.bom_id || !row.bom_progress_id || !row.product_id) continue;
-
-      const key = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
-
-      if (!workMap.has(key)) {
-        workMap.set(key, []);
-      }
-
-      workMap.get(key).push({
-        work_progress_site_id: row.work_progress_site_id,
-        used: toNum(row.total_material_used, 0),
-        work_date: normalizeDateStr(row.work_date), // always 'YYYY-MM-DD' or null
-      });
-    }
-
-    // FIX: "BOM completed N times" means EVERY individual bom_item line, in
-    // EVERY progress step, has enough material used for N repetitions of
-    // that specific line (using that line's own total_qty as the
-    // per-completion requirement). It is the min across ALL bom_item rows —
-    // never merged/summed across progress steps by product, and never
-    // divided by per_unit_qty. Merging by product previously let a
-    // fast-moving step mask a slow bottleneck step, which both inflated
-    // bom_completed_till_date and made bom_completed_today overcount.
-    //
-    // FIX (composite key): these maps are now keyed by
-    // `${project_estimation_id}_${bom_id}` instead of bare `bom_id`. The
-    // same bom_id can legitimately appear under more than one
-    // project_estimation_id (e.g. the same BOM template reused across
-    // different billing lines / estimations). Keying by bom_id alone would
-    // let their completion counts bleed into each other through the
-    // Math.min merge below. The composite key keeps every BOM instance
-    // isolated.
-    // composite key -> minimum "times completed" across all its bom_item lines
-    const bomCompletedTillDateMin = new Map(); // includes today
-    const bomCompletedYesterdayMin = new Map(); // excludes today
-    const bomCompletedBeforeThisMonthMin = new Map(); // excludes this month
-
-    /* ---------------- BUILD NESTED STRUCTURE ---------------- */
-    const billingMap = new Map();
-
-    for (const row of bomRows) {
-      if (!billingMap.has(row.billing_id)) {
-        billingMap.set(row.billing_id, {
-          billing_id: row.billing_id,
-          project_id: row.project_id,
-          project_name: row.project_name,
-          site_id: row.site_id,
-          site_name: row.project_site_name,
-          project_work_description: row.project_work_description,
-          billing_unit: row.billing_unit,
-          boms: new Map(),
-        });
-      }
-      const billing = billingMap.get(row.billing_id);
-
-      if (!billing.boms.has(row.project_estimation_id)) {
-        billing.boms.set(row.project_estimation_id, {
-          project_estimation_id: row.project_estimation_id,
-          bom_id: row.bom_id,
-          bom_name: row.bom_name,
-          rep_task: row.rep_task,
-          bom_price: row.bom_price,
-          bom_unit: row.bom_unit || null,
-          bom_value_unit: row.bom_value_unit,
-          bom_completed_till_date: 0, // filled in after the loop
-          remaining_bom_quantity: 0, // filled in after the loop
-          bom_completed_today: 0, // filled in after the loop
-          bom_completed_this_month: 0, // filled in after the loop
-          progresses: new Map(),
-        });
-      }
-      const bom = billing.boms.get(row.project_estimation_id);
-
-      // Composite key for this BOM *instance* (this estimation's use of this bom_id).
-      const bomInstanceKey = `${row.project_estimation_id}_${row.bom_id}`;
-
-      if (row.bom_progress_id && !bom.progresses.has(row.bom_progress_id)) {
-        bom.progresses.set(row.bom_progress_id, {
-          bom_progress_id: row.bom_progress_id,
-          bom_progress_name: row.bom_progress_name,
-          sl_number: row.sl_number,
-          items: [],
-        });
-      }
-
-      if (!row.bom_item_id || !row.bom_progress_id) continue;
-
-      const totalQty = toNum(row.total_qty, 0);
-      const repTask = toNum(row.rep_task, 1);
-      const requiredQty = totalQty * repTask;
-
-      const key = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
-      const workEntries = workMap.get(key) || [];
-
-      const totalUsed = workEntries.reduce((sum, w) => sum + w.used, 0);
-      const totalUsedYesterday = workEntries
-        .filter((w) => w.work_date !== todayStr) // both sides are now plain strings
-        .reduce((sum, w) => sum + w.used, 0);
-      const totalUsedBeforeThisMonth = workEntries
-        .filter((w) => w.work_date && w.work_date < monthStartStr)
-        .reduce((sum, w) => sum + w.used, 0);
-
-      const work_progress_site_ids = workEntries.map((w) => w.work_progress_site_id);
-
-      const consumption_details = workEntries.map((w) => ({
-        work_progress_site_id: w.work_progress_site_id,
-        used_qty: w.used,
-        work_date: w.work_date,
-      }));
-
-      bom.progresses.get(row.bom_progress_id).items.push({
-        bom_item_id: row.bom_item_id,
-        product_id: row.product_id,
-        qty: row.per_unit_qty,
-        total_qty: row.total_qty,
-
-        total_Material_required_for_bom_quantity: requiredQty.toFixed(2),
-        total_material_used_in_site: totalUsed.toFixed(2),
-
-        work_progress_site_ids,
-        consumption_details,
-
-        product: {
-          product_id: row.product_id,
-          product_name: row.product_name,
-          unit: row.unit || "Pc",
-          product_type_id: row.product_type_id,
-          hsn_code: row.hsn_code,
-        },
-      });
-
-      // How many times THIS SPECIFIC line (this product, in this exact
-      // progress step) has been fulfilled — using its own total_qty as the
-      // per-completion requirement. Every bom_item line must independently
-      // clear N repetitions for the whole BOM to count as completed N times.
-      const timesCompletedTillDate = totalQty > 0 ? Math.floor(totalUsed / totalQty) : 0;
-      const timesCompletedYesterday = totalQty > 0 ? Math.floor(totalUsedYesterday / totalQty) : 0;
-      const timesCompletedBeforeThisMonth =
-        totalQty > 0 ? Math.floor(totalUsedBeforeThisMonth / totalQty) : 0;
-
-      const prevTillDateMin = bomCompletedTillDateMin.has(bomInstanceKey)
-        ? bomCompletedTillDateMin.get(bomInstanceKey)
-        : null;
-      bomCompletedTillDateMin.set(
-        bomInstanceKey,
-        prevTillDateMin === null ? timesCompletedTillDate : Math.min(prevTillDateMin, timesCompletedTillDate)
-      );
-
-      const prevYesterdayMin = bomCompletedYesterdayMin.has(bomInstanceKey)
-        ? bomCompletedYesterdayMin.get(bomInstanceKey)
-        : null;
-      bomCompletedYesterdayMin.set(
-        bomInstanceKey,
-        prevYesterdayMin === null ? timesCompletedYesterday : Math.min(prevYesterdayMin, timesCompletedYesterday)
-      );
-
-      const prevBeforeMonthMin = bomCompletedBeforeThisMonthMin.has(bomInstanceKey)
-        ? bomCompletedBeforeThisMonthMin.get(bomInstanceKey)
-        : null;
-      bomCompletedBeforeThisMonthMin.set(
-        bomInstanceKey,
-        prevBeforeMonthMin === null
-          ? timesCompletedBeforeThisMonth
-          : Math.min(prevBeforeMonthMin, timesCompletedBeforeThisMonth)
-      );
-    }
-
-    /* ---------------- FINAL FORMAT ---------------- */
-    const result = [];
-
-    for (const billing of billingMap.values()) {
-      const bomsArray = [];
-
-      for (const bom of billing.boms.values()) {
-        const bomInstanceKey = `${bom.project_estimation_id}_${bom.bom_id}`;
-
-        const completedTillDate = bomCompletedTillDateMin.get(bomInstanceKey) || 0;
-        const completedTillYesterday = bomCompletedYesterdayMin.get(bomInstanceKey) || 0;
-        const completedBeforeThisMonth = bomCompletedBeforeThisMonthMin.get(bomInstanceKey) || 0;
-        const repTaskNum = toNum(bom.rep_task, 0);
-
-        bom.bom_completed_till_date = completedTillDate;
-        // Clamped at 0 — a BOM can't be "over-completed" in a negative sense
-        // from this metric's point of view (guards against bad/legacy data).
-        bom.remaining_bom_quantity = Math.max(0, repTaskNum - completedTillDate);
-        // Clamped at 0 too — a negative value would only occur if usage
-        // records were edited/deleted after being counted, which shouldn't
-        // be surfaced as "negative progress today".
-        bom.bom_completed_today = Math.max(0, completedTillDate - completedTillYesterday);
-        // Same clamping rationale as bom_completed_today, but measured
-        // against the start of the current month instead of yesterday.
-        bom.bom_completed_this_month = Math.max(0, completedTillDate - completedBeforeThisMonth);
-
-        bom.progresses = Array.from(bom.progresses.values());
-        bomsArray.push(bom);
-      }
-
-      billing.boms = bomsArray;
-      result.push(billing);
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: result,
-    });
-  } catch (err) {
-    console.error("FETCH ERROR:", err);
-    return res.status(500).json({
-      success: false,
-      message: "Unable to fetch work progress",
-    });
-  }
-};
-
-
-//////////////////////////////////////////////////////
-
-
-getWorkProgressByProjectalltheworkdetails = async (req, res) => {
-  try {
-    const { project_id } = req.body;
-
-    if (!project_id) {
-      return res.status(400).json({
+    } catch (err) {
+      console.error("FETCH ERROR:", err);
+      return res.status(500).json({
         success: false,
-        message: "project_id is required",
+        message: "Unable to fetch work progress",
       });
     }
+  };
 
-    const sql = `
+
+  //////////////////////////////////////////////////////
+
+
+  getWorkProgressByProjectalltheworkdetails = async (req, res) => {
+    try {
+      const { project_id } = req.body;
+
+      if (!project_id) {
+        return res.status(400).json({
+          success: false,
+          message: "project_id is required",
+        });
+      }
+
+      const sql = `
       SELECT 
           w.project_id,
           w.project_site_id,
@@ -2150,21 +2337,21 @@ getWorkProgressByProjectalltheworkdetails = async (req, res) => {
       ORDER BY w.date DESC, w.bom_id, w.bom_progress_id;
     `;
 
-    const rows = await customSelectSqlQuery2(sql, [project_id]);
+      const rows = await customSelectSqlQuery2(sql, [project_id]);
 
-    return res.status(200).json({
-      success: true,
-      data: rows,
-    });
+      return res.status(200).json({
+        success: true,
+        data: rows,
+      });
 
-  } catch (err) {
-    console.error("FETCH ERROR:", err);
-    return res.status(500).json({
-      success: false,
-      message: "Unable to fetch work progress",
-    });
-  }
-};
+    } catch (err) {
+      console.error("FETCH ERROR:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Unable to fetch work progress",
+      });
+    }
+  };
 
 
 
@@ -2172,68 +2359,68 @@ getWorkProgressByProjectalltheworkdetails = async (req, res) => {
   // UPDATE
   // ------------------------------------------------------------
   updateWorkProgress = async (req, res) => {
-  try {
-    const {
-      work_progress_site_id,
-      project_id,
-      project_site_id,
-      bom_id,
-      bom_progress_id,
-      remarks,
-      total_progress,
-      rep_task,
-      packet_qty,
-      total_qty_of_material_used,
-      date,
-      created_by
-    } = req.body;
+    try {
+      const {
+        work_progress_site_id,
+        project_id,
+        project_site_id,
+        bom_id,
+        bom_progress_id,
+        remarks,
+        total_progress,
+        rep_task,
+        packet_qty,
+        total_qty_of_material_used,
+        date,
+        created_by
+      } = req.body;
 
-    if (!work_progress_site_id) {
-      return res.status(400).json({
+      if (!work_progress_site_id) {
+        return res.status(400).json({
+          success: false,
+          message: "work_progress_site_id is required"
+        });
+      }
+
+      const updateObj = {
+        project_id: project_id || null,
+        project_site_id: project_site_id || null,
+        bom_id: bom_id || null,
+        bom_progress_id: bom_progress_id || null,
+        remarks: remarks || null,
+        total_progress: total_progress || 0,
+        rep_task: rep_task || null,
+        packet_qty: packet_qty || 0,
+        total_qty_of_material_used: total_qty_of_material_used || 0,
+        date: date || null,
+        created_by: created_by || null,
+        updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
+      };
+
+      // Convert undefined → null just in case
+      Object.keys(updateObj).forEach(key => {
+        if (updateObj[key] === undefined) updateObj[key] = null;
+      });
+
+      await updateData(
+        "tx_work_progress",
+        updateObj,
+        `work_progress_site_id = ${work_progress_site_id}`
+      );
+
+      res.status(200).json({
+        success: true,
+        message: "Work progress updated"
+      });
+
+    } catch (err) {
+      console.error("UPDATE ERROR:", err);
+      res.status(500).json({
         success: false,
-        message: "work_progress_site_id is required"
+        message: "Unable to update work progress"
       });
     }
-
-    const updateObj = {
-      project_id: project_id || null,
-      project_site_id: project_site_id || null,
-      bom_id: bom_id || null,
-      bom_progress_id: bom_progress_id || null,
-      remarks: remarks || null,
-      total_progress: total_progress || 0,
-      rep_task: rep_task || null,
-      packet_qty: packet_qty || 0,
-      total_qty_of_material_used: total_qty_of_material_used || 0,
-      date: date || null,
-      created_by: created_by || null,
-      updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss")
-    };
-
-    // Convert undefined → null just in case
-    Object.keys(updateObj).forEach(key => {
-      if (updateObj[key] === undefined) updateObj[key] = null;
-    });
-
-    await updateData(
-      "tx_work_progress",
-      updateObj,
-      `work_progress_site_id = ${work_progress_site_id}`
-    );
-
-    res.status(200).json({
-      success: true,
-      message: "Work progress updated"
-    });
-
-  } catch (err) {
-    console.error("UPDATE ERROR:", err);
-    res.status(500).json({
-      success: false,
-      message: "Unable to update work progress"
-    });
-  }
-};
+  };
 
 
 
@@ -2272,337 +2459,337 @@ getWorkProgressByProjectalltheworkdetails = async (req, res) => {
 
 
 
-//   getWorkProgressfulldatafromprojectandsiteId = async (req, res) => {
-//   try {
-//     const { project_id, project_site_id } = req.body;
+  //   getWorkProgressfulldatafromprojectandsiteId = async (req, res) => {
+  //   try {
+  //     const { project_id, project_site_id } = req.body;
 
-//     if (!project_id || !project_site_id) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "project_id and project_site_id are required",
-//       });
-//     }
-
-//     const sql = `
-//       SELECT 
-//           w.*,
-
-//           -- Project Name
-//           p.project_name,
-
-//           -- Project Site Name
-//           ps.project_site_name,
+  //     if (!project_id || !project_site_id) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "project_id and project_site_id are required",
+  //       });
+  //     }
 
-//           -- BOM Name
-//           b.bom_name,
+  //     const sql = `
+  //       SELECT 
+  //           w.*,
 
-//           -- Progress Name
-//           bp.bom_progress_name
+  //           -- Project Name
+  //           p.project_name,
 
-//       FROM tx_work_progress w
+  //           -- Project Site Name
+  //           ps.project_site_name,
 
-//       LEFT JOIN md_project p 
-//         ON p.project_id = w.project_id
+  //           -- BOM Name
+  //           b.bom_name,
 
-//       LEFT JOIN md_project_site ps 
-//         ON ps.project_site_id = w.project_site_id
+  //           -- Progress Name
+  //           bp.bom_progress_name
 
-//       LEFT JOIN md_bom b 
-//         ON b.bom_id = w.bom_id
+  //       FROM tx_work_progress w
 
-//       LEFT JOIN md_bom_progress bp 
-//         ON bp.bom_progress_id = w.bom_progress_id
+  //       LEFT JOIN md_project p 
+  //         ON p.project_id = w.project_id
 
-//       WHERE w.project_id = ${project_id}
-//         AND w.project_site_id = ${project_site_id}
+  //       LEFT JOIN md_project_site ps 
+  //         ON ps.project_site_id = w.project_site_id
 
-//       ORDER BY w.work_progress_site_id DESC;
-//     `;
+  //       LEFT JOIN md_bom b 
+  //         ON b.bom_id = w.bom_id
 
-//     const rows = await customSelectSqlQuery(sql);
+  //       LEFT JOIN md_bom_progress bp 
+  //         ON bp.bom_progress_id = w.bom_progress_id
 
-//     return res.status(200).json({
-//       success: true,
-//       data: rows,
-//     });
+  //       WHERE w.project_id = ${project_id}
+  //         AND w.project_site_id = ${project_site_id}
 
-//   } catch (err) {
-//     console.error("FETCH ERROR:", err);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Unable to fetch work progress",
-//     });
-//   }
-// };
+  //       ORDER BY w.work_progress_site_id DESC;
+  //     `;
 
+  //     const rows = await customSelectSqlQuery(sql);
 
+  //     return res.status(200).json({
+  //       success: true,
+  //       data: rows,
+  //     });
 
-///////////////////////////////this perfect//////////////////////////
+  //   } catch (err) {
+  //     console.error("FETCH ERROR:", err);
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Unable to fetch work progress",
+  //     });
+  //   }
+  // };
 
-//  getWorkProgressfulldatafromprojectandsiteId = async (req, res) => {
-//   try {
-//     const { project_id, project_site_id } = req.body;
 
-//     /* 1. Validation */
-//     if (!project_id) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "project_id is required",
-//       });
-//     }
 
-//     /* 2. Dynamic WHERE condition */
-//     let whereCondition = `w.project_id = ${project_id}`;
-//     if (project_site_id) {
-//       whereCondition += ` AND w.project_site_id = ${project_site_id}`;
-//     }
+  ///////////////////////////////this perfect//////////////////////////
 
-//     /* 3. SQL Query */
-//     const sql = `
-//       SELECT
-//         -- Billing
-//         pb.project_work_description,
+  //  getWorkProgressfulldatafromprojectandsiteId = async (req, res) => {
+  //   try {
+  //     const { project_id, project_site_id } = req.body;
 
-//         -- Project
-//         p.project_name,
-//         ps.project_site_name,
+  //     /* 1. Validation */
+  //     if (!project_id) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "project_id is required",
+  //       });
+  //     }
 
-//         -- Work Progress
-//         w.work_progress_site_id,
-//         w.date,
-//         w.billing_status,
+  //     /* 2. Dynamic WHERE condition */
+  //     let whereCondition = `w.project_id = ${project_id}`;
+  //     if (project_site_id) {
+  //       whereCondition += ` AND w.project_site_id = ${project_site_id}`;
+  //     }
 
-//         -- BOM
-//         b.bom_name,
-
-//         -- BOM Step
-//         bp.bom_progress_name,
-       
-//         -- Product
-         
-//         prod.product_name,
-//         prod.qty AS master_product_qty,   
-
-//         -- Site Used Items
-//         sui.bom_product_qty,
-//         sui.Atc_total,
-//         sui.Act_Qty
-
-//       FROM tx_work_progress w
-
-      
-
-//       /* Billing */
-//       LEFT JOIN md_project_billing pb
-//         ON pb.project_id = w.project_id
-
-//       /* Project & Site */
-//       LEFT JOIN md_project p
-//         ON p.project_id = w.project_id
-
-//       LEFT JOIN md_project_site ps
-//         ON ps.project_site_id = w.project_site_id
-
-//       /* BOM */
-//       LEFT JOIN md_bom b
-//         ON b.bom_id = w.bom_id
-
-//       /* BOM Step */
-//       LEFT JOIN md_bom_progress bp
-//         ON bp.bom_progress_id = w.bom_progress_id
-
-//       /* Site Used Items */
-//       LEFT JOIN tx_site_used_items sui
-//         ON sui.work_progress_site_id = w.work_progress_site_id
-
-//       /* Product */
-//       LEFT JOIN md_product prod
-//         ON prod.product_id = sui.product_id
-
-//       WHERE ${whereCondition}
-
-//       ORDER BY w.work_progress_site_id DESC
-//     `;
-
-//     /* 4. Execute */
-//     const rows = await customSelectSqlQuery(sql);
-
-//     return res.status(200).json({
-//       success: true,
-//       data: rows,
-//     });
-
-//   } catch (error) {
-//     console.error("BILLING FETCH ERROR:", error);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Unable to fetch billing work progress data",
-//     });
-//   }
-// };
-
-////////////
-
-
-
-// getWorkProgressfulldatafromprojectandsiteId = async (req, res) => {
-//   try {
-//     const { project_id, project_site_id } = req.body;
-
-//     /* 1. Validation */
-//     if (!project_id) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "project_id is required",
-//       });
-//     }
-
-//     /* 2. Dynamic WHERE condition */
-//     let whereCondition = `w.project_id = ${project_id}`;
-//     if (project_site_id) {
-//       whereCondition += ` AND w.project_site_id = ${project_site_id}`;
-//     }
-
-//     /* 3. SQL Query */
-//     const sql = `
-//       SELECT
-//         -- Billing
-//         pb.project_work_description,
-
-//         -- Project
-//         p.project_name,
-//         ps.project_site_name,
-
-//         -- Work Progress
-//         w.work_progress_site_id,
-//         w.date,
-//         w.billing_status,
-
-//         -- BOM
-//         b.bom_name,
-
-//         -- BOM Step
-//         bp.bom_progress_name,
-       
-//         -- Product
-//         prod.product_name,
-//         prod.qty AS master_product_qty,   
-
-//         -- Site Used Items
-//         sui.expenses_of_project_site_id,
-//         sui.bom_product_qty,
-//         sui.Atc_total,
-//         sui.Act_Qty
-
-//       FROM tx_work_progress w
-
-//       LEFT JOIN md_project_billing pb ON pb.project_id = w.project_id
-//       LEFT JOIN md_project p ON p.project_id = w.project_id
-//       LEFT JOIN md_project_site ps ON ps.project_site_id = w.project_site_id
-//       LEFT JOIN md_bom b ON b.bom_id = w.bom_id
-//       LEFT JOIN md_bom_progress bp ON bp.bom_progress_id = w.bom_progress_id
-//       LEFT JOIN tx_site_used_items sui ON sui.work_progress_site_id = w.work_progress_site_id
-//       LEFT JOIN md_product prod ON prod.product_id = sui.product_id
-
-//       WHERE ${whereCondition}
-
-//       ORDER BY w.work_progress_site_id DESC
-//     `;
-
-//     /* 4. Execute */
-//     const rows = await customSelectSqlQuery(sql);
-
-//     /* 5. Group duplicate rows */
-//     const groupedData = {};
-
-//     rows.forEach(row => {
-//       // Create a unique key based on the grouping criteria
-//       const groupKey = `${row.work_progress_site_id}_${row.bom_progress_name}_${row.product_name}_${row.master_product_qty}_${row.Atc_total}_${row.Act_Qty}`;
-
-//       if (!groupedData[groupKey]) {
-//         // First occurrence - store the row and init descriptions array
-//         groupedData[groupKey] = {
-//           ...row,
-//           project_work_descriptions: [row.project_work_description]
-//         };
-//       } else {
-//         // Duplicate found - add description if it's unique
-//         if (!groupedData[groupKey].project_work_descriptions.includes(row.project_work_description)) {
-//           groupedData[groupKey].project_work_descriptions.push(row.project_work_description);
-//         }
-//       }
-//     });
-
-//     // Convert grouped data back to array and format
-//     const result = Object.values(groupedData).map(item => {
-//       // Combine all unique descriptions with a separator
-//       const combinedDescriptions = item.project_work_descriptions
-//         .filter(desc => desc) // Remove null/undefined
-//         .join(' | '); // Use ' | ' or '\n' as separator
-
-//       return {
-//         project_work_description: combinedDescriptions,
-//         project_name: item.project_name,
-//         project_site_name: item.project_site_name,
-//         work_progress_site_id: item.work_progress_site_id,
-//         date: item.date,
-//         billing_status: item.billing_status,
-//         bom_name: item.bom_name,
-//         bom_progress_name: item.bom_progress_name,
-//         product_name: item.product_name,
-//         master_product_qty: item.master_product_qty,
-//         expenses_of_project_site_id: item.expenses_of_project_site_id,
-//         bom_product_qty: item.bom_product_qty,
-//         Atc_total: item.Atc_total,
-//         Act_Qty: item.Act_Qty
-//       };
-//     });
-
-//     return res.status(200).json({
-//       success: true,
-//       data: result,
-//     });
-
-//   } catch (error) {
-//     console.error("BILLING FETCH ERROR:", error);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Unable to fetch billing work progress data",
-//     });
-//   }
-// };
-
-
-
-/////////////////////
-
-
-
-getWorkProgressfulldatafromprojectandsiteId = async (req, res) => {
-  try {
-    const { project_id, project_site_id } = req.body;
-
-    /* 1. Validation */
-    if (!project_id) {
-      return res.status(400).json({
-        success: false,
-        message: "project_id is required",
-      });
-    }
-
-
-
-    let whereCondition = `
+  //     /* 3. SQL Query */
+  //     const sql = `
+  //       SELECT
+  //         -- Billing
+  //         pb.project_work_description,
+
+  //         -- Project
+  //         p.project_name,
+  //         ps.project_site_name,
+
+  //         -- Work Progress
+  //         w.work_progress_site_id,
+  //         w.date,
+  //         w.billing_status,
+
+  //         -- BOM
+  //         b.bom_name,
+
+  //         -- BOM Step
+  //         bp.bom_progress_name,
+
+  //         -- Product
+
+  //         prod.product_name,
+  //         prod.qty AS master_product_qty,   
+
+  //         -- Site Used Items
+  //         sui.bom_product_qty,
+  //         sui.Atc_total,
+  //         sui.Act_Qty
+
+  //       FROM tx_work_progress w
+
+
+
+  //       /* Billing */
+  //       LEFT JOIN md_project_billing pb
+  //         ON pb.project_id = w.project_id
+
+  //       /* Project & Site */
+  //       LEFT JOIN md_project p
+  //         ON p.project_id = w.project_id
+
+  //       LEFT JOIN md_project_site ps
+  //         ON ps.project_site_id = w.project_site_id
+
+  //       /* BOM */
+  //       LEFT JOIN md_bom b
+  //         ON b.bom_id = w.bom_id
+
+  //       /* BOM Step */
+  //       LEFT JOIN md_bom_progress bp
+  //         ON bp.bom_progress_id = w.bom_progress_id
+
+  //       /* Site Used Items */
+  //       LEFT JOIN tx_site_used_items sui
+  //         ON sui.work_progress_site_id = w.work_progress_site_id
+
+  //       /* Product */
+  //       LEFT JOIN md_product prod
+  //         ON prod.product_id = sui.product_id
+
+  //       WHERE ${whereCondition}
+
+  //       ORDER BY w.work_progress_site_id DESC
+  //     `;
+
+  //     /* 4. Execute */
+  //     const rows = await customSelectSqlQuery(sql);
+
+  //     return res.status(200).json({
+  //       success: true,
+  //       data: rows,
+  //     });
+
+  //   } catch (error) {
+  //     console.error("BILLING FETCH ERROR:", error);
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Unable to fetch billing work progress data",
+  //     });
+  //   }
+  // };
+
+  ////////////
+
+
+
+  // getWorkProgressfulldatafromprojectandsiteId = async (req, res) => {
+  //   try {
+  //     const { project_id, project_site_id } = req.body;
+
+  //     /* 1. Validation */
+  //     if (!project_id) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "project_id is required",
+  //       });
+  //     }
+
+  //     /* 2. Dynamic WHERE condition */
+  //     let whereCondition = `w.project_id = ${project_id}`;
+  //     if (project_site_id) {
+  //       whereCondition += ` AND w.project_site_id = ${project_site_id}`;
+  //     }
+
+  //     /* 3. SQL Query */
+  //     const sql = `
+  //       SELECT
+  //         -- Billing
+  //         pb.project_work_description,
+
+  //         -- Project
+  //         p.project_name,
+  //         ps.project_site_name,
+
+  //         -- Work Progress
+  //         w.work_progress_site_id,
+  //         w.date,
+  //         w.billing_status,
+
+  //         -- BOM
+  //         b.bom_name,
+
+  //         -- BOM Step
+  //         bp.bom_progress_name,
+
+  //         -- Product
+  //         prod.product_name,
+  //         prod.qty AS master_product_qty,   
+
+  //         -- Site Used Items
+  //         sui.expenses_of_project_site_id,
+  //         sui.bom_product_qty,
+  //         sui.Atc_total,
+  //         sui.Act_Qty
+
+  //       FROM tx_work_progress w
+
+  //       LEFT JOIN md_project_billing pb ON pb.project_id = w.project_id
+  //       LEFT JOIN md_project p ON p.project_id = w.project_id
+  //       LEFT JOIN md_project_site ps ON ps.project_site_id = w.project_site_id
+  //       LEFT JOIN md_bom b ON b.bom_id = w.bom_id
+  //       LEFT JOIN md_bom_progress bp ON bp.bom_progress_id = w.bom_progress_id
+  //       LEFT JOIN tx_site_used_items sui ON sui.work_progress_site_id = w.work_progress_site_id
+  //       LEFT JOIN md_product prod ON prod.product_id = sui.product_id
+
+  //       WHERE ${whereCondition}
+
+  //       ORDER BY w.work_progress_site_id DESC
+  //     `;
+
+  //     /* 4. Execute */
+  //     const rows = await customSelectSqlQuery(sql);
+
+  //     /* 5. Group duplicate rows */
+  //     const groupedData = {};
+
+  //     rows.forEach(row => {
+  //       // Create a unique key based on the grouping criteria
+  //       const groupKey = `${row.work_progress_site_id}_${row.bom_progress_name}_${row.product_name}_${row.master_product_qty}_${row.Atc_total}_${row.Act_Qty}`;
+
+  //       if (!groupedData[groupKey]) {
+  //         // First occurrence - store the row and init descriptions array
+  //         groupedData[groupKey] = {
+  //           ...row,
+  //           project_work_descriptions: [row.project_work_description]
+  //         };
+  //       } else {
+  //         // Duplicate found - add description if it's unique
+  //         if (!groupedData[groupKey].project_work_descriptions.includes(row.project_work_description)) {
+  //           groupedData[groupKey].project_work_descriptions.push(row.project_work_description);
+  //         }
+  //       }
+  //     });
+
+  //     // Convert grouped data back to array and format
+  //     const result = Object.values(groupedData).map(item => {
+  //       // Combine all unique descriptions with a separator
+  //       const combinedDescriptions = item.project_work_descriptions
+  //         .filter(desc => desc) // Remove null/undefined
+  //         .join(' | '); // Use ' | ' or '\n' as separator
+
+  //       return {
+  //         project_work_description: combinedDescriptions,
+  //         project_name: item.project_name,
+  //         project_site_name: item.project_site_name,
+  //         work_progress_site_id: item.work_progress_site_id,
+  //         date: item.date,
+  //         billing_status: item.billing_status,
+  //         bom_name: item.bom_name,
+  //         bom_progress_name: item.bom_progress_name,
+  //         product_name: item.product_name,
+  //         master_product_qty: item.master_product_qty,
+  //         expenses_of_project_site_id: item.expenses_of_project_site_id,
+  //         bom_product_qty: item.bom_product_qty,
+  //         Atc_total: item.Atc_total,
+  //         Act_Qty: item.Act_Qty
+  //       };
+  //     });
+
+  //     return res.status(200).json({
+  //       success: true,
+  //       data: result,
+  //     });
+
+  //   } catch (error) {
+  //     console.error("BILLING FETCH ERROR:", error);
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Unable to fetch billing work progress data",
+  //     });
+  //   }
+  // };
+
+
+
+  /////////////////////
+
+
+
+  getWorkProgressfulldatafromprojectandsiteId = async (req, res) => {
+    try {
+      const { project_id, project_site_id } = req.body;
+
+      /* 1. Validation */
+      if (!project_id) {
+        return res.status(400).json({
+          success: false,
+          message: "project_id is required",
+        });
+      }
+
+
+
+      let whereCondition = `
   w.project_id = ${project_id}
   AND (w.billing_status IS NULL OR w.billing_status != 'Y')
 `;
 
-if (project_site_id) {
-  whereCondition += ` AND w.project_site_id = ${project_site_id}`;
-}
+      if (project_site_id) {
+        whereCondition += ` AND w.project_site_id = ${project_site_id}`;
+      }
 
-    /* 3. SQL Query */
-    const sql = `
+      /* 3. SQL Query */
+      const sql = `
       SELECT
         -- Billing
         pb.project_work_description,
@@ -2648,715 +2835,715 @@ if (project_site_id) {
       ORDER BY w.work_progress_site_id DESC
     `;
 
-    /* 4. Execute */
-    const rows = await customSelectSqlQuery(sql);
+      /* 4. Execute */
+      const rows = await customSelectSqlQuery(sql);
 
-    /* 5. Group duplicate rows */
-    const groupedData = {};
+      /* 5. Group duplicate rows */
+      const groupedData = {};
 
-    rows.forEach(row => {
-      // Create a unique key based on the grouping criteria
-      const groupKey = `${row.work_progress_site_id}_${row.bom_progress_name}_${row.product_name}_${row.master_product_qty}_${row.Atc_total}_${row.Act_Qty}`;
+      rows.forEach(row => {
+        // Create a unique key based on the grouping criteria
+        const groupKey = `${row.work_progress_site_id}_${row.bom_progress_name}_${row.product_name}_${row.master_product_qty}_${row.Atc_total}_${row.Act_Qty}`;
 
-      if (!groupedData[groupKey]) {
-        // First occurrence - store the row and init descriptions array
-        groupedData[groupKey] = {
-          ...row,
-          project_work_descriptions: [row.project_work_description]
-        };
-      } else {
-        // Duplicate found - add description if it's unique
-        if (!groupedData[groupKey].project_work_descriptions.includes(row.project_work_description)) {
-          groupedData[groupKey].project_work_descriptions.push(row.project_work_description);
+        if (!groupedData[groupKey]) {
+          // First occurrence - store the row and init descriptions array
+          groupedData[groupKey] = {
+            ...row,
+            project_work_descriptions: [row.project_work_description]
+          };
+        } else {
+          // Duplicate found - add description if it's unique
+          if (!groupedData[groupKey].project_work_descriptions.includes(row.project_work_description)) {
+            groupedData[groupKey].project_work_descriptions.push(row.project_work_description);
+          }
         }
-      }
-    });
-
-    // Convert grouped data back to array and format
-    const result = Object.values(groupedData).map(item => {
-      // Combine all unique descriptions with a separator
-      const combinedDescriptions = item.project_work_descriptions
-        .filter(desc => desc) // Remove null/undefined
-        .join(' | '); // Use ' | ' or '\n' as separator
-
-      return {
-        project_work_description: combinedDescriptions,
-        project_name: item.project_name,
-        project_site_name: item.project_site_name,
-        work_progress_site_id: item.work_progress_site_id,
-        date: item.date,
-        billing_status: item.billing_status,
-        rep_task: item.rep_task,
-        bom_name: item.bom_name,
-        bom_progress_name: item.bom_progress_name,
-        product_name: item.product_name,
-        master_product_qty: item.master_product_qty,
-        expenses_of_project_site_id: item.expenses_of_project_site_id,
-        bom_product_qty: item.bom_product_qty,
-        Atc_total: item.Atc_total,
-        Act_Qty: item.Act_Qty
-      };
-    });
-
-    return res.status(200).json({
-      success: true,
-      data: result,
-    });
-
-  } catch (error) {
-    console.error("BILLING FETCH ERROR:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Unable to fetch billing work progress data",
-    });
-  }
-};
-
-///////////////////////////////////////////
-
-
-
-// getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
-//   try {
-//     const { project_id } = req.body;
-
-//     if (!project_id) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "project_id is required",
-//       });
-//     }
-
-//     // ─── Query 1: BOM Estimation Details ──────────────────────────────────
-//     // const bomSql = `
-//     //   SELECT 
-//     //     t.project_estimation_id,
-//     //     t.project_id,
-//     //     p.project_name,
-//     //     t.site_id,
-//     //     s.project_site_name,
-//     //     t.bom_id,
-//     //     t.bom_name,
-//     //     t.rep_task,
-//     //     t.billing_id,
-
-//     //     billing.project_work_description,
-//     //     billing.unit         AS billing_unit,
-//     //     billing.quantity     AS billing_quantity,
-//     //     billing.rate         AS billing_rate,
-//     //     billing.amount       AS billing_amount,
-//     //     billing.remarks      AS billing_remarks,
-
-//     //     bp.bom_progress_id,
-//     //     bp.bom_progress_name,
-//     //     bp.sl_number,
-
-//     //     bi.bom_item_id,
-//     //     bi.product_id,
-//     //     bi.qty               AS per_unit_qty,
-//     //     bi.total_qty,
-
-//     //     pr.product_name,
-//     //     pr.product_type_id,
-//     //     uom.unit_name        AS unit
-
-//     //   FROM tx_project_details_with_estimation t
-//     //   INNER JOIN md_project p         ON t.project_id   = p.project_id
-//     //   LEFT  JOIN md_project_site s    ON t.site_id      = s.project_site_id
-//     //   LEFT  JOIN md_project_billing billing ON t.billing_id = billing.billing_id
-//     //   LEFT  JOIN md_bom_progress bp   ON t.bom_id       = bp.bom_id
-//     //   LEFT  JOIN md_bom_item bi       ON bp.bom_progress_id = bi.bom_progress_id
-//     //                                  AND t.bom_id           = bi.bom_id
-//     //   LEFT  JOIN md_product pr        ON bi.product_id  = pr.product_id
-//     //   LEFT  JOIN md_unit uom          ON pr.unit_id     = uom.unit_id
-//     //   WHERE t.project_id = ?
-//     //   ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
-//     // `;
-
-
-//     // ─── Query 1: BOM Estimation Details ──────────────────────────────────
-//     const bomSql = `
-//       SELECT 
-//         t.project_estimation_id,
-//         t.project_id,
-//         p.project_name,
-//         t.site_id,
-//         s.project_site_name,
-//         t.bom_id,
-//         t.bom_name,
-//         t.rep_task,
-//         t.billing_id,
-
-//         wd.work_description AS project_work_description,
-//         billing.unit         AS billing_unit,
-//         billing.quantity     AS billing_quantity,
-//         billing.rate         AS billing_rate,
-//         billing.amount       AS billing_amount,
-//         billing.remarks      AS billing_remarks,
-
-//         bp.bom_progress_id,
-//         bp.bom_progress_name,
-//         bp.sl_number,
-
-//         bi.bom_item_id,
-//         bi.product_id,
-//         bi.qty               AS per_unit_qty,
-//         bi.total_qty,
-
-//         pr.product_name,
-//         pr.product_type_id,
-//         uom.unit_name        AS unit
-
-//       FROM tx_project_details_with_estimation t
-//       INNER JOIN md_project p         ON t.project_id   = p.project_id
-//       LEFT  JOIN md_project_site s    ON t.site_id      = s.project_site_id
-//       LEFT  JOIN md_project_billing billing ON t.billing_id = billing.billing_id
-//       LEFT  JOIN md_project_work_description wd
-//         ON billing.project_work_description_id = wd.project_work_description_id
-//       LEFT  JOIN md_bom_progress bp   ON t.bom_id       = bp.bom_id
-//       LEFT  JOIN md_bom_item bi       ON bp.bom_progress_id = bi.bom_progress_id
-//                                      AND t.bom_id           = bi.bom_id
-//       LEFT  JOIN md_product pr        ON bi.product_id  = pr.product_id
-//       LEFT  JOIN md_unit uom          ON pr.unit_id     = uom.unit_id
-//       WHERE t.project_id = ?
-//       ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
-//     `;
-
-//     // ─── Query 2: Work Progress + Percentage per BOM Progress ─────────────
-//     // percentage is computed fully in SQL — no JS loop needed
-//     const progressSql = `
-//       SELECT
-//         w.bom_id,
-//         w.bom_progress_id,
-//         w.project_site_id,
-//         w.date,
-//         bi.product_id,
-//         pr.product_name,
-//         bp.bom_progress_name,
-//         b.bom_name,
-//         s.project_site_name,
-//         MAX(w.created_by)                              AS created_by,
-//         CONCAT(e.first_name, ' ', e.last_name)         AS created_by_name,
-//         MAX(w.remarks)                                 AS remarks,
-//         MAX(w.rep_task)                                AS rep_task,
-//         MAX(w.created_at)                              AS created_at,
-//         MAX(w.updated_at)                              AS updated_at,
-//         SUM(w.packet_qty)                              AS total_packet_qty,
-//         SUM(w.total_qty_of_material_used)              AS total_material_used,
-//         SUM(w.total_progress)                          AS total_progress,
-//         bi.total_qty                                   AS planned_qty,
-
-//         --  Percentage calculated in SQL itself--
-
-//         ROUND(
-//           (SUM(w.total_progress) / NULLIF(bi.total_qty, 0)) * 100
-//         , 2)                                           AS progress_percentage
-
-//       FROM tx_work_progress w
-//       LEFT JOIN md_project_site  s   ON w.project_site_id  = s.project_site_id
-//       LEFT JOIN md_bom           b   ON w.bom_id            = b.bom_id
-//       LEFT JOIN md_bom_progress  bp  ON w.bom_progress_id   = bp.bom_progress_id
-//       LEFT JOIN md_bom_item      bi  ON bi.bom_id           = w.bom_id
-//                                     AND bi.bom_progress_id  = w.bom_progress_id
-//       LEFT JOIN md_product       pr  ON bi.product_id       = pr.product_id
-//       LEFT JOIN em_employees     e   ON w.created_by        = e.employee_id
-//       WHERE w.project_id = ?
-//       GROUP BY
-//         w.bom_id,
-//         w.bom_progress_id,
-//         w.project_site_id,
-//         w.date,
-//         bi.product_id,
-//         bi.total_qty,
-//         bp.bom_progress_name,
-//         b.bom_name,
-//         s.project_site_name,
-//         e.first_name,
-//         e.last_name,
-//         pr.product_name
-//       ORDER BY w.date DESC, w.bom_id, w.bom_progress_id
-//     `;
-
-//     // ─── Run both in parallel — no sequential waiting ──────────────────────
-//     const [bomRows, progressRows] = await Promise.all([
-//       customSelectSqlQuery2(bomSql, [project_id]),
-//       customSelectSqlQuery2(progressSql, [project_id]),
-//     ]);
-
-//     if (!bomRows.length) {
-//       return res.status(200).json({ success: true, data: [] });
-//     }
-
-//     // ─── Build lookup Map for work progress keyed by "bom_id|bom_progress_id"
-//     // One reduce — no forEach/for loops
-//     const progressMap = progressRows.reduce((acc, wp) => {
-//       const key = `${wp.bom_id}|${wp.bom_progress_id}`;
-//       if (!acc[key]) acc[key] = [];
-//       acc[key].push({
-//         date:                 wp.date,
-//         project_site_id:      wp.project_site_id,
-//         project_site_name:    wp.project_site_name,
-//         product_id:           wp.product_id,
-//         product_name:         wp.product_name,
-//         total_packet_qty:     wp.total_packet_qty,
-//         total_material_used:  wp.total_material_used,
-//         total_progress:       wp.total_progress,
-//         planned_qty:          wp.planned_qty,
-//         progress_percentage:  wp.progress_percentage, // ← from SQL
-//         remarks:              wp.remarks,
-//         rep_task:             wp.rep_task,
-//         created_by:           wp.created_by,
-//         created_by_name:      wp.created_by_name,
-//         created_at:           wp.created_at,
-//         updated_at:           wp.updated_at,
-//       });
-//       return acc;
-//     }, {});
-
-//     // ─── Build estimation map using reduce — zero explicit loops ───────────
-//     const estimationMap = bomRows.reduce((map, row) => {
-
-//       // ── Level 1: estimation ───────────────────────────────────────────────
-//       if (!map[row.project_estimation_id]) {
-//         map[row.project_estimation_id] = {
-//           project_estimation_id:    row.project_estimation_id,
-//           project_id:               row.project_id,
-//           project_name:             row.project_name,
-//           site_id:                  row.site_id,
-//           site_name:                row.project_site_name,
-//           bom_id:                   row.bom_id,
-//           bom_name:                 row.bom_name,
-//           rep_task:                 row.rep_task,
-//           billing_id:               row.billing_id,
-//           project_work_description: row.project_work_description,
-//           billing_unit:             row.billing_unit,
-//           billing_quantity:         row.billing_quantity,
-//           billing_rate:             row.billing_rate,
-//           billing_amount:           row.billing_amount,
-//           billing_remarks:          row.billing_remarks,
-//           progresses:               {},
-//         };
-//       }
-
-//       const est = map[row.project_estimation_id];
-
-//       // ── Level 2: progress ─────────────────────────────────────────────────
-//       if (row.bom_progress_id && !est.progresses[row.bom_progress_id]) {
-//         const wpKey = `${row.bom_id}|${row.bom_progress_id}`;
-//         est.progresses[row.bom_progress_id] = {
-//           bom_progress_id:   row.bom_progress_id,
-//           bom_progress_name: row.bom_progress_name,
-//           sl_number:         row.sl_number,
-//           items:             [],
-//           work_progress:     progressMap[wpKey] || [], // ← attached here
-//         };
-//       }
-
-//       // ── Level 3: item ─────────────────────────────────────────────────────
-//       if (row.bom_item_id && row.bom_progress_id) {
-//         est.progresses[row.bom_progress_id].items.push({
-//           bom_item_id: row.bom_item_id,
-//           product_id:  row.product_id,
-//           qty:         row.per_unit_qty,
-//           total_qty:   row.total_qty,
-//           product: {
-//             product_id:      row.product_id,
-//             product_name:    row.product_name,
-//             unit:            row.unit || "Pc",
-//             product_type_id: row.product_type_id,
-//           },
-//         });
-//       }
-
-//       return map;
-//     }, {});
-
-//     // ─── Convert nested objects → arrays using Object.values only ─────────
-//     const result = Object.values(estimationMap).map((est) => ({
-//       ...est,
-//       progresses: Object.values(est.progresses),
-//     }));
-
-//     return res.status(200).json({ success: true, data: result });
-
-//   } catch (err) {
-//     console.error("FETCH ERROR:", err);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Unable to fetch BOM details with work progress",
-//     });
-//   }
-// };
-
-
-
-
-
-// getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
-//   try {
-//     const { project_id } = req.body;
-
-//     if (!project_id) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "project_id is required",
-//       });
-//     }
-
-//     // ─── Query 1: BOM Estimation Details ──────────────────────────────────
-//     const bomSql = `
-//       SELECT 
-//         t.project_estimation_id,
-//         t.project_id,
-//         p.project_name,
-//         t.site_id,
-//         s.project_site_name,
-//         t.bom_id,
-//         t.bom_name,
-//         t.rep_task,
-//         t.billing_id,
-
-//         wd.work_description AS project_work_description,
-//         billing.unit         AS billing_unit,
-//         billing.quantity     AS billing_quantity,
-//         billing.rate         AS billing_rate,
-//         billing.amount       AS billing_amount,
-//         billing.remarks      AS billing_remarks,
-
-//         bp.bom_progress_id,
-//         bp.bom_progress_name,
-//         bp.sl_number,
-
-//         bi.bom_item_id,
-//         bi.product_id,
-//         bi.qty               AS per_unit_qty,
-//         bi.total_qty,
-
-//         pr.product_name,
-//         pr.product_type_id,
-//         uom.unit_name        AS unit
-
-//       FROM tx_project_details_with_estimation t
-//       INNER JOIN md_project p         ON t.project_id   = p.project_id
-//       LEFT  JOIN md_project_site s    ON t.site_id      = s.project_site_id
-//       LEFT  JOIN md_project_billing billing ON t.billing_id = billing.billing_id
-//       LEFT  JOIN md_project_work_description wd
-//         ON billing.project_work_description_id = wd.project_work_description_id
-//       LEFT  JOIN md_bom_progress bp   ON t.bom_id       = bp.bom_id
-//       LEFT  JOIN md_bom_item bi       ON bp.bom_progress_id = bi.bom_progress_id
-//                                      AND t.bom_id           = bi.bom_id
-//       LEFT  JOIN md_product pr        ON bi.product_id  = pr.product_id
-//       LEFT  JOIN md_unit uom          ON pr.unit_id     = uom.unit_id
-//       WHERE t.project_id = ?
-//       ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
-//     `;
-
-//     // ─── Query 2: Work Progress + Percentage per BOM Progress ─────────────
-//     // FIX: added DATE_FORMAT(w.date) as a plain 'YYYY-MM-DD' string
-//     // (work_date_str) so today/yesterday/this-month comparisons never
-//     // depend on driver Date-object vs string quirks — same fix already
-//     // applied in getWorkProgressByProjectAndSite.
-//     const progressSql = `
-//       SELECT
-//         w.bom_id,
-//         w.bom_progress_id,
-//         w.project_site_id,
-//         w.date,
-//         DATE_FORMAT(w.date, '%Y-%m-%d')                AS work_date_str,
-//         bi.product_id,
-//         pr.product_name,
-//         bp.bom_progress_name,
-//         b.bom_name,
-//         s.project_site_name,
-//         MAX(w.created_by)                              AS created_by,
-//         CONCAT(e.first_name, ' ', e.last_name)         AS created_by_name,
-//         MAX(w.remarks)                                 AS remarks,
-//         MAX(w.rep_task)                                AS rep_task,
-//         MAX(w.created_at)                              AS created_at,
-//         MAX(w.updated_at)                              AS updated_at,
-//         SUM(w.packet_qty)                              AS total_packet_qty,
-//         SUM(w.total_qty_of_material_used)              AS total_material_used,
-//         SUM(w.total_progress)                          AS total_progress,
-//         bi.total_qty                                   AS planned_qty,
-
-//         ROUND(
-//           (SUM(w.total_progress) / NULLIF(bi.total_qty, 0)) * 100
-//         , 2)                                           AS progress_percentage
-
-//       FROM tx_work_progress w
-//       LEFT JOIN md_project_site  s   ON w.project_site_id  = s.project_site_id
-//       LEFT JOIN md_bom           b   ON w.bom_id            = b.bom_id
-//       LEFT JOIN md_bom_progress  bp  ON w.bom_progress_id   = bp.bom_progress_id
-//       LEFT JOIN md_bom_item      bi  ON bi.bom_id           = w.bom_id
-//                                     AND bi.bom_progress_id  = w.bom_progress_id
-//       LEFT JOIN md_product       pr  ON bi.product_id       = pr.product_id
-//       LEFT JOIN em_employees     e   ON w.created_by        = e.employee_id
-//       WHERE w.project_id = ?
-//       GROUP BY
-//         w.bom_id,
-//         w.bom_progress_id,
-//         w.project_site_id,
-//         w.date,
-//         bi.product_id,
-//         bi.total_qty,
-//         bp.bom_progress_name,
-//         b.bom_name,
-//         s.project_site_name,
-//         e.first_name,
-//         e.last_name,
-//         pr.product_name
-//       ORDER BY w.date DESC, w.bom_id, w.bom_progress_id
-//     `;
-
-//     // ─── Query 3: DB-clock "today" — same source used for w.date, so no
-//     // timezone mismatch between Node and the DB server. ────────────────────
-//     const todaySql = `SELECT DATE_FORMAT(NOW(), '%Y-%m-%d') AS today_date`;
-
-//     // ─── Run all three in parallel ─────────────────────────────────────────
-//     const [bomRows, progressRows, todayRows] = await Promise.all([
-//       customSelectSqlQuery2(bomSql, [project_id]),
-//       customSelectSqlQuery2(progressSql, [project_id]),
-//       customSelectSqlQuery2(todaySql, []),
-//     ]);
-
-//     if (!bomRows.length) {
-//       return res.status(200).json({ success: true, data: [] });
-//     }
-
-//     // Safe fallback if todaySql somehow returns nothing
-//     const todayStr =
-//       (todayRows && todayRows[0] && todayRows[0].today_date) ||
-//       new Date().toISOString().slice(0, 10);
-
-//     // Start of current month, derived from the same DB-clock string
-//     const monthStartStr = `${todayStr.slice(0, 7)}-01`;
-
-//     // Defensive date normalizer: string / Date object / null → 'YYYY-MM-DD' | null
-//     const normalizeDateStr = (value) => {
-//       if (!value) return null;
-//       if (typeof value === "string") return value.slice(0, 10);
-//       if (value instanceof Date && !isNaN(value.getTime())) {
-//         return value.toISOString().slice(0, 10);
-//       }
-//       return String(value).slice(0, 10);
-//     };
-
-//     // Safe numeric parser — never lets a null/garbage value poison a sum
-//     const toNum = (value, fallback = 0) => {
-//       const n = parseFloat(value);
-//       return Number.isFinite(n) ? n : fallback;
-//     };
-
-//     // ─── Lookup map for the display-facing work_progress[] rows ───────────
-//     // (unchanged from before — keyed by "bom_id|bom_progress_id")
-//     const progressMap = progressRows.reduce((acc, wp) => {
-//       const key = `${wp.bom_id}|${wp.bom_progress_id}`;
-//       if (!acc[key]) acc[key] = [];
-//       acc[key].push({
-//         date:                 wp.date,
-//         project_site_id:      wp.project_site_id,
-//         project_site_name:    wp.project_site_name,
-//         product_id:           wp.product_id,
-//         product_name:         wp.product_name,
-//         total_packet_qty:     wp.total_packet_qty,
-//         total_material_used:  wp.total_material_used,
-//         total_progress:       wp.total_progress,
-//         planned_qty:          wp.planned_qty,
-//         progress_percentage:  wp.progress_percentage,
-//         remarks:              wp.remarks,
-//         rep_task:             wp.rep_task,
-//         created_by:           wp.created_by,
-//         created_by_name:      wp.created_by_name,
-//         created_at:           wp.created_at,
-//         updated_at:           wp.updated_at,
-//       });
-//       return acc;
-//     }, {});
-
-//     // ─── Usage map for completion-counting ──────────────────────────────
-//     // Keyed by bom_id_bom_progress_id_product_id -> [{used, work_date}].
-//     // Uses total_progress (progress made against planned_qty), which is
-//     // this controller's equivalent of Act_Qty in getWorkProgressByProjectAndSite.
-//     // progressSql already groups one row per date, so each row = one usage entry.
-//     const usageMap = new Map();
-//     for (const row of progressRows || []) {
-//       if (!row.bom_id || !row.bom_progress_id || !row.product_id) continue;
-//       const key = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
-//       if (!usageMap.has(key)) usageMap.set(key, []);
-//       usageMap.get(key).push({
-//         used: toNum(row.total_progress, 0),
-//         work_date: row.work_date_str || normalizeDateStr(row.date),
-//       });
-//     }
-
-//     // FIX (same rule as getWorkProgressByProjectAndSite): "BOM completed N
-//     // times" = the MIN, across every bom_item line in every progress step,
-//     // of floor(total_used_for_that_line / that_line's_total_qty). Never
-//     // summed/merged across steps by product. Keyed by
-//     // `${project_estimation_id}_${bom_id}` so the same bom_id reused across
-//     // different estimations/billing lines can't bleed into each other.
-//     const completedTillDateMin = new Map();
-//     const completedYesterdayMin = new Map();
-//     const completedBeforeThisMonthMin = new Map();
-
-//     // ─── Build estimation map ───────────────────────────────────────────
-//     const estimationMap = bomRows.reduce((map, row) => {
-
-//       if (!map[row.project_estimation_id]) {
-//         map[row.project_estimation_id] = {
-//           project_estimation_id:    row.project_estimation_id,
-//           project_id:               row.project_id,
-//           project_name:             row.project_name,
-//           site_id:                  row.site_id,
-//           site_name:                row.project_site_name,
-//           bom_id:                   row.bom_id,
-//           bom_name:                 row.bom_name,
-//           rep_task:                 row.rep_task,
-//           billing_id:               row.billing_id,
-//           project_work_description: row.project_work_description,
-//           billing_unit:             row.billing_unit,
-//           billing_quantity:         row.billing_quantity,
-//           billing_rate:             row.billing_rate,
-//           billing_amount:           row.billing_amount,
-//           billing_remarks:          row.billing_remarks,
-//           bom_completed_till_date:  0, // filled in after the loop
-//           remaining_bom_quantity:   0, // filled in after the loop
-//           bom_completed_today:      0, // filled in after the loop
-//           bom_completed_this_month: 0, // filled in after the loop
-//           progresses:               {},
-//         };
-//       }
-
-//       const est = map[row.project_estimation_id];
-//       const bomInstanceKey = `${row.project_estimation_id}_${row.bom_id}`;
-
-//       if (row.bom_progress_id && !est.progresses[row.bom_progress_id]) {
-//         const wpKey = `${row.bom_id}|${row.bom_progress_id}`;
-//         est.progresses[row.bom_progress_id] = {
-//           bom_progress_id:   row.bom_progress_id,
-//           bom_progress_name: row.bom_progress_name,
-//           sl_number:         row.sl_number,
-//           items:             [],
-//           work_progress:     progressMap[wpKey] || [],
-//         };
-//       }
-
-//       if (row.bom_item_id && row.bom_progress_id) {
-//         est.progresses[row.bom_progress_id].items.push({
-//           bom_item_id: row.bom_item_id,
-//           product_id:  row.product_id,
-//           qty:         row.per_unit_qty,
-//           total_qty:   row.total_qty,
-//           product: {
-//             product_id:      row.product_id,
-//             product_name:    row.product_name,
-//             unit:            row.unit || "Pc",
-//             product_type_id: row.product_type_id,
-//           },
-//         });
-
-//         // ── Completion counting for this specific bom_item line ─────────
-//         const totalQty = toNum(row.total_qty, 0);
-//         const usageKey = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
-//         const usageEntries = usageMap.get(usageKey) || [];
-
-//         const usedTillDate = usageEntries.reduce((sum, u) => sum + u.used, 0);
-//         const usedYesterday = usageEntries
-//           .filter((u) => u.work_date !== todayStr)
-//           .reduce((sum, u) => sum + u.used, 0);
-//         const usedBeforeThisMonth = usageEntries
-//           .filter((u) => u.work_date && u.work_date < monthStartStr)
-//           .reduce((sum, u) => sum + u.used, 0);
-
-//         const timesTillDate = totalQty > 0 ? Math.floor(usedTillDate / totalQty) : 0;
-//         const timesYesterday = totalQty > 0 ? Math.floor(usedYesterday / totalQty) : 0;
-//         const timesBeforeThisMonth = totalQty > 0 ? Math.floor(usedBeforeThisMonth / totalQty) : 0;
-
-//         const prevTillDate = completedTillDateMin.has(bomInstanceKey)
-//           ? completedTillDateMin.get(bomInstanceKey)
-//           : null;
-//         completedTillDateMin.set(
-//           bomInstanceKey,
-//           prevTillDate === null ? timesTillDate : Math.min(prevTillDate, timesTillDate)
-//         );
-
-//         const prevYesterday = completedYesterdayMin.has(bomInstanceKey)
-//           ? completedYesterdayMin.get(bomInstanceKey)
-//           : null;
-//         completedYesterdayMin.set(
-//           bomInstanceKey,
-//           prevYesterday === null ? timesYesterday : Math.min(prevYesterday, timesYesterday)
-//         );
-
-//         const prevBeforeMonth = completedBeforeThisMonthMin.has(bomInstanceKey)
-//           ? completedBeforeThisMonthMin.get(bomInstanceKey)
-//           : null;
-//         completedBeforeThisMonthMin.set(
-//           bomInstanceKey,
-//           prevBeforeMonth === null
-//             ? timesBeforeThisMonth
-//             : Math.min(prevBeforeMonth, timesBeforeThisMonth)
-//         );
-//       }
-
-//       return map;
-//     }, {});
-
-//     // ─── Fill in completion fields + convert nested objects → arrays ──────
-//     const result = Object.values(estimationMap).map((est) => {
-//       const bomInstanceKey = `${est.project_estimation_id}_${est.bom_id}`;
-
-//       const completedTillDate = completedTillDateMin.get(bomInstanceKey) || 0;
-//       const completedYesterday = completedYesterdayMin.get(bomInstanceKey) || 0;
-//       const completedBeforeThisMonth = completedBeforeThisMonthMin.get(bomInstanceKey) || 0;
-//       const repTaskNum = toNum(est.rep_task, 0);
-
-//       return {
-//         ...est,
-//         bom_completed_till_date:  completedTillDate,
-//         // Clamped at 0 — same rationale as getWorkProgressByProjectAndSite
-//         remaining_bom_quantity:   Math.max(0, repTaskNum - completedTillDate),
-//         bom_completed_today:      Math.max(0, completedTillDate - completedYesterday),
-//         bom_completed_this_month: Math.max(0, completedTillDate - completedBeforeThisMonth),
-//         progresses: Object.values(est.progresses),
-//       };
-//     });
-
-//     return res.status(200).json({ success: true, data: result });
-
-//   } catch (err) {
-//     console.error("FETCH ERROR:", err);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Unable to fetch BOM details with work progress",
-//     });
-//   }
-// };
-
-
-getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
-  const requestTag = `[getBomFullDetailsWithProgressByProject_Id:${Date.now()}]`;
-
-  try {
-    const rawProjectId = req.body?.project_id;
-
-    // ── Input validation: must be a genuine positive integer ────────────
-    const project_id = Number(rawProjectId);
-    if (
-      rawProjectId === undefined ||
-      rawProjectId === null ||
-      rawProjectId === "" ||
-      !Number.isInteger(project_id) ||
-      project_id <= 0
-    ) {
-      return res.status(400).json({
+      });
+
+      // Convert grouped data back to array and format
+      const result = Object.values(groupedData).map(item => {
+        // Combine all unique descriptions with a separator
+        const combinedDescriptions = item.project_work_descriptions
+          .filter(desc => desc) // Remove null/undefined
+          .join(' | '); // Use ' | ' or '\n' as separator
+
+        return {
+          project_work_description: combinedDescriptions,
+          project_name: item.project_name,
+          project_site_name: item.project_site_name,
+          work_progress_site_id: item.work_progress_site_id,
+          date: item.date,
+          billing_status: item.billing_status,
+          rep_task: item.rep_task,
+          bom_name: item.bom_name,
+          bom_progress_name: item.bom_progress_name,
+          product_name: item.product_name,
+          master_product_qty: item.master_product_qty,
+          expenses_of_project_site_id: item.expenses_of_project_site_id,
+          bom_product_qty: item.bom_product_qty,
+          Atc_total: item.Atc_total,
+          Act_Qty: item.Act_Qty
+        };
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: result,
+      });
+
+    } catch (error) {
+      console.error("BILLING FETCH ERROR:", error);
+      return res.status(500).json({
         success: false,
-        message: "project_id is required and must be a positive integer",
+        message: "Unable to fetch billing work progress data",
       });
     }
+  };
 
-    // ─── Query 1: BOM Estimation Details ──────────────────────────────────
-    const bomSql = `
+  ///////////////////////////////////////////
+
+
+
+  // getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
+  //   try {
+  //     const { project_id } = req.body;
+
+  //     if (!project_id) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "project_id is required",
+  //       });
+  //     }
+
+  //     // ─── Query 1: BOM Estimation Details ──────────────────────────────────
+  //     // const bomSql = `
+  //     //   SELECT 
+  //     //     t.project_estimation_id,
+  //     //     t.project_id,
+  //     //     p.project_name,
+  //     //     t.site_id,
+  //     //     s.project_site_name,
+  //     //     t.bom_id,
+  //     //     t.bom_name,
+  //     //     t.rep_task,
+  //     //     t.billing_id,
+
+  //     //     billing.project_work_description,
+  //     //     billing.unit         AS billing_unit,
+  //     //     billing.quantity     AS billing_quantity,
+  //     //     billing.rate         AS billing_rate,
+  //     //     billing.amount       AS billing_amount,
+  //     //     billing.remarks      AS billing_remarks,
+
+  //     //     bp.bom_progress_id,
+  //     //     bp.bom_progress_name,
+  //     //     bp.sl_number,
+
+  //     //     bi.bom_item_id,
+  //     //     bi.product_id,
+  //     //     bi.qty               AS per_unit_qty,
+  //     //     bi.total_qty,
+
+  //     //     pr.product_name,
+  //     //     pr.product_type_id,
+  //     //     uom.unit_name        AS unit
+
+  //     //   FROM tx_project_details_with_estimation t
+  //     //   INNER JOIN md_project p         ON t.project_id   = p.project_id
+  //     //   LEFT  JOIN md_project_site s    ON t.site_id      = s.project_site_id
+  //     //   LEFT  JOIN md_project_billing billing ON t.billing_id = billing.billing_id
+  //     //   LEFT  JOIN md_bom_progress bp   ON t.bom_id       = bp.bom_id
+  //     //   LEFT  JOIN md_bom_item bi       ON bp.bom_progress_id = bi.bom_progress_id
+  //     //                                  AND t.bom_id           = bi.bom_id
+  //     //   LEFT  JOIN md_product pr        ON bi.product_id  = pr.product_id
+  //     //   LEFT  JOIN md_unit uom          ON pr.unit_id     = uom.unit_id
+  //     //   WHERE t.project_id = ?
+  //     //   ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
+  //     // `;
+
+
+  //     // ─── Query 1: BOM Estimation Details ──────────────────────────────────
+  //     const bomSql = `
+  //       SELECT 
+  //         t.project_estimation_id,
+  //         t.project_id,
+  //         p.project_name,
+  //         t.site_id,
+  //         s.project_site_name,
+  //         t.bom_id,
+  //         t.bom_name,
+  //         t.rep_task,
+  //         t.billing_id,
+
+  //         wd.work_description AS project_work_description,
+  //         billing.unit         AS billing_unit,
+  //         billing.quantity     AS billing_quantity,
+  //         billing.rate         AS billing_rate,
+  //         billing.amount       AS billing_amount,
+  //         billing.remarks      AS billing_remarks,
+
+  //         bp.bom_progress_id,
+  //         bp.bom_progress_name,
+  //         bp.sl_number,
+
+  //         bi.bom_item_id,
+  //         bi.product_id,
+  //         bi.qty               AS per_unit_qty,
+  //         bi.total_qty,
+
+  //         pr.product_name,
+  //         pr.product_type_id,
+  //         uom.unit_name        AS unit
+
+  //       FROM tx_project_details_with_estimation t
+  //       INNER JOIN md_project p         ON t.project_id   = p.project_id
+  //       LEFT  JOIN md_project_site s    ON t.site_id      = s.project_site_id
+  //       LEFT  JOIN md_project_billing billing ON t.billing_id = billing.billing_id
+  //       LEFT  JOIN md_project_work_description wd
+  //         ON billing.project_work_description_id = wd.project_work_description_id
+  //       LEFT  JOIN md_bom_progress bp   ON t.bom_id       = bp.bom_id
+  //       LEFT  JOIN md_bom_item bi       ON bp.bom_progress_id = bi.bom_progress_id
+  //                                      AND t.bom_id           = bi.bom_id
+  //       LEFT  JOIN md_product pr        ON bi.product_id  = pr.product_id
+  //       LEFT  JOIN md_unit uom          ON pr.unit_id     = uom.unit_id
+  //       WHERE t.project_id = ?
+  //       ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
+  //     `;
+
+  //     // ─── Query 2: Work Progress + Percentage per BOM Progress ─────────────
+  //     // percentage is computed fully in SQL — no JS loop needed
+  //     const progressSql = `
+  //       SELECT
+  //         w.bom_id,
+  //         w.bom_progress_id,
+  //         w.project_site_id,
+  //         w.date,
+  //         bi.product_id,
+  //         pr.product_name,
+  //         bp.bom_progress_name,
+  //         b.bom_name,
+  //         s.project_site_name,
+  //         MAX(w.created_by)                              AS created_by,
+  //         CONCAT(e.first_name, ' ', e.last_name)         AS created_by_name,
+  //         MAX(w.remarks)                                 AS remarks,
+  //         MAX(w.rep_task)                                AS rep_task,
+  //         MAX(w.created_at)                              AS created_at,
+  //         MAX(w.updated_at)                              AS updated_at,
+  //         SUM(w.packet_qty)                              AS total_packet_qty,
+  //         SUM(w.total_qty_of_material_used)              AS total_material_used,
+  //         SUM(w.total_progress)                          AS total_progress,
+  //         bi.total_qty                                   AS planned_qty,
+
+  //         --  Percentage calculated in SQL itself--
+
+  //         ROUND(
+  //           (SUM(w.total_progress) / NULLIF(bi.total_qty, 0)) * 100
+  //         , 2)                                           AS progress_percentage
+
+  //       FROM tx_work_progress w
+  //       LEFT JOIN md_project_site  s   ON w.project_site_id  = s.project_site_id
+  //       LEFT JOIN md_bom           b   ON w.bom_id            = b.bom_id
+  //       LEFT JOIN md_bom_progress  bp  ON w.bom_progress_id   = bp.bom_progress_id
+  //       LEFT JOIN md_bom_item      bi  ON bi.bom_id           = w.bom_id
+  //                                     AND bi.bom_progress_id  = w.bom_progress_id
+  //       LEFT JOIN md_product       pr  ON bi.product_id       = pr.product_id
+  //       LEFT JOIN em_employees     e   ON w.created_by        = e.employee_id
+  //       WHERE w.project_id = ?
+  //       GROUP BY
+  //         w.bom_id,
+  //         w.bom_progress_id,
+  //         w.project_site_id,
+  //         w.date,
+  //         bi.product_id,
+  //         bi.total_qty,
+  //         bp.bom_progress_name,
+  //         b.bom_name,
+  //         s.project_site_name,
+  //         e.first_name,
+  //         e.last_name,
+  //         pr.product_name
+  //       ORDER BY w.date DESC, w.bom_id, w.bom_progress_id
+  //     `;
+
+  //     // ─── Run both in parallel — no sequential waiting ──────────────────────
+  //     const [bomRows, progressRows] = await Promise.all([
+  //       customSelectSqlQuery2(bomSql, [project_id]),
+  //       customSelectSqlQuery2(progressSql, [project_id]),
+  //     ]);
+
+  //     if (!bomRows.length) {
+  //       return res.status(200).json({ success: true, data: [] });
+  //     }
+
+  //     // ─── Build lookup Map for work progress keyed by "bom_id|bom_progress_id"
+  //     // One reduce — no forEach/for loops
+  //     const progressMap = progressRows.reduce((acc, wp) => {
+  //       const key = `${wp.bom_id}|${wp.bom_progress_id}`;
+  //       if (!acc[key]) acc[key] = [];
+  //       acc[key].push({
+  //         date:                 wp.date,
+  //         project_site_id:      wp.project_site_id,
+  //         project_site_name:    wp.project_site_name,
+  //         product_id:           wp.product_id,
+  //         product_name:         wp.product_name,
+  //         total_packet_qty:     wp.total_packet_qty,
+  //         total_material_used:  wp.total_material_used,
+  //         total_progress:       wp.total_progress,
+  //         planned_qty:          wp.planned_qty,
+  //         progress_percentage:  wp.progress_percentage, // ← from SQL
+  //         remarks:              wp.remarks,
+  //         rep_task:             wp.rep_task,
+  //         created_by:           wp.created_by,
+  //         created_by_name:      wp.created_by_name,
+  //         created_at:           wp.created_at,
+  //         updated_at:           wp.updated_at,
+  //       });
+  //       return acc;
+  //     }, {});
+
+  //     // ─── Build estimation map using reduce — zero explicit loops ───────────
+  //     const estimationMap = bomRows.reduce((map, row) => {
+
+  //       // ── Level 1: estimation ───────────────────────────────────────────────
+  //       if (!map[row.project_estimation_id]) {
+  //         map[row.project_estimation_id] = {
+  //           project_estimation_id:    row.project_estimation_id,
+  //           project_id:               row.project_id,
+  //           project_name:             row.project_name,
+  //           site_id:                  row.site_id,
+  //           site_name:                row.project_site_name,
+  //           bom_id:                   row.bom_id,
+  //           bom_name:                 row.bom_name,
+  //           rep_task:                 row.rep_task,
+  //           billing_id:               row.billing_id,
+  //           project_work_description: row.project_work_description,
+  //           billing_unit:             row.billing_unit,
+  //           billing_quantity:         row.billing_quantity,
+  //           billing_rate:             row.billing_rate,
+  //           billing_amount:           row.billing_amount,
+  //           billing_remarks:          row.billing_remarks,
+  //           progresses:               {},
+  //         };
+  //       }
+
+  //       const est = map[row.project_estimation_id];
+
+  //       // ── Level 2: progress ─────────────────────────────────────────────────
+  //       if (row.bom_progress_id && !est.progresses[row.bom_progress_id]) {
+  //         const wpKey = `${row.bom_id}|${row.bom_progress_id}`;
+  //         est.progresses[row.bom_progress_id] = {
+  //           bom_progress_id:   row.bom_progress_id,
+  //           bom_progress_name: row.bom_progress_name,
+  //           sl_number:         row.sl_number,
+  //           items:             [],
+  //           work_progress:     progressMap[wpKey] || [], // ← attached here
+  //         };
+  //       }
+
+  //       // ── Level 3: item ─────────────────────────────────────────────────────
+  //       if (row.bom_item_id && row.bom_progress_id) {
+  //         est.progresses[row.bom_progress_id].items.push({
+  //           bom_item_id: row.bom_item_id,
+  //           product_id:  row.product_id,
+  //           qty:         row.per_unit_qty,
+  //           total_qty:   row.total_qty,
+  //           product: {
+  //             product_id:      row.product_id,
+  //             product_name:    row.product_name,
+  //             unit:            row.unit || "Pc",
+  //             product_type_id: row.product_type_id,
+  //           },
+  //         });
+  //       }
+
+  //       return map;
+  //     }, {});
+
+  //     // ─── Convert nested objects → arrays using Object.values only ─────────
+  //     const result = Object.values(estimationMap).map((est) => ({
+  //       ...est,
+  //       progresses: Object.values(est.progresses),
+  //     }));
+
+  //     return res.status(200).json({ success: true, data: result });
+
+  //   } catch (err) {
+  //     console.error("FETCH ERROR:", err);
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Unable to fetch BOM details with work progress",
+  //     });
+  //   }
+  // };
+
+
+
+
+
+  // getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
+  //   try {
+  //     const { project_id } = req.body;
+
+  //     if (!project_id) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "project_id is required",
+  //       });
+  //     }
+
+  //     // ─── Query 1: BOM Estimation Details ──────────────────────────────────
+  //     const bomSql = `
+  //       SELECT 
+  //         t.project_estimation_id,
+  //         t.project_id,
+  //         p.project_name,
+  //         t.site_id,
+  //         s.project_site_name,
+  //         t.bom_id,
+  //         t.bom_name,
+  //         t.rep_task,
+  //         t.billing_id,
+
+  //         wd.work_description AS project_work_description,
+  //         billing.unit         AS billing_unit,
+  //         billing.quantity     AS billing_quantity,
+  //         billing.rate         AS billing_rate,
+  //         billing.amount       AS billing_amount,
+  //         billing.remarks      AS billing_remarks,
+
+  //         bp.bom_progress_id,
+  //         bp.bom_progress_name,
+  //         bp.sl_number,
+
+  //         bi.bom_item_id,
+  //         bi.product_id,
+  //         bi.qty               AS per_unit_qty,
+  //         bi.total_qty,
+
+  //         pr.product_name,
+  //         pr.product_type_id,
+  //         uom.unit_name        AS unit
+
+  //       FROM tx_project_details_with_estimation t
+  //       INNER JOIN md_project p         ON t.project_id   = p.project_id
+  //       LEFT  JOIN md_project_site s    ON t.site_id      = s.project_site_id
+  //       LEFT  JOIN md_project_billing billing ON t.billing_id = billing.billing_id
+  //       LEFT  JOIN md_project_work_description wd
+  //         ON billing.project_work_description_id = wd.project_work_description_id
+  //       LEFT  JOIN md_bom_progress bp   ON t.bom_id       = bp.bom_id
+  //       LEFT  JOIN md_bom_item bi       ON bp.bom_progress_id = bi.bom_progress_id
+  //                                      AND t.bom_id           = bi.bom_id
+  //       LEFT  JOIN md_product pr        ON bi.product_id  = pr.product_id
+  //       LEFT  JOIN md_unit uom          ON pr.unit_id     = uom.unit_id
+  //       WHERE t.project_id = ?
+  //       ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
+  //     `;
+
+  //     // ─── Query 2: Work Progress + Percentage per BOM Progress ─────────────
+  //     // FIX: added DATE_FORMAT(w.date) as a plain 'YYYY-MM-DD' string
+  //     // (work_date_str) so today/yesterday/this-month comparisons never
+  //     // depend on driver Date-object vs string quirks — same fix already
+  //     // applied in getWorkProgressByProjectAndSite.
+  //     const progressSql = `
+  //       SELECT
+  //         w.bom_id,
+  //         w.bom_progress_id,
+  //         w.project_site_id,
+  //         w.date,
+  //         DATE_FORMAT(w.date, '%Y-%m-%d')                AS work_date_str,
+  //         bi.product_id,
+  //         pr.product_name,
+  //         bp.bom_progress_name,
+  //         b.bom_name,
+  //         s.project_site_name,
+  //         MAX(w.created_by)                              AS created_by,
+  //         CONCAT(e.first_name, ' ', e.last_name)         AS created_by_name,
+  //         MAX(w.remarks)                                 AS remarks,
+  //         MAX(w.rep_task)                                AS rep_task,
+  //         MAX(w.created_at)                              AS created_at,
+  //         MAX(w.updated_at)                              AS updated_at,
+  //         SUM(w.packet_qty)                              AS total_packet_qty,
+  //         SUM(w.total_qty_of_material_used)              AS total_material_used,
+  //         SUM(w.total_progress)                          AS total_progress,
+  //         bi.total_qty                                   AS planned_qty,
+
+  //         ROUND(
+  //           (SUM(w.total_progress) / NULLIF(bi.total_qty, 0)) * 100
+  //         , 2)                                           AS progress_percentage
+
+  //       FROM tx_work_progress w
+  //       LEFT JOIN md_project_site  s   ON w.project_site_id  = s.project_site_id
+  //       LEFT JOIN md_bom           b   ON w.bom_id            = b.bom_id
+  //       LEFT JOIN md_bom_progress  bp  ON w.bom_progress_id   = bp.bom_progress_id
+  //       LEFT JOIN md_bom_item      bi  ON bi.bom_id           = w.bom_id
+  //                                     AND bi.bom_progress_id  = w.bom_progress_id
+  //       LEFT JOIN md_product       pr  ON bi.product_id       = pr.product_id
+  //       LEFT JOIN em_employees     e   ON w.created_by        = e.employee_id
+  //       WHERE w.project_id = ?
+  //       GROUP BY
+  //         w.bom_id,
+  //         w.bom_progress_id,
+  //         w.project_site_id,
+  //         w.date,
+  //         bi.product_id,
+  //         bi.total_qty,
+  //         bp.bom_progress_name,
+  //         b.bom_name,
+  //         s.project_site_name,
+  //         e.first_name,
+  //         e.last_name,
+  //         pr.product_name
+  //       ORDER BY w.date DESC, w.bom_id, w.bom_progress_id
+  //     `;
+
+  //     // ─── Query 3: DB-clock "today" — same source used for w.date, so no
+  //     // timezone mismatch between Node and the DB server. ────────────────────
+  //     const todaySql = `SELECT DATE_FORMAT(NOW(), '%Y-%m-%d') AS today_date`;
+
+  //     // ─── Run all three in parallel ─────────────────────────────────────────
+  //     const [bomRows, progressRows, todayRows] = await Promise.all([
+  //       customSelectSqlQuery2(bomSql, [project_id]),
+  //       customSelectSqlQuery2(progressSql, [project_id]),
+  //       customSelectSqlQuery2(todaySql, []),
+  //     ]);
+
+  //     if (!bomRows.length) {
+  //       return res.status(200).json({ success: true, data: [] });
+  //     }
+
+  //     // Safe fallback if todaySql somehow returns nothing
+  //     const todayStr =
+  //       (todayRows && todayRows[0] && todayRows[0].today_date) ||
+  //       new Date().toISOString().slice(0, 10);
+
+  //     // Start of current month, derived from the same DB-clock string
+  //     const monthStartStr = `${todayStr.slice(0, 7)}-01`;
+
+  //     // Defensive date normalizer: string / Date object / null → 'YYYY-MM-DD' | null
+  //     const normalizeDateStr = (value) => {
+  //       if (!value) return null;
+  //       if (typeof value === "string") return value.slice(0, 10);
+  //       if (value instanceof Date && !isNaN(value.getTime())) {
+  //         return value.toISOString().slice(0, 10);
+  //       }
+  //       return String(value).slice(0, 10);
+  //     };
+
+  //     // Safe numeric parser — never lets a null/garbage value poison a sum
+  //     const toNum = (value, fallback = 0) => {
+  //       const n = parseFloat(value);
+  //       return Number.isFinite(n) ? n : fallback;
+  //     };
+
+  //     // ─── Lookup map for the display-facing work_progress[] rows ───────────
+  //     // (unchanged from before — keyed by "bom_id|bom_progress_id")
+  //     const progressMap = progressRows.reduce((acc, wp) => {
+  //       const key = `${wp.bom_id}|${wp.bom_progress_id}`;
+  //       if (!acc[key]) acc[key] = [];
+  //       acc[key].push({
+  //         date:                 wp.date,
+  //         project_site_id:      wp.project_site_id,
+  //         project_site_name:    wp.project_site_name,
+  //         product_id:           wp.product_id,
+  //         product_name:         wp.product_name,
+  //         total_packet_qty:     wp.total_packet_qty,
+  //         total_material_used:  wp.total_material_used,
+  //         total_progress:       wp.total_progress,
+  //         planned_qty:          wp.planned_qty,
+  //         progress_percentage:  wp.progress_percentage,
+  //         remarks:              wp.remarks,
+  //         rep_task:             wp.rep_task,
+  //         created_by:           wp.created_by,
+  //         created_by_name:      wp.created_by_name,
+  //         created_at:           wp.created_at,
+  //         updated_at:           wp.updated_at,
+  //       });
+  //       return acc;
+  //     }, {});
+
+  //     // ─── Usage map for completion-counting ──────────────────────────────
+  //     // Keyed by bom_id_bom_progress_id_product_id -> [{used, work_date}].
+  //     // Uses total_progress (progress made against planned_qty), which is
+  //     // this controller's equivalent of Act_Qty in getWorkProgressByProjectAndSite.
+  //     // progressSql already groups one row per date, so each row = one usage entry.
+  //     const usageMap = new Map();
+  //     for (const row of progressRows || []) {
+  //       if (!row.bom_id || !row.bom_progress_id || !row.product_id) continue;
+  //       const key = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
+  //       if (!usageMap.has(key)) usageMap.set(key, []);
+  //       usageMap.get(key).push({
+  //         used: toNum(row.total_progress, 0),
+  //         work_date: row.work_date_str || normalizeDateStr(row.date),
+  //       });
+  //     }
+
+  //     // FIX (same rule as getWorkProgressByProjectAndSite): "BOM completed N
+  //     // times" = the MIN, across every bom_item line in every progress step,
+  //     // of floor(total_used_for_that_line / that_line's_total_qty). Never
+  //     // summed/merged across steps by product. Keyed by
+  //     // `${project_estimation_id}_${bom_id}` so the same bom_id reused across
+  //     // different estimations/billing lines can't bleed into each other.
+  //     const completedTillDateMin = new Map();
+  //     const completedYesterdayMin = new Map();
+  //     const completedBeforeThisMonthMin = new Map();
+
+  //     // ─── Build estimation map ───────────────────────────────────────────
+  //     const estimationMap = bomRows.reduce((map, row) => {
+
+  //       if (!map[row.project_estimation_id]) {
+  //         map[row.project_estimation_id] = {
+  //           project_estimation_id:    row.project_estimation_id,
+  //           project_id:               row.project_id,
+  //           project_name:             row.project_name,
+  //           site_id:                  row.site_id,
+  //           site_name:                row.project_site_name,
+  //           bom_id:                   row.bom_id,
+  //           bom_name:                 row.bom_name,
+  //           rep_task:                 row.rep_task,
+  //           billing_id:               row.billing_id,
+  //           project_work_description: row.project_work_description,
+  //           billing_unit:             row.billing_unit,
+  //           billing_quantity:         row.billing_quantity,
+  //           billing_rate:             row.billing_rate,
+  //           billing_amount:           row.billing_amount,
+  //           billing_remarks:          row.billing_remarks,
+  //           bom_completed_till_date:  0, // filled in after the loop
+  //           remaining_bom_quantity:   0, // filled in after the loop
+  //           bom_completed_today:      0, // filled in after the loop
+  //           bom_completed_this_month: 0, // filled in after the loop
+  //           progresses:               {},
+  //         };
+  //       }
+
+  //       const est = map[row.project_estimation_id];
+  //       const bomInstanceKey = `${row.project_estimation_id}_${row.bom_id}`;
+
+  //       if (row.bom_progress_id && !est.progresses[row.bom_progress_id]) {
+  //         const wpKey = `${row.bom_id}|${row.bom_progress_id}`;
+  //         est.progresses[row.bom_progress_id] = {
+  //           bom_progress_id:   row.bom_progress_id,
+  //           bom_progress_name: row.bom_progress_name,
+  //           sl_number:         row.sl_number,
+  //           items:             [],
+  //           work_progress:     progressMap[wpKey] || [],
+  //         };
+  //       }
+
+  //       if (row.bom_item_id && row.bom_progress_id) {
+  //         est.progresses[row.bom_progress_id].items.push({
+  //           bom_item_id: row.bom_item_id,
+  //           product_id:  row.product_id,
+  //           qty:         row.per_unit_qty,
+  //           total_qty:   row.total_qty,
+  //           product: {
+  //             product_id:      row.product_id,
+  //             product_name:    row.product_name,
+  //             unit:            row.unit || "Pc",
+  //             product_type_id: row.product_type_id,
+  //           },
+  //         });
+
+  //         // ── Completion counting for this specific bom_item line ─────────
+  //         const totalQty = toNum(row.total_qty, 0);
+  //         const usageKey = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
+  //         const usageEntries = usageMap.get(usageKey) || [];
+
+  //         const usedTillDate = usageEntries.reduce((sum, u) => sum + u.used, 0);
+  //         const usedYesterday = usageEntries
+  //           .filter((u) => u.work_date !== todayStr)
+  //           .reduce((sum, u) => sum + u.used, 0);
+  //         const usedBeforeThisMonth = usageEntries
+  //           .filter((u) => u.work_date && u.work_date < monthStartStr)
+  //           .reduce((sum, u) => sum + u.used, 0);
+
+  //         const timesTillDate = totalQty > 0 ? Math.floor(usedTillDate / totalQty) : 0;
+  //         const timesYesterday = totalQty > 0 ? Math.floor(usedYesterday / totalQty) : 0;
+  //         const timesBeforeThisMonth = totalQty > 0 ? Math.floor(usedBeforeThisMonth / totalQty) : 0;
+
+  //         const prevTillDate = completedTillDateMin.has(bomInstanceKey)
+  //           ? completedTillDateMin.get(bomInstanceKey)
+  //           : null;
+  //         completedTillDateMin.set(
+  //           bomInstanceKey,
+  //           prevTillDate === null ? timesTillDate : Math.min(prevTillDate, timesTillDate)
+  //         );
+
+  //         const prevYesterday = completedYesterdayMin.has(bomInstanceKey)
+  //           ? completedYesterdayMin.get(bomInstanceKey)
+  //           : null;
+  //         completedYesterdayMin.set(
+  //           bomInstanceKey,
+  //           prevYesterday === null ? timesYesterday : Math.min(prevYesterday, timesYesterday)
+  //         );
+
+  //         const prevBeforeMonth = completedBeforeThisMonthMin.has(bomInstanceKey)
+  //           ? completedBeforeThisMonthMin.get(bomInstanceKey)
+  //           : null;
+  //         completedBeforeThisMonthMin.set(
+  //           bomInstanceKey,
+  //           prevBeforeMonth === null
+  //             ? timesBeforeThisMonth
+  //             : Math.min(prevBeforeMonth, timesBeforeThisMonth)
+  //         );
+  //       }
+
+  //       return map;
+  //     }, {});
+
+  //     // ─── Fill in completion fields + convert nested objects → arrays ──────
+  //     const result = Object.values(estimationMap).map((est) => {
+  //       const bomInstanceKey = `${est.project_estimation_id}_${est.bom_id}`;
+
+  //       const completedTillDate = completedTillDateMin.get(bomInstanceKey) || 0;
+  //       const completedYesterday = completedYesterdayMin.get(bomInstanceKey) || 0;
+  //       const completedBeforeThisMonth = completedBeforeThisMonthMin.get(bomInstanceKey) || 0;
+  //       const repTaskNum = toNum(est.rep_task, 0);
+
+  //       return {
+  //         ...est,
+  //         bom_completed_till_date:  completedTillDate,
+  //         // Clamped at 0 — same rationale as getWorkProgressByProjectAndSite
+  //         remaining_bom_quantity:   Math.max(0, repTaskNum - completedTillDate),
+  //         bom_completed_today:      Math.max(0, completedTillDate - completedYesterday),
+  //         bom_completed_this_month: Math.max(0, completedTillDate - completedBeforeThisMonth),
+  //         progresses: Object.values(est.progresses),
+  //       };
+  //     });
+
+  //     return res.status(200).json({ success: true, data: result });
+
+  //   } catch (err) {
+  //     console.error("FETCH ERROR:", err);
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Unable to fetch BOM details with work progress",
+  //     });
+  //   }
+  // };
+
+
+  getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
+    const requestTag = `[getBomFullDetailsWithProgressByProject_Id:${Date.now()}]`;
+
+    try {
+      const rawProjectId = req.body?.project_id;
+
+      // ── Input validation: must be a genuine positive integer ────────────
+      const project_id = Number(rawProjectId);
+      if (
+        rawProjectId === undefined ||
+        rawProjectId === null ||
+        rawProjectId === "" ||
+        !Number.isInteger(project_id) ||
+        project_id <= 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "project_id is required and must be a positive integer",
+        });
+      }
+
+      // ─── Query 1: BOM Estimation Details ──────────────────────────────────
+      const bomSql = `
       SELECT 
         t.project_estimation_id,
         t.project_id,
@@ -3403,8 +3590,8 @@ getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
       ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
     `;
 
-    // ─── Query 2: Work Progress + Percentage per BOM Progress ─────────────
-    const progressSql = `
+      // ─── Query 2: Work Progress + Percentage per BOM Progress ─────────────
+      const progressSql = `
       SELECT
         w.bom_id,
         w.bom_progress_id,
@@ -3456,253 +3643,253 @@ getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
       ORDER BY w.date DESC, w.bom_id, w.bom_progress_id
     `;
 
-    // ─── Query 3: DB-clock "today" ──────────────────────────────────────
-    const todaySql = `SELECT DATE_FORMAT(NOW(), '%Y-%m-%d') AS today_date`;
+      // ─── Query 3: DB-clock "today" ──────────────────────────────────────
+      const todaySql = `SELECT DATE_FORMAT(NOW(), '%Y-%m-%d') AS today_date`;
 
-    // ─── Run all three in parallel, each guarded independently ─────────
-    let bomRows, progressRows, todayRows;
-    try {
-      [bomRows, progressRows, todayRows] = await Promise.all([
-        customSelectSqlQuery2(bomSql, [project_id]),
-        customSelectSqlQuery2(progressSql, [project_id]),
-        customSelectSqlQuery2(todaySql, []),
-      ]);
-    } catch (dbErr) {
-      console.error(`${requestTag} DB query failed:`, dbErr);
+      // ─── Run all three in parallel, each guarded independently ─────────
+      let bomRows, progressRows, todayRows;
+      try {
+        [bomRows, progressRows, todayRows] = await Promise.all([
+          customSelectSqlQuery2(bomSql, [project_id]),
+          customSelectSqlQuery2(progressSql, [project_id]),
+          customSelectSqlQuery2(todaySql, []),
+        ]);
+      } catch (dbErr) {
+        console.error(`${requestTag} DB query failed:`, dbErr);
+        return res.status(500).json({
+          success: false,
+          message: "Unable to fetch BOM details with work progress",
+        });
+      }
+
+      if (!Array.isArray(bomRows) || bomRows.length === 0) {
+        return res.status(200).json({ success: true, data: [] });
+      }
+
+      // Defensive cap — logs instead of silently mis-serving a huge payload
+      const MAX_BOM_ROWS = 50000;
+      if (bomRows.length > MAX_BOM_ROWS) {
+        console.error(
+          `${requestTag} bomRows exceeded safety cap (${bomRows.length} rows) for project_id=${project_id}`
+        );
+        return res.status(500).json({
+          success: false,
+          message: "Result set too large to process safely, please contact support",
+        });
+      }
+
+      // Safe fallback if todaySql somehow returns nothing
+      const todayStr =
+        (Array.isArray(todayRows) && todayRows[0] && todayRows[0].today_date) ||
+        new Date().toISOString().slice(0, 10);
+
+      // Start of current month, derived from the same DB-clock string
+      const monthStartStr = `${todayStr.slice(0, 7)}-01`;
+
+      // Defensive date normalizer: string / Date object / null → 'YYYY-MM-DD' | null
+      const normalizeDateStr = (value) => {
+        if (!value) return null;
+        if (typeof value === "string") return value.slice(0, 10);
+        if (value instanceof Date && !isNaN(value.getTime())) {
+          return value.toISOString().slice(0, 10);
+        }
+        return String(value).slice(0, 10);
+      };
+
+      // Safe numeric parser — never lets a null/garbage value poison a sum
+      const toNum = (value, fallback = 0) => {
+        const n = parseFloat(value);
+        return Number.isFinite(n) ? n : fallback;
+      };
+
+      // ─── Lookup map for the display-facing work_progress[] rows ───────────
+      const progressMap = (progressRows || []).reduce((acc, wp) => {
+        if (!wp || wp.bom_id == null || wp.bom_progress_id == null) return acc;
+        const key = `${wp.bom_id}|${wp.bom_progress_id}`;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push({
+          date: wp.date,
+          project_site_id: wp.project_site_id,
+          project_site_name: wp.project_site_name,
+          product_id: wp.product_id,
+          product_name: wp.product_name,
+          total_packet_qty: wp.total_packet_qty,
+          total_material_used: wp.total_material_used,
+          total_progress: wp.total_progress,
+          planned_qty: wp.planned_qty,
+          progress_percentage: wp.progress_percentage,
+          remarks: wp.remarks,
+          rep_task: wp.rep_task,
+          created_by: wp.created_by,
+          created_by_name: wp.created_by_name,
+          created_at: wp.created_at,
+          updated_at: wp.updated_at,
+        });
+        return acc;
+      }, {});
+
+      // ─── Usage map for completion-counting ──────────────────────────────
+      // Keyed by bom_id_bom_progress_id_product_id -> [{used, work_date}].
+      const usageMap = new Map();
+      for (const row of progressRows || []) {
+        if (!row || !row.bom_id || !row.bom_progress_id || !row.product_id) continue;
+        const key = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
+        if (!usageMap.has(key)) usageMap.set(key, []);
+        usageMap.get(key).push({
+          used: toNum(row.total_progress, 0),
+          work_date: row.work_date_str || normalizeDateStr(row.date),
+        });
+      }
+
+      // FIX: "BOM completed N times" = the MIN, across every bom_item line in
+      // every progress step, of floor(total_used_for_that_line / that_line's
+      // total_qty). Keyed by `${project_estimation_id}_${bom_id}` so the same
+      // bom_id reused across different estimations/billing lines can't bleed
+      // into each other.
+      const completedTillDateMin = new Map();
+      const completedYesterdayMin = new Map();
+      const completedBeforeThisMonthMin = new Map();
+
+      // ─── Build estimation map ───────────────────────────────────────────
+      const estimationMap = bomRows.reduce((map, row) => {
+        if (!row || row.project_estimation_id == null) return map;
+
+        if (!map[row.project_estimation_id]) {
+          // required_boq_quantity: the BOQ (Bill of Quantities) target this
+          // estimation must fulfil — sourced from billing.quantity, NOT
+          // rep_task. rep_task is kept below for reference only; it no
+          // longer drives remaining/completion math.
+          map[row.project_estimation_id] = {
+            project_estimation_id: row.project_estimation_id,
+            project_id: row.project_id,
+            project_name: row.project_name,
+            site_id: row.site_id,
+            site_name: row.project_site_name,
+            bom_id: row.bom_id,
+            bom_name: row.bom_name,
+            rep_task: row.rep_task,
+            required_boq_quantity: toNum(row.billing_quantity, 0),
+            billing_id: row.billing_id,
+            project_work_description: row.project_work_description,
+            billing_unit: row.billing_unit,
+            billing_quantity: row.billing_quantity,
+            billing_rate: row.billing_rate,
+            billing_amount: row.billing_amount,
+            billing_remarks: row.billing_remarks,
+            bom_completed_till_date: 0, // filled in after the loop
+            remaining_bom_quantity: 0, // filled in after the loop
+            //bom_completed_today:      0, // filled in after the loop
+            //bom_completed_this_month: 0, // filled in after the loop
+            progresses: {},
+          };
+        }
+
+        const est = map[row.project_estimation_id];
+        const bomInstanceKey = `${row.project_estimation_id}_${row.bom_id}`;
+
+        if (row.bom_progress_id && !est.progresses[row.bom_progress_id]) {
+          const wpKey = `${row.bom_id}|${row.bom_progress_id}`;
+          est.progresses[row.bom_progress_id] = {
+            bom_progress_id: row.bom_progress_id,
+            bom_progress_name: row.bom_progress_name,
+            sl_number: row.sl_number,
+            items: [],
+            work_progress: progressMap[wpKey] || [],
+          };
+        }
+
+        if (row.bom_item_id && row.bom_progress_id) {
+          est.progresses[row.bom_progress_id].items.push({
+            bom_item_id: row.bom_item_id,
+            product_id: row.product_id,
+            qty: row.per_unit_qty,
+            total_qty: row.total_qty,
+            product: {
+              product_id: row.product_id,
+              product_name: row.product_name,
+              unit: row.unit || "Pc",
+              product_type_id: row.product_type_id,
+            },
+          });
+
+          // ── Completion counting for this specific bom_item line ─────────
+          const totalQty = toNum(row.total_qty, 0);
+          const usageKey = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
+          const usageEntries = usageMap.get(usageKey) || [];
+
+          const usedTillDate = usageEntries.reduce((sum, u) => sum + u.used, 0);
+          const usedYesterday = usageEntries
+            .filter((u) => u.work_date !== todayStr)
+            .reduce((sum, u) => sum + u.used, 0);
+          const usedBeforeThisMonth = usageEntries
+            .filter((u) => u.work_date && u.work_date < monthStartStr)
+            .reduce((sum, u) => sum + u.used, 0);
+
+          const timesTillDate = totalQty > 0 ? Math.floor(usedTillDate / totalQty) : 0;
+          const timesYesterday = totalQty > 0 ? Math.floor(usedYesterday / totalQty) : 0;
+          const timesBeforeThisMonth = totalQty > 0 ? Math.floor(usedBeforeThisMonth / totalQty) : 0;
+
+          const prevTillDate = completedTillDateMin.has(bomInstanceKey)
+            ? completedTillDateMin.get(bomInstanceKey)
+            : null;
+          completedTillDateMin.set(
+            bomInstanceKey,
+            prevTillDate === null ? timesTillDate : Math.min(prevTillDate, timesTillDate)
+          );
+
+          const prevYesterday = completedYesterdayMin.has(bomInstanceKey)
+            ? completedYesterdayMin.get(bomInstanceKey)
+            : null;
+          completedYesterdayMin.set(
+            bomInstanceKey,
+            prevYesterday === null ? timesYesterday : Math.min(prevYesterday, timesYesterday)
+          );
+
+          const prevBeforeMonth = completedBeforeThisMonthMin.has(bomInstanceKey)
+            ? completedBeforeThisMonthMin.get(bomInstanceKey)
+            : null;
+          completedBeforeThisMonthMin.set(
+            bomInstanceKey,
+            prevBeforeMonth === null
+              ? timesBeforeThisMonth
+              : Math.min(prevBeforeMonth, timesBeforeThisMonth)
+          );
+        }
+
+        return map;
+      }, {});
+
+      // ─── Fill in completion fields + convert nested objects → arrays ──────
+      const result = Object.values(estimationMap).map((est) => {
+        const bomInstanceKey = `${est.project_estimation_id}_${est.bom_id}`;
+
+        const completedTillDate = completedTillDateMin.get(bomInstanceKey) || 0;
+        const completedYesterday = completedYesterdayMin.get(bomInstanceKey) || 0;
+        const completedBeforeThisMonth = completedBeforeThisMonthMin.get(bomInstanceKey) || 0;
+
+        // Driven by required_boq_quantity (billing.quantity), NOT rep_task.
+        const requiredBoqQty = toNum(est.required_boq_quantity, 0);
+
+        return {
+          ...est,
+          bom_completed_till_date: completedTillDate,
+          remaining_bom_quantity: Math.max(0, requiredBoqQty - completedTillDate),
+          // bom_completed_today:      Math.max(0, completedTillDate - completedYesterday),
+          //bom_completed_this_month: Math.max(0, completedTillDate - completedBeforeThisMonth),
+          progresses: Object.values(est.progresses),
+        };
+      });
+
+      return res.status(200).json({ success: true, data: result });
+
+    } catch (err) {
+      console.error(`${requestTag} Unhandled error:`, err);
       return res.status(500).json({
         success: false,
         message: "Unable to fetch BOM details with work progress",
       });
     }
-
-    if (!Array.isArray(bomRows) || bomRows.length === 0) {
-      return res.status(200).json({ success: true, data: [] });
-    }
-
-    // Defensive cap — logs instead of silently mis-serving a huge payload
-    const MAX_BOM_ROWS = 50000;
-    if (bomRows.length > MAX_BOM_ROWS) {
-      console.error(
-        `${requestTag} bomRows exceeded safety cap (${bomRows.length} rows) for project_id=${project_id}`
-      );
-      return res.status(500).json({
-        success: false,
-        message: "Result set too large to process safely, please contact support",
-      });
-    }
-
-    // Safe fallback if todaySql somehow returns nothing
-    const todayStr =
-      (Array.isArray(todayRows) && todayRows[0] && todayRows[0].today_date) ||
-      new Date().toISOString().slice(0, 10);
-
-    // Start of current month, derived from the same DB-clock string
-    const monthStartStr = `${todayStr.slice(0, 7)}-01`;
-
-    // Defensive date normalizer: string / Date object / null → 'YYYY-MM-DD' | null
-    const normalizeDateStr = (value) => {
-      if (!value) return null;
-      if (typeof value === "string") return value.slice(0, 10);
-      if (value instanceof Date && !isNaN(value.getTime())) {
-        return value.toISOString().slice(0, 10);
-      }
-      return String(value).slice(0, 10);
-    };
-
-    // Safe numeric parser — never lets a null/garbage value poison a sum
-    const toNum = (value, fallback = 0) => {
-      const n = parseFloat(value);
-      return Number.isFinite(n) ? n : fallback;
-    };
-
-    // ─── Lookup map for the display-facing work_progress[] rows ───────────
-    const progressMap = (progressRows || []).reduce((acc, wp) => {
-      if (!wp || wp.bom_id == null || wp.bom_progress_id == null) return acc;
-      const key = `${wp.bom_id}|${wp.bom_progress_id}`;
-      if (!acc[key]) acc[key] = [];
-      acc[key].push({
-        date:                 wp.date,
-        project_site_id:      wp.project_site_id,
-        project_site_name:    wp.project_site_name,
-        product_id:           wp.product_id,
-        product_name:         wp.product_name,
-        total_packet_qty:     wp.total_packet_qty,
-        total_material_used:  wp.total_material_used,
-        total_progress:       wp.total_progress,
-        planned_qty:          wp.planned_qty,
-        progress_percentage:  wp.progress_percentage,
-        remarks:              wp.remarks,
-        rep_task:             wp.rep_task,
-        created_by:           wp.created_by,
-        created_by_name:      wp.created_by_name,
-        created_at:           wp.created_at,
-        updated_at:           wp.updated_at,
-      });
-      return acc;
-    }, {});
-
-    // ─── Usage map for completion-counting ──────────────────────────────
-    // Keyed by bom_id_bom_progress_id_product_id -> [{used, work_date}].
-    const usageMap = new Map();
-    for (const row of progressRows || []) {
-      if (!row || !row.bom_id || !row.bom_progress_id || !row.product_id) continue;
-      const key = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
-      if (!usageMap.has(key)) usageMap.set(key, []);
-      usageMap.get(key).push({
-        used: toNum(row.total_progress, 0),
-        work_date: row.work_date_str || normalizeDateStr(row.date),
-      });
-    }
-
-    // FIX: "BOM completed N times" = the MIN, across every bom_item line in
-    // every progress step, of floor(total_used_for_that_line / that_line's
-    // total_qty). Keyed by `${project_estimation_id}_${bom_id}` so the same
-    // bom_id reused across different estimations/billing lines can't bleed
-    // into each other.
-    const completedTillDateMin = new Map();
-    const completedYesterdayMin = new Map();
-    const completedBeforeThisMonthMin = new Map();
-
-    // ─── Build estimation map ───────────────────────────────────────────
-    const estimationMap = bomRows.reduce((map, row) => {
-      if (!row || row.project_estimation_id == null) return map;
-
-      if (!map[row.project_estimation_id]) {
-        // required_boq_quantity: the BOQ (Bill of Quantities) target this
-        // estimation must fulfil — sourced from billing.quantity, NOT
-        // rep_task. rep_task is kept below for reference only; it no
-        // longer drives remaining/completion math.
-        map[row.project_estimation_id] = {
-          project_estimation_id:    row.project_estimation_id,
-          project_id:               row.project_id,
-          project_name:             row.project_name,
-          site_id:                  row.site_id,
-          site_name:                row.project_site_name,
-          bom_id:                   row.bom_id,
-          bom_name:                 row.bom_name,
-          rep_task:                 row.rep_task,
-          required_boq_quantity:    toNum(row.billing_quantity, 0),
-          billing_id:               row.billing_id,
-          project_work_description: row.project_work_description,
-          billing_unit:             row.billing_unit,
-          billing_quantity:         row.billing_quantity,
-          billing_rate:             row.billing_rate,
-          billing_amount:           row.billing_amount,
-          billing_remarks:          row.billing_remarks,
-          bom_completed_till_date:  0, // filled in after the loop
-          remaining_bom_quantity:   0, // filled in after the loop
-          //bom_completed_today:      0, // filled in after the loop
-          //bom_completed_this_month: 0, // filled in after the loop
-          progresses:               {},
-        };
-      }
-
-      const est = map[row.project_estimation_id];
-      const bomInstanceKey = `${row.project_estimation_id}_${row.bom_id}`;
-
-      if (row.bom_progress_id && !est.progresses[row.bom_progress_id]) {
-        const wpKey = `${row.bom_id}|${row.bom_progress_id}`;
-        est.progresses[row.bom_progress_id] = {
-          bom_progress_id:   row.bom_progress_id,
-          bom_progress_name: row.bom_progress_name,
-          sl_number:         row.sl_number,
-          items:             [],
-          work_progress:     progressMap[wpKey] || [],
-        };
-      }
-
-      if (row.bom_item_id && row.bom_progress_id) {
-        est.progresses[row.bom_progress_id].items.push({
-          bom_item_id: row.bom_item_id,
-          product_id:  row.product_id,
-          qty:         row.per_unit_qty,
-          total_qty:   row.total_qty,
-          product: {
-            product_id:      row.product_id,
-            product_name:    row.product_name,
-            unit:            row.unit || "Pc",
-            product_type_id: row.product_type_id,
-          },
-        });
-
-        // ── Completion counting for this specific bom_item line ─────────
-        const totalQty = toNum(row.total_qty, 0);
-        const usageKey = `${row.bom_id}_${row.bom_progress_id}_${row.product_id}`;
-        const usageEntries = usageMap.get(usageKey) || [];
-
-        const usedTillDate = usageEntries.reduce((sum, u) => sum + u.used, 0);
-        const usedYesterday = usageEntries
-          .filter((u) => u.work_date !== todayStr)
-          .reduce((sum, u) => sum + u.used, 0);
-        const usedBeforeThisMonth = usageEntries
-          .filter((u) => u.work_date && u.work_date < monthStartStr)
-          .reduce((sum, u) => sum + u.used, 0);
-
-        const timesTillDate = totalQty > 0 ? Math.floor(usedTillDate / totalQty) : 0;
-        const timesYesterday = totalQty > 0 ? Math.floor(usedYesterday / totalQty) : 0;
-        const timesBeforeThisMonth = totalQty > 0 ? Math.floor(usedBeforeThisMonth / totalQty) : 0;
-
-        const prevTillDate = completedTillDateMin.has(bomInstanceKey)
-          ? completedTillDateMin.get(bomInstanceKey)
-          : null;
-        completedTillDateMin.set(
-          bomInstanceKey,
-          prevTillDate === null ? timesTillDate : Math.min(prevTillDate, timesTillDate)
-        );
-
-        const prevYesterday = completedYesterdayMin.has(bomInstanceKey)
-          ? completedYesterdayMin.get(bomInstanceKey)
-          : null;
-        completedYesterdayMin.set(
-          bomInstanceKey,
-          prevYesterday === null ? timesYesterday : Math.min(prevYesterday, timesYesterday)
-        );
-
-        const prevBeforeMonth = completedBeforeThisMonthMin.has(bomInstanceKey)
-          ? completedBeforeThisMonthMin.get(bomInstanceKey)
-          : null;
-        completedBeforeThisMonthMin.set(
-          bomInstanceKey,
-          prevBeforeMonth === null
-            ? timesBeforeThisMonth
-            : Math.min(prevBeforeMonth, timesBeforeThisMonth)
-        );
-      }
-
-      return map;
-    }, {});
-
-    // ─── Fill in completion fields + convert nested objects → arrays ──────
-    const result = Object.values(estimationMap).map((est) => {
-      const bomInstanceKey = `${est.project_estimation_id}_${est.bom_id}`;
-
-      const completedTillDate = completedTillDateMin.get(bomInstanceKey) || 0;
-      const completedYesterday = completedYesterdayMin.get(bomInstanceKey) || 0;
-      const completedBeforeThisMonth = completedBeforeThisMonthMin.get(bomInstanceKey) || 0;
-
-      // Driven by required_boq_quantity (billing.quantity), NOT rep_task.
-      const requiredBoqQty = toNum(est.required_boq_quantity, 0);
-
-      return {
-        ...est,
-        bom_completed_till_date:  completedTillDate,
-        remaining_bom_quantity:   Math.max(0, requiredBoqQty - completedTillDate),
-       // bom_completed_today:      Math.max(0, completedTillDate - completedYesterday),
-        //bom_completed_this_month: Math.max(0, completedTillDate - completedBeforeThisMonth),
-        progresses: Object.values(est.progresses),
-      };
-    });
-
-    return res.status(200).json({ success: true, data: result });
-
-  } catch (err) {
-    console.error(`${requestTag} Unhandled error:`, err);
-    return res.status(500).json({
-      success: false,
-      message: "Unable to fetch BOM details with work progress",
-    });
-  }
-};
+  };
 
 
   /* -------------------------------------------------------------------------- */
@@ -3748,7 +3935,7 @@ getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
           wp.rep_task,
           wp.packet_qty,
           wp.total_qty_of_material_used,
-          wp.date,
+          DATE_FORMAT(wp.date, '%Y-%m-%d') AS date,
           wp.created_by,
           wp.created_at,
           wp.updated_at,
@@ -3905,20 +4092,66 @@ getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
       }
 
       /* 4. Aggregate Stats & Attach Consumed Products */
+      // 4.1 Prefetch BOM steps and estimation targets for accurate multi-step BOM completed & remaining calculation
+      const allBomIds = [...new Set(workRows.map((wp) => wp.bom_id).filter(Boolean))];
+      const bomStepsMap = {};
+      const targetMap = {};
+
+      if (allBomIds.length > 0) {
+        const ph = allBomIds.map(() => "?").join(",");
+        const stepRows = await customSelectSqlQuery2(
+          `SELECT bom_id, bom_progress_id, sl_number FROM md_bom_progress WHERE bom_id IN (${ph}) ORDER BY bom_id, sl_number ASC`,
+          allBomIds
+        );
+        (stepRows || []).forEach((sr) => {
+          if (!bomStepsMap[sr.bom_id]) bomStepsMap[sr.bom_id] = [];
+          bomStepsMap[sr.bom_id].push(sr);
+        });
+
+        const estRows = await customSelectSqlQuery2(
+          `SELECT project_id, site_id, bom_id, rep_task FROM tx_project_details_with_estimation WHERE bom_id IN (${ph})`,
+          allBomIds
+        );
+        (estRows || []).forEach((er) => {
+          const key = `${er.project_id || 0}_${er.site_id || 0}_${er.bom_id || 0}`;
+          targetMap[key] = parseFloat(er.rep_task || 0);
+          if (targetMap[`bom_${er.bom_id}`] === undefined) {
+            targetMap[`bom_${er.bom_id}`] = parseFloat(er.rep_task || 0);
+          }
+        });
+
+        const allTeamIds = [...new Set(workRows.map((wp) => wp.contractor_team_id).filter(Boolean))];
+        if (allTeamIds.length > 0) {
+          const tPh = allTeamIds.map(() => "?").join(",");
+          const assignRows = await customSelectSqlQuery2(
+            `SELECT ba.contractor_team_id, bi.bom_id, bi.assigned_qty
+             FROM td_contractor_team_bom_items bi
+             JOIN td_contractor_team_bom_assignment ba ON bi.assignment_id = ba.assignment_id
+             WHERE ba.contractor_team_id IN (${tPh})`,
+            allTeamIds
+          );
+          (assignRows || []).forEach((ar) => {
+            const key = `team_${ar.contractor_team_id}_bom_${ar.bom_id}`;
+            targetMap[key] = parseFloat(ar.assigned_qty || 0);
+          });
+        }
+      }
+
       const teamMap = {};
       const uniqueProjects = new Set();
       const uniqueSites = new Set();
       const uniqueBoms = new Set();
       const uniqueTeams = new Set();
-      let totalProgressSum = 0;
       let totalMaterialsUsedSum = 0;
+
+      // Group individual step entries into BOM-level records
+      const groupedMap = new Map();
 
       const enrichedRecords = workRows.map((wp) => {
         const items = consumedByWorkId[wp.work_progress_site_id] || [];
         const progressNum = parseFloat(wp.total_progress || 0);
         const matNum = parseFloat(wp.total_qty_of_material_used || 0);
 
-        totalProgressSum += progressNum;
         totalMaterialsUsedSum += matNum;
 
         if (wp.project_id) uniqueProjects.add(wp.project_id);
@@ -3938,22 +4171,110 @@ getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
             team_lead_email: wp.team_lead_email || "N/A",
             total_entries: 0,
             total_progress: 0,
+            completed_boms: 0,
+            target_qty: 0,
+            remaining_qty: 0,
             total_materials_used: 0,
             projects: new Set(),
             sites: new Set(),
             boms: new Set(),
             records_count: 0,
+            bomGroups: {},
           };
         }
 
         const t = teamMap[teamKey];
-        t.total_entries += 1;
-        t.total_progress += progressNum;
         t.total_materials_used += matNum;
         t.records_count += 1;
         if (wp.project_name) t.projects.add(wp.project_name);
         if (wp.project_site_name) t.sites.add(wp.project_site_name);
         if (wp.bom_name) t.boms.add(wp.bom_name);
+
+        if (wp.bom_id) {
+          const bgKey = `${wp.project_id || 0}_${wp.project_site_id || 0}_${wp.bom_id}`;
+          if (!t.bomGroups[bgKey]) {
+            t.bomGroups[bgKey] = {
+              project_id: wp.project_id,
+              project_site_id: wp.project_site_id,
+              bom_id: wp.bom_id,
+              stepTotals: {},
+            };
+          }
+          const sKey = wp.bom_progress_id || 0;
+          t.bomGroups[bgKey].stepTotals[sKey] = (t.bomGroups[bgKey].stepTotals[sKey] || 0) + progressNum;
+        } else {
+          t.total_progress += progressNum;
+        }
+
+        // BOM-level table row grouping (by team, date, project, site, bom)
+        const groupKey = `${wp.contractor_team_id || 0}_${wp.date}_${wp.project_id || 0}_${wp.project_site_id || 0}_${wp.bom_id || 0}`;
+        if (!groupedMap.has(groupKey)) {
+          groupedMap.set(groupKey, {
+            group_key: groupKey,
+            date: wp.date,
+            formatted_date: wp.formatted_date,
+            month_year: wp.month_year,
+            contractor_team_id: wp.contractor_team_id,
+            contractor_team_name: wp.contractor_team_name,
+            vendor_id: wp.vendor_id,
+            vendor_name: wp.vendor_name,
+            team_lead_name: wp.team_lead_name,
+            team_lead_phone: wp.team_lead_phone,
+            team_lead_email: wp.team_lead_email,
+            project_id: wp.project_id,
+            project_name: wp.project_name,
+            project_site_id: wp.project_site_id,
+            project_site_name: wp.project_site_name,
+            bom_id: wp.bom_id,
+            bom_name: wp.bom_name,
+            creator_name: wp.creator_name,
+            stepTotals: {},
+            steps_completed: [],
+            step_names: [],
+            total_qty_of_material_used: 0,
+            consumed_products_map: {},
+            remarks_list: [],
+          });
+        }
+
+        const g = groupedMap.get(groupKey);
+        const sKey = wp.bom_progress_id || 0;
+        g.stepTotals[sKey] = (g.stepTotals[sKey] || 0) + progressNum;
+
+        if (wp.bom_progress_name && !g.step_names.includes(wp.bom_progress_name.trim())) {
+          g.step_names.push(wp.bom_progress_name.trim());
+          g.steps_completed.push({
+            bom_progress_id: wp.bom_progress_id,
+            bom_progress_name: wp.bom_progress_name.trim(),
+            progress: progressNum,
+          });
+        }
+
+        g.total_qty_of_material_used += matNum;
+
+        if (wp.remarks && wp.remarks.trim() && !g.remarks_list.includes(wp.remarks.trim())) {
+          g.remarks_list.push(wp.remarks.trim());
+        }
+
+        items.forEach((p) => {
+          const pKey = `${p.product_id}_${p.unit_name || ""}`;
+          const qty = parseFloat(p.Atc_total || p.Act_Qty || 0);
+          if (!g.consumed_products_map[pKey]) {
+            g.consumed_products_map[pKey] = {
+              product_id: p.product_id,
+              product_name: p.product_name,
+              model_no: p.model_no,
+              hsn_code: p.hsn_code,
+              manufacturer_name: p.manufacturer_name,
+              product_type_name: p.product_type_name,
+              unit_name: p.unit_name,
+              Atc_total: 0,
+              Act_Qty: 0,
+            };
+          }
+          g.consumed_products_map[pKey].Atc_total += qty;
+          g.consumed_products_map[pKey].Act_Qty += qty;
+        });
 
         return {
           ...wp,
@@ -3961,13 +4282,101 @@ getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
         };
       });
 
-      // Format team breakdown array
-      const teamBreakdown = Object.values(teamMap).map((t) => ({
-        ...t,
-        projects: Array.from(t.projects),
-        sites: Array.from(t.sites),
-        boms: Array.from(t.boms),
-      }));
+      // Finalize BOM-level grouped records for table display
+      const bomGroupedRecords = Array.from(groupedMap.values()).map((g) => {
+        const definedSteps = bomStepsMap[g.bom_id] || [];
+        let bomCompleted = 0;
+
+        if (definedSteps.length <= 1) {
+          bomCompleted = Object.values(g.stepTotals).reduce((a, b) => a + b, 0);
+        } else {
+          const stepVals = definedSteps.map((s) => g.stepTotals[s.bom_progress_id] || 0);
+          bomCompleted = Math.min(...stepVals);
+        }
+
+        return {
+          work_progress_site_id: `bom-${g.group_key}`,
+          date: g.date,
+          formatted_date: g.formatted_date,
+          month_year: g.month_year,
+          contractor_team_id: g.contractor_team_id,
+          contractor_team_name: g.contractor_team_name,
+          vendor_id: g.vendor_id,
+          vendor_name: g.vendor_name,
+          team_lead_name: g.team_lead_name,
+          team_lead_phone: g.team_lead_phone,
+          team_lead_email: g.team_lead_email,
+          project_id: g.project_id,
+          project_name: g.project_name,
+          project_site_id: g.project_site_id,
+          project_site_name: g.project_site_name,
+          bom_id: g.bom_id,
+          bom_name: g.bom_name,
+          bom_progress_name: g.step_names.join(", "),
+          step_names: g.step_names,
+          steps_completed: g.steps_completed,
+          total_progress: bomCompleted,
+          total_qty_of_material_used: Math.round(g.total_qty_of_material_used * 100) / 100,
+          consumed_products: Object.values(g.consumed_products_map),
+          remarks: g.remarks_list.join("; ") || "-",
+          creator_name: g.creator_name,
+        };
+      });
+
+      // Format team breakdown array and compute multi-step completed BOMs & targets
+      let totalCompletedBomsAcrossTeams = 0;
+      let totalTargetAcrossTeams = 0;
+      let totalRemainingAcrossTeams = 0;
+
+      const teamBreakdown = Object.values(teamMap).map((t) => {
+        let teamCompletedBoms = 0;
+        let teamTargetBoms = 0;
+
+        for (const [bgKey, bg] of Object.entries(t.bomGroups || {})) {
+          const definedSteps = bomStepsMap[bg.bom_id] || [];
+          let bomCompleted = 0;
+
+          if (definedSteps.length <= 1) {
+            bomCompleted = Object.values(bg.stepTotals).reduce((a, b) => a + b, 0);
+          } else {
+            const stepVals = definedSteps.map((s) => bg.stepTotals[s.bom_progress_id] || 0);
+            bomCompleted = Math.min(...stepVals);
+          }
+          teamCompletedBoms += bomCompleted;
+
+          const teamBomTargetKey = `team_${t.contractor_team_id}_bom_${bg.bom_id}`;
+          const target = targetMap[teamBomTargetKey] ?? targetMap[bgKey] ?? targetMap[`bom_${bg.bom_id}`] ?? 0;
+          teamTargetBoms += target;
+        }
+
+        const finalCompleted = Math.round((teamCompletedBoms + (t.total_progress || 0)) * 100) / 100;
+        const finalTarget = Math.round(teamTargetBoms * 100) / 100;
+        const finalRemaining = Math.max(0, Math.round((finalTarget - finalCompleted) * 100) / 100);
+
+        totalCompletedBomsAcrossTeams += finalCompleted;
+        totalTargetAcrossTeams += finalTarget;
+        totalRemainingAcrossTeams += finalRemaining;
+
+        // Total entries for team matches the number of grouped BOM entries
+        const teamBomsCount = bomGroupedRecords.filter((r) =>
+          t.contractor_team_id ? r.contractor_team_id === t.contractor_team_id : !r.contractor_team_id
+        ).length;
+
+        delete t.bomGroups;
+
+        return {
+          ...t,
+          total_entries: teamBomsCount > 0 ? teamBomsCount : t.records_count,
+          total_progress: finalCompleted,
+          completed_boms: finalCompleted,
+          target_qty: finalTarget,
+          remaining_qty: finalRemaining,
+          total_materials_used: Math.round(t.total_materials_used * 100) / 100,
+          projects: Array.from(t.projects),
+          sites: Array.from(t.sites),
+          boms: Array.from(t.boms),
+        };
+      });
 
       const materialsSummary = Object.values(materialsSummaryMap).sort(
         (a, b) => b.total_consumed - a.total_consumed
@@ -3984,8 +4393,10 @@ getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
           project_site_id: project_site_id || null,
         },
         overall_summary: {
-          total_work_entries: workRows.length,
-          total_progress: Math.round(totalProgressSum * 100) / 100,
+          total_work_entries: bomGroupedRecords.length,
+          total_progress: Math.round(totalCompletedBomsAcrossTeams * 100) / 100,
+          total_target_qty: Math.round(totalTargetAcrossTeams * 100) / 100,
+          total_remaining_qty: Math.round(totalRemainingAcrossTeams * 100) / 100,
           total_materials_used: Math.round(totalMaterialsUsedSum * 100) / 100,
           unique_teams: uniqueTeams.size,
           unique_projects: uniqueProjects.size,
@@ -3995,7 +4406,8 @@ getBomFullDetailsWithProgressByProject_Id = async (req, res) => {
         },
         materials_summary: materialsSummary,
         team_breakdown: teamBreakdown,
-        records: enrichedRecords,
+        records: bomGroupedRecords,
+        raw_step_records: enrichedRecords,
       });
     } catch (err) {
       console.error("Error in getContractorTeamWorkReport:", err);

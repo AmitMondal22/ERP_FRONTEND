@@ -295,45 +295,46 @@ getAllEmployeeByTeamId = async (req, res) => {
       });
     }
 
+    const today = dayjs().utc().format("YYYY-MM-DD");
 
     const sql = `
     SELECT 
-  t.employee_team_id,
-  t.employee_id,
-  e.first_name,
-  e.last_name,
-  e.email,
-  e.phone,
-  a.in_out_status AS db_in_out_status,
-  CASE
-    WHEN a.check_in IS NOT NULL AND a.check_out IS NULL THEN 'IN'
-    WHEN a.check_out IS NOT NULL THEN 'OUT'
-    ELSE 'ABSENT'
-  END AS in_out_status
-FROM md_em_employee_team t
-JOIN em_employees e
-  ON e.employee_id = t.employee_id
-LEFT JOIN em_attendance a
-  ON a.employee_id = t.employee_id
- AND a.work_date = ?
-WHERE t.team_id = ?
-  AND t.status = 'Y'
-ORDER BY e.first_name ASC;`;
+      t.employee_team_id,
+      t.employee_id,
+      t.team_id,
+      t.in_date,
+      t.out_date,
+      t.status AS assignment_status,
+      e.em_id,
+      e.first_name,
+      e.last_name,
+      e.email,
+      e.phone,
+      e.job_title,
+      e.department,
+      e.status AS employee_status,
+      a.in_out_status AS db_in_out_status,
+      CASE
+        WHEN a.check_in IS NOT NULL AND a.check_out IS NULL THEN 'IN'
+        WHEN a.check_out IS NOT NULL THEN 'OUT'
+        ELSE 'ABSENT'
+      END AS in_out_status
+    FROM md_em_employee_team t
+    JOIN em_employees e
+      ON e.employee_id = t.employee_id
+    LEFT JOIN em_attendance a
+      ON a.employee_id = t.employee_id
+     AND a.work_date = ?
+    WHERE t.team_id = ?
+      AND t.status = 'Y'
+    ORDER BY e.first_name ASC;`;
 
-    
-    const employees = await customSelectSqlQuery(sql);
-
-    if (!employees || employees.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: `No active employees found for team_id: ${id}`,
-      });
-    }
+    const employees = await customSelectSqlQuery2(sql, [today, id]);
 
     res.status(200).json({
       success: true,
-      count: employees.length,
-      data: employees,
+      count: employees ? employees.length : 0,
+      data: employees || [],
     });
   } catch (error) {
     console.error("Get All Employees By TeamId Error:", error);

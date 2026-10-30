@@ -14,220 +14,147 @@ const {
 
 class VendorController {
 
-//  addVendor = async (req, res) => {
-
-//   try {
-//     const {name,mobile,email,city_id,address,gst_in, contactPerson = [], } = req.body;
 
 
-//     // Basic validation
-//     if (!name || !mobile || !city_id) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "name, mobile, and city_id are required",
-//       });
-//     };
+  addVendor = async (req, res) => {
+    try {
+      const { name, mobile, email, city_id, address, gst_in, contactPerson = [], } = req.body;
 
+      // ---------- basic validation ----------
+      if (!name || !mobile || !city_id) {
+        return res.status(400).json({
+          success: false,
+          message: "name, mobile, and city_id are required",
+        });
+      }
 
-//     const created_by = req.user.id; // from auth middleware
-//     const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+      const created_by = req.user.id;           // set by auth middleware
+      const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
-//     // Insert into md_vendor
-//     const vendorValues = {
-//       vendor_name: name,
-//       vendor_mobile: mobile,
-//       vendor_email: email || null,
-//       city_id,
-//       vendor_address: address || null,
-//       vendor_gst_in: gst_in || null,
-//       created_by,
-//       created_at,
-//     };
-
-//     const vendor_id = await insertData("md_vendor", vendorValues);
-
-// //////////////////////////////////////
-//     // Insert each contact person if provided
-//     if (Array.isArray(contactPerson) && contactPerson.length > 0) {
-//       for (const contact of contactPerson) {
-//         const contactValues = {
-//           contact_person_name: contact.name || null,
-//           contact_person_email: contact.email || null,
-//           contact_person_mobile_no: contact.mobile || null,
-//           contact_person_remarks: contact.remarks || null,
-//           fatch_id: vendor_id,
-//           type: "VN",
-//           created_by,
-//           created_at,
-//         };
-//         await insertData("md_contact_person", contactValues);
-//       }
-//     }
-
-//     // Optionally fetch the full inserted vendor record
-//     const newVendor = await selectOneData(
-//       "md_vendor",
-//       "*",
-//       `vendor_id = ${vendor_id}`
-//     );
-
-//     res.status(201).json({
-//       success: true,
-//       message: "Vendor created successfully",
-//       data: {
-//         ...newVendor,
-//         contact_persons: contactPerson,
-//       },
-//     });
-//   } catch (error) {
-//     console.error("Add vendor error:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: "Unable to add vendor",
-//     });
-//   }
-// };
-
-
-
- addVendor = async (req, res) => {
-  try {
-    const {name,mobile,email,city_id,address,gst_in,contactPerson = [], } = req.body;
-
-    // ---------- basic validation ----------
-    if (!name || !mobile || !city_id) {
-      return res.status(400).json({
-        success: false,
-        message: "name, mobile, and city_id are required",
-      });
-    }
-
-    const created_by = req.user.id;           // set by auth middleware
-    const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
-
-    // ---------- insert vendor ----------
-    const vendorValues = {
-      vendor_name: name,
-      vendor_mobile: mobile,
-      vendor_email: email || null,
-      city_id,
-      vendor_address: address || null,
-      vendor_gst_in: gst_in || null,
-      created_by,
-      created_at,
-    };
-
-    const vendor_id = await insertData("md_vendor", vendorValues);
-
-    // ---------- batch insert contacts ----------
-    if (Array.isArray(contactPerson) && contactPerson.length > 0) {
-      const columns = [
-        "contact_person_name",
-        "contact_person_email",
-        "contact_person_mobile_no",
-        "contact_person_remarks",
-        "fatch_id",        
-        "type",
-        "created_by",
-        "created_at",
-      ];
-
-      
-      const rows = contactPerson.map(c => ({
-        contact_person_name: c.name || null,
-        contact_person_email: c.email || null,
-        contact_person_mobile_no: c.mobile || null,
-        contact_person_remarks: c.remarks || null,
-        fatch_id: vendor_id,
-        type: "VN",
+      // ---------- insert vendor ----------
+      const vendorValues = {
+        vendor_name: name,
+        vendor_mobile: mobile,
+        vendor_email: email || null,
+        city_id,
+        vendor_address: address || null,
+        vendor_gst_in: gst_in || null,
         created_by,
         created_at,
-      }));
+      };
 
-      await batchInsertData("md_contact_person", columns.join(","), rows);
-    }
+      const vendor_id = await insertData("md_vendor", vendorValues);
 
-    // ---------- fetch and return full vendor ----------
-    const newVendor = await selectOneData(
-      "md_vendor",
-      "*",
-      `vendor_id = ${vendor_id}`
-    );
-
-    res.status(201).json({
-      success: true,
-      message: "Vendor created successfully",
-      data: {
-        ...newVendor,
-        contact_persons: contactPerson,
-      },
-    });
-  } catch (error) {
-    console.error("Add vendor error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Unable to add vendor",
-    });
-  }
-};
+      // ---------- batch insert contacts ----------
+      if (Array.isArray(contactPerson) && contactPerson.length > 0) {
+        const columns = [
+          "contact_person_name",
+          "contact_person_email",
+          "contact_person_mobile_no",
+          "contact_person_remarks",
+          "fatch_id",
+          "type",
+          "created_by",
+          "created_at",
+        ];
 
 
+        const rows = contactPerson.map(c => ({
+          contact_person_name: c.name || null,
+          contact_person_email: c.email || null,
+          contact_person_mobile_no: c.mobile || null,
+          contact_person_remarks: c.remarks || null,
+          fatch_id: vendor_id,
+          type: "VN",
+          created_by,
+          created_at,
+        }));
 
-//////
+        await batchInsertData("md_contact_person", columns.join(","), rows);
+      }
 
+      // ---------- fetch and return full vendor ----------
+      const newVendor = await selectOneData(
+        "md_vendor",
+        "*",
+        `vendor_id = ${vendor_id}`
+      );
 
-   addContactPerson = async (req, res) => {
-  try {
-    const { name, mobile, email, id, type } = req.body;
-
-    // Basic validation
-    if (!name || !mobile || !id || !type) {
-      return res.status(400).json({
+      res.status(201).json({
+        success: true,
+        message: "Vendor created successfully",
+        data: {
+          ...newVendor,
+          contact_persons: contactPerson,
+        },
+      });
+    } catch (error) {
+      console.error("Add vendor error:", error);
+      res.status(500).json({
         success: false,
-        message: "name, mobile, id, and type are required",
+        message: "Unable to add vendor",
       });
     }
+  };
 
-    if (!req.user || !req.user.id) {
-      return res.status(401).json({ success: false, message: "Unauthorized" });
-    }
-    /////
 
-    const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
-    const c_columns = {
-      contact_person_name: name,
-      contact_person_email: email || null,
-      contact_person_mobile_no: mobile,
-      contact_person_remarks: null,
-      fatch_id: id,           // or vendor_id if you rename the column
-      type,
-      created_by: req.user.id,
-      created_at,
-    };
+  //////
 
-    const newId = await insertData("md_contact_person", c_columns);
 
-    res.status(201).json({
-      success: true,
-      message: "Contact person created successfully",
-      data: {
-        id: newId,
-        name,
-        mobile,
-        email,
+  addContactPerson = async (req, res) => {
+    try {
+      const { name, mobile, email, id, type, remarks } = req.body;
+
+      // Basic validation
+      if (!name || !mobile || !id || !type) {
+        return res.status(400).json({
+          success: false,
+          message: "name, mobile, id, and type are required",
+        });
+      }
+
+      if (!req.user || !req.user.id) {
+        return res.status(401).json({ success: false, message: "Unauthorized" });
+      }
+
+      const created_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+
+      const c_columns = {
+        contact_person_name: name.trim(),
+        contact_person_email: email ? email.trim() : null,
+        contact_person_mobile_no: mobile.trim(),
+        contact_person_remarks: remarks ? remarks.trim() : null,
+        fatch_id: Number(id),
+        type,
         created_by: req.user.id,
         created_at,
-      },
-    });
-  } catch (error) {
-    console.error("Error in addContactPerson:", error);
-    res.status(500).json({
-      success: false,
-      message: "Unable to add contact person",
-    });
-  }
-};
+      };
+
+      const newId = await insertData("md_contact_person", c_columns);
+
+      res.status(201).json({
+        success: true,
+        message: "Contact person created successfully",
+        data: {
+          id: newId,
+          contact_person_id: newId,
+          name: name.trim(),
+          mobile: mobile.trim(),
+          email: email ? email.trim() : null,
+          remarks: remarks ? remarks.trim() : null,
+          created_by: req.user.id,
+          created_at,
+        },
+      });
+    } catch (error) {
+      console.error("Error in addContactPerson:", error);
+      res.status(500).json({
+        success: false,
+        message: "Unable to add contact person",
+      });
+    }
+  };
 
 
 
@@ -236,168 +163,173 @@ class VendorController {
   // Get all vendors
   getAllVendors = async (req, res) => {
     try {
-        const table = "md_vendor as a, lo_cities as b, lo_states as c";
+      const table = "md_vendor as a LEFT JOIN lo_cities as b ON a.city_id = b.id LEFT JOIN lo_states as c ON b.state_id = c.id";
+      const select = "a.*, b.name AS city_name, b.state_id, c.name AS state_name";
 
-        const condition = `a.city_id = b.id AND b.state_id = c.id`;
-        // Give unique aliases for duplicate column names
-        const select = "a.*, b.name AS city_name, b.state_id, c.name AS state_name";
-
-        const vendors = await selectData(table, select, condition,"a.vendor_name ASC");
-        if (!vendors || vendors.length === 0) {
-          return res.status(404).json({ success: false, message: "No vendors found" });
-        }
-        res.status(200).json({ success: true, data: vendors });
+      const vendors = await selectData(table, select, null, "a.vendor_name ASC");
+      return res.status(200).json({ success: true, data: vendors || [] });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, message: "Unable to fetch vendors" });
+      console.error(error);
+      res.status(500).json({ success: false, message: "Unable to fetch vendors" });
     }
   };
 
   // Get vendor by ID
- getVendorById = async (req, res) => {
-  
-  try {
-    const { vendor_id } = req.params;
-    const table = "md_vendor as a, lo_cities as b, lo_states as c";
-    const condition = `a.city_id = b.id AND b.state_id = c.id AND a.vendor_id = ${vendor_id}`;
-    const select = "a.*, b.name AS city_name, b.state_id, c.name AS state_name";
+  getVendorById = async (req, res) => {
+    try {
+      const { vendor_id } = req.params;
+      const parsedId = Number(vendor_id);
+      if (isNaN(parsedId) || parsedId <= 0) {
+        return res.status(400).json({ success: false, message: "Invalid vendor ID" });
+      }
 
-    // Fetch vendor
-    const vendor = await selectOneData(table, select, condition);
-    if (!vendor) {
-      return res.status(404).json({ success: false, message: "Vendor not found" });
-    }
+      const table = "md_vendor as a LEFT JOIN lo_cities as b ON a.city_id = b.id LEFT JOIN lo_states as c ON b.state_id = c.id";
+      const condition = `a.vendor_id = ${parsedId}`;
+      const select = "a.*, b.name AS city_name, b.state_id, c.name AS state_name";
 
-    
-    const contact_persons = await selectData(
-      "md_contact_person",
-      "*",
-      `fatch_id = ${vendor_id}`
-    );
+      // Fetch vendor
+      const vendor = await selectOneData(table, select, condition);
+      if (!vendor) {
+        return res.status(404).json({ success: false, message: "Vendor not found" });
+      }
 
-    // If none found, return empty array instead of error (optional)
-    if (!contact_persons || contact_persons.length === 0) {
-      return res.status(200).json({
+      const contact_persons = await selectData(
+        "md_contact_person",
+        "*",
+        `fatch_id = ${parsedId} AND type = 'VN'`
+      );
+
+      res.status(200).json({
         success: true,
-        data: { vendor, contact_persons: [] },
+        data: { vendor, contact_persons: contact_persons || [] },
       });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ success: false, message: "Unable to fetch vendor" });
     }
-
-    res.status(200).json({
-      success: true,
-      data: { vendor, contact_persons },
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: "Unable to fetch vendor" });
-  }
-};
+  };
 
 
 
   // Update vendor
-  
-updateVendor = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, mobile, email, city_id, address, gst_in } = req.body;
+  updateVendor = async (req, res) => {
+    try {
+      const { id } = req.params;
+      const parsedId = Number(id);
+      if (isNaN(parsedId) || parsedId <= 0) {
+        return res.status(400).json({ success: false, message: "Invalid vendor ID" });
+      }
 
-    const updated_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+      // Check existence first
+      const existing = await selectOneData("md_vendor", "vendor_id", `vendor_id = ${parsedId}`);
+      if (!existing) {
+        return res.status(404).json({
+          success: false,
+          message: "Vendor not found",
+        });
+      }
 
-    
-    const updateValues = { updated_at };
+      const { name, mobile, email, city_id, address, gst_in } = req.body;
+      const updated_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
-    // Add only the fields that exist in req.body
-    if (name !== undefined)    updateValues.vendor_name = name;
-    if (mobile !== undefined)  updateValues.vendor_mobile = mobile;
-    if (email !== undefined)   updateValues.vendor_email = email;
-    if (city_id !== undefined) updateValues.city_id = city_id;
-    if (address !== undefined) updateValues.vendor_address = address;
-    if (gst_in !== undefined)  updateValues.vendor_gst_in = gst_in;
+      const updateValues = { updated_at };
 
-    // If nothing to update besides updated_at
-    if (Object.keys(updateValues).length === 1) {
-      return res.status(400).json({ success: false, message: "No fields to update" });
-    }
+      // Add only the fields that exist in req.body
+      if (name !== undefined) updateValues.vendor_name = name;
+      if (mobile !== undefined) updateValues.vendor_mobile = mobile;
+      if (email !== undefined) updateValues.vendor_email = email;
+      if (city_id !== undefined) updateValues.city_id = city_id;
+      if (address !== undefined) updateValues.vendor_address = address;
+      if (gst_in !== undefined) updateValues.vendor_gst_in = gst_in;
 
-    const affectedRows = await updateData(
-      "md_vendor",
-      updateValues,
-      `vendor_id = ${id}`
-    );
+      // If nothing to update besides updated_at
+      if (Object.keys(updateValues).length === 1) {
+        return res.status(400).json({ success: false, message: "No fields to update" });
+      }
 
-    if (affectedRows === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Vendor not found or no changes made",
+      const affectedRows = await updateData(
+        "md_vendor",
+        updateValues,
+        `vendor_id = ${parsedId}`
+      );
+
+      res.status(200).json({
+        success: true,
+        message: "Vendor updated successfully",
+        data: affectedRows,
       });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ success: false, message: "Unable to update vendor" });
     }
-
-    res.status(200).json({
-      success: true,
-      message: "Vendor updated successfully",
-      data: affectedRows,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: "Unable to update vendor" });
-  }
-};
-
-  
+  };
 
 
-///////
+
+
+  ///////
   updateContactPerson = async (req, res) => {
-  try {
-    const { id } = req.params;                 // contact_person_id (or whatever PK you use)
-    const { name, mobile, email, remarks } = req.body;
+    try {
+      const { id } = req.params;
+      const parsedId = Number(id);
+      if (isNaN(parsedId) || parsedId <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid contact person ID",
+        });
+      }
 
-    const updated_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
+      // Check existence first
+      const existing = await selectOneData(
+        "md_contact_person",
+        "contact_person_id",
+        `contact_person_id = ${parsedId}`
+      );
+      if (!existing) {
+        return res.status(404).json({
+          success: false,
+          message: "Contact person not found",
+        });
+      }
 
-    // Build the object dynamically so we only update what the client provided
-    const updateValues = { updated_at };
+      const { name, mobile, email, remarks } = req.body;
+      const updated_at = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
-    if (name   !== undefined) updateValues.contact_person_name       = name;
-    if (email  !== undefined) updateValues.contact_person_email      = email;
-    if (mobile !== undefined) updateValues.contact_person_mobile_no  = mobile;
-    if (remarks!== undefined) updateValues.contact_person_remarks    = remarks;
+      // Build the object dynamically so we only update what the client provided
+      const updateValues = { updated_at };
 
-    // If the request body had no updatable fields
-    if (Object.keys(updateValues).length === 1) {
-      return res.status(400).json({
+      if (name !== undefined) updateValues.contact_person_name = name;
+      if (email !== undefined) updateValues.contact_person_email = email;
+      if (mobile !== undefined) updateValues.contact_person_mobile_no = mobile;
+      if (remarks !== undefined) updateValues.contact_person_remarks = remarks;
+
+      // If the request body had no updatable fields
+      if (Object.keys(updateValues).length === 1) {
+        return res.status(400).json({
+          success: false,
+          message: "No fields to update",
+        });
+      }
+
+      const affectedRows = await updateData(
+        "md_contact_person",
+        updateValues,
+        `contact_person_id = ${parsedId}`
+      );
+
+      res.status(200).json({
+        success: true,
+        message: "Contact person updated successfully",
+        data: affectedRows,
+      });
+    } catch (error) {
+      console.error("Error updating contact person:", error);
+      res.status(500).json({
         success: false,
-        message: "No fields to update",
+        message: "Unable to update contact person",
       });
     }
-
-  
-    const affectedRows = await updateData(
-      "md_contact_person",
-      updateValues,
-      `contact_person_id = ${id}`
-    );
-
-    if (affectedRows === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Contact person not found or no changes made",
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "Contact person updated successfully",
-      data: affectedRows,
-    });
-  } catch (error) {
-    console.error("Error updating contact person:", error);
-    res.status(500).json({
-      success: false,
-      message: "Unable to update contact person",
-    });
-  }
-};
+  };
 
 
 
@@ -406,17 +338,22 @@ updateVendor = async (req, res) => {
   deleteVendor = async (req, res) => {
     try {
       const { id } = req.params;
-      const deletedRows = await deleteData("md_vendor", `vendor_id = ${id}`);
+      const parsedId = Number(id);
+      if (isNaN(parsedId) || parsedId <= 0) {
+        return res.status(400).json({ success: false, message: "Invalid vendor ID" });
+      }
 
-      if (deletedRows === 0) {
+      // Check vendor existence first
+      const existing = await selectOneData("md_vendor", "vendor_id", `vendor_id = ${parsedId}`);
+      if (!existing) {
         return res.status(404).json({ success: false, message: "Vendor not found" });
       }
-      const deletedContactPersonRows = await deleteData("md_contact_person", `fatch_id = ${id} AND type = 'VN'`);
 
-      if (deletedContactPersonRows === 0) {
+      // Delete associated contact persons (it is completely normal if 0 contacts exist)
+      await deleteData("md_contact_person", `fatch_id = ${parsedId} AND type = 'VN'`);
 
-        return res.status(404).json({ success: false, message: "Contact Person not found" });
-      }
+      // Delete vendor record
+      await deleteData("md_vendor", `vendor_id = ${parsedId}`);
 
       res.status(200).json({ success: true, message: "Vendor and Contact Person deleted successfully" });
     } catch (error) {
@@ -425,12 +362,17 @@ updateVendor = async (req, res) => {
     }
   };
 
-  
+
 
   deleteContactPerson = async (req, res) => {
     try {
       const { id } = req.params;
-      const deletedContactPersonRows = await deleteData("md_contact_person", `contact_person_id  = ${id}`);
+      const parsedId = Number(id);
+      if (isNaN(parsedId) || parsedId <= 0) {
+        return res.status(400).json({ success: false, message: "Invalid contact person ID" });
+      }
+
+      const deletedContactPersonRows = await deleteData("md_contact_person", `contact_person_id = ${parsedId}`);
       if (deletedContactPersonRows === 0) {
         return res.status(404).json({ success: false, message: "Contact Person not found" });
       }
@@ -442,141 +384,141 @@ updateVendor = async (req, res) => {
   };
 
 
-// getPurchaseByVendorAndDate = async (req, res) => {
-//   try {
-//     const { id: vendor_id } = req.params;
-//     const { fromDate, toDate } = req.body;
+  // getPurchaseByVendorAndDate = async (req, res) => {
+  //   try {
+  //     const { id: vendor_id } = req.params;
+  //     const { fromDate, toDate } = req.body;
 
-//     if (!vendor_id || !fromDate || !toDate) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "vendor_id, fromDate and toDate are required",
-//       });
-//     }
+  //     if (!vendor_id || !fromDate || !toDate) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "vendor_id, fromDate and toDate are required",
+  //       });
+  //     }
 
-//     const sql = `
-//       SELECT
-//         p.purchase_id,
-//         p.invoice_no,
-//         DATE(p.invoice_date) AS invoice_date,
-//         DATE(p.delivery_date) AS delivery_date,
-//         p.invoice_image,
-//         p.transport_insurance,
-//         p.remarks,
+  //     const sql = `
+  //       SELECT
+  //         p.purchase_id,
+  //         p.invoice_no,
+  //         DATE(p.invoice_date) AS invoice_date,
+  //         DATE(p.delivery_date) AS delivery_date,
+  //         p.invoice_image,
+  //         p.transport_insurance,
+  //         p.remarks,
 
-//         p.project_id,
-//         pr.project_name,
+  //         p.project_id,
+  //         pr.project_name,
 
-//         p.site_id,
-//         ps.project_site_name,
+  //         p.site_id,
+  //         ps.project_site_name,
 
-//         p.vendor_id,
-//         v.vendor_name,
+  //         p.vendor_id,
+  //         v.vendor_name,
 
-//         p.stor_id,
-//         s.store_name,
+  //         p.stor_id,
+  //         s.store_name,
 
-//         p.purchase_order_id,
-//         po.po_no,
-//         po.total_amount,
+  //         p.purchase_order_id,
+  //         po.po_no,
+  //         po.total_amount,
 
-//         pop.purchase_order_product_id,
-//         pop.product_id,
-//         prod.product_name,
-//         prod.product_type_id,
+  //         pop.purchase_order_product_id,
+  //         pop.product_id,
+  //         prod.product_name,
+  //         prod.product_type_id,
 
-//         pop.quantity,
-//         pop.unit_price,
+  //         pop.quantity,
+  //         pop.unit_price,
 
-//         DATE(pop.created_at) AS purchase_date,
-//         pop.created_at,
-//         pop.updated_at
+  //         DATE(pop.created_at) AS purchase_date,
+  //         pop.created_at,
+  //         pop.updated_at
 
-//       FROM td_purchase p
+  //       FROM td_purchase p
 
-//       LEFT JOIN td_purchase_order po
-//         ON p.purchase_order_id = po.purchase_order_id
+  //       LEFT JOIN td_purchase_order po
+  //         ON p.purchase_order_id = po.purchase_order_id
 
-//       LEFT JOIN td_purchase_order_product pop
-//         ON po.purchase_order_id = pop.purchase_order_id
+  //       LEFT JOIN td_purchase_order_product pop
+  //         ON po.purchase_order_id = pop.purchase_order_id
 
-//       LEFT JOIN md_product prod
-//         ON pop.product_id = prod.product_id
+  //       LEFT JOIN md_product prod
+  //         ON pop.product_id = prod.product_id
 
-//       LEFT JOIN md_project pr
-//         ON p.project_id = pr.project_id
+  //       LEFT JOIN md_project pr
+  //         ON p.project_id = pr.project_id
 
-//       LEFT JOIN md_project_site ps
-//         ON p.site_id = ps.project_site_id
+  //       LEFT JOIN md_project_site ps
+  //         ON p.site_id = ps.project_site_id
 
-//       LEFT JOIN md_vendor v
-//         ON p.vendor_id = v.vendor_id
+  //       LEFT JOIN md_vendor v
+  //         ON p.vendor_id = v.vendor_id
 
-//       LEFT JOIN md_store s
-//         ON p.stor_id = s.store_id
+  //       LEFT JOIN md_store s
+  //         ON p.stor_id = s.store_id
 
-//       WHERE
-//         p.vendor_id = ${Number(vendor_id)}
-//         AND DATE(p.invoice_date)
-//           BETWEEN '${fromDate}' AND '${toDate}'
+  //       WHERE
+  //         p.vendor_id = ${Number(vendor_id)}
+  //         AND DATE(p.invoice_date)
+  //           BETWEEN '${fromDate}' AND '${toDate}'
 
-//       ORDER BY p.invoice_date DESC
-//     `;
+  //       ORDER BY p.invoice_date DESC
+  //     `;
 
-//     const results = await customSelectSqlQuery(sql);
+  //     const results = await customSelectSqlQuery(sql);
 
-//     return res.status(200).json({
-//       success: true,
-//       total: results.length,
-//       data: results,
-//     });
+  //     return res.status(200).json({
+  //       success: true,
+  //       total: results.length,
+  //       data: results,
+  //     });
 
-//   } catch (error) {
-//     console.error("Error fetching vendor purchase history:", error);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Internal server error",
-//       error: error.message,
-//     });
-//   }
-// };
-
-
+  //   } catch (error) {
+  //     console.error("Error fetching vendor purchase history:", error);
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Internal server error",
+  //       error: error.message,
+  //     });
+  //   }
+  // };
 
 
 
-getPurchaseByVendorAndDate = async (req, res) => {
-  try {
-    const { id: vendor_id } = req.params;
-    const { fromDate, toDate } = req.body;
 
-    // Validation
-    if (!vendor_id || !fromDate || !toDate) {
-      return res.status(400).json({
-        success: false,
-        message: "vendor_id, fromDate and toDate are required",
-      });
-    }
 
-    // Strict validation to prevent SQL injection
-    const parsedVendorId = Number(vendor_id);
-    if (isNaN(parsedVendorId) || parsedVendorId <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid vendor_id",
-      });
-    }
+  getPurchaseByVendorAndDate = async (req, res) => {
+    try {
+      const { id: vendor_id } = req.params;
+      const { fromDate, toDate } = req.body;
 
-    // Strict date validation (YYYY-MM-DD format only)
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(fromDate) || !dateRegex.test(toDate)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid date format. Use YYYY-MM-DD",
-      });
-    }
+      // Validation
+      if (!vendor_id || !fromDate || !toDate) {
+        return res.status(400).json({
+          success: false,
+          message: "vendor_id, fromDate and toDate are required",
+        });
+      }
 
-    const sql = `
+      // Strict validation to prevent SQL injection
+      const parsedVendorId = Number(vendor_id);
+      if (isNaN(parsedVendorId) || parsedVendorId <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid vendor_id",
+        });
+      }
+
+      // Strict date validation (YYYY-MM-DD format only)
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(fromDate) || !dateRegex.test(toDate)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid date format. Use YYYY-MM-DD",
+        });
+      }
+
+      const sql = `
       SELECT
         p.purchase_id,
         p.invoice_no,
@@ -663,23 +605,23 @@ getPurchaseByVendorAndDate = async (req, res) => {
       ORDER BY p.invoice_date DESC, p.purchase_id DESC
     `;
 
-    const results = await customSelectSqlQuery(sql);
+      const results = await customSelectSqlQuery(sql);
 
-    return res.status(200).json({
-      success: true,
-      total: results.length,
-      data: results,
-    });
+      return res.status(200).json({
+        success: true,
+        total: results.length,
+        data: results,
+      });
 
-  } catch (error) {
-    console.error("Error fetching vendor purchase history:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-      error: error.message,
-    });
-  }
-};
+    } catch (error) {
+      console.error("Error fetching vendor purchase history:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Internal server error",
+        error: error.message,
+      });
+    }
+  };
 
 
 }

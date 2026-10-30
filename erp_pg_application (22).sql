@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 09, 2026 at 07:36 AM
+-- Generation Time: Oct 27, 2026 at 02:34 PM
 -- Server version: 10.4.28-MariaDB
 -- PHP Version: 8.2.4
 
@@ -117,11 +117,16 @@ CREATE TABLE `claims_reimbursements` (
   `claim_title` varchar(255) NOT NULL,
   `claim_date` date NOT NULL,
   `claim_amount` decimal(10,2) NOT NULL CHECK (`claim_amount` > 0),
+  `approved_amount` decimal(10,2) DEFAULT NULL,
   `submit_date` date DEFAULT NULL,
   `attachment_file` varchar(500) DEFAULT NULL,
+  `attachments` text DEFAULT NULL,
   `claim_status` enum('Pending','Under Review','Approved','Rejected','Paid') NOT NULL DEFAULT 'Pending',
   `paid_date` date DEFAULT NULL,
   `remarks` text DEFAULT NULL,
+  `admin_remarks` text DEFAULT NULL,
+  `reviewed_by` int(11) DEFAULT NULL,
+  `reviewed_at` datetime DEFAULT NULL,
   `currency` varchar(10) DEFAULT 'INR',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
@@ -131,10 +136,35 @@ CREATE TABLE `claims_reimbursements` (
 -- Dumping data for table `claims_reimbursements`
 --
 
-INSERT INTO `claims_reimbursements` (`claim_id`, `employee_id`, `claimType_id`, `claim_title`, `claim_date`, `claim_amount`, `submit_date`, `attachment_file`, `claim_status`, `paid_date`, `remarks`, `currency`, `created_at`, `updated_at`) VALUES
-(1, 11, 1, 'Medical Claim', '0000-00-00', 34000.00, '0000-00-00', NULL, 'Pending', NULL, 'this is for testing', 'INR', '2026-02-18 13:31:45', '2026-08-20 10:36:43'),
-(2, 11, 1, 'Medical Claim', '0000-00-00', 34000.00, '0000-00-00', 'uploads\\all\\1771422120786_WhatsApp_Image_2025_11_05_at_19.26.55.jpeg', 'Pending', NULL, 'this is for testing', 'INR', '2026-02-18 13:42:00', '2026-08-20 10:36:25'),
-(3, 11, 6, 'internet', '2026-02-18', 2000.00, '2026-02-18', 'uploads\\all\\1771427129943_7ceaaafa_0ad7_49e8_afd2_5f24e945b6f7.jpg', 'Pending', NULL, 'this is for testing', 'INR', '2026-02-18 15:05:30', '2026-08-20 10:37:30');
+INSERT INTO `claims_reimbursements` (`claim_id`, `employee_id`, `claimType_id`, `claim_title`, `claim_date`, `claim_amount`, `approved_amount`, `submit_date`, `attachment_file`, `attachments`, `claim_status`, `paid_date`, `remarks`, `admin_remarks`, `reviewed_by`, `reviewed_at`, `currency`, `created_at`, `updated_at`) VALUES
+(1, 11, 1, 'Medical Claim', '0000-00-00', 34000.00, NULL, '0000-00-00', NULL, NULL, 'Pending', NULL, 'this is for testing', NULL, NULL, NULL, 'INR', '2026-02-18 13:31:45', '2026-08-20 10:36:43'),
+(2, 11, 1, 'Medical Claim', '0000-00-00', 34000.00, NULL, '0000-00-00', 'uploads\\all\\1771422120786_WhatsApp_Image_2025_11_05_at_19.26.55.jpeg', NULL, 'Pending', NULL, 'this is for testing', NULL, NULL, NULL, 'INR', '2026-02-18 13:42:00', '2026-08-20 10:36:25'),
+(3, 11, 6, 'internet', '2026-02-18', 2000.00, NULL, '2026-02-18', 'uploads\\all\\1771427129943_7ceaaafa_0ad7_49e8_afd2_5f24e945b6f7.jpg', NULL, 'Pending', NULL, 'this is for testing', NULL, NULL, NULL, 'INR', '2026-02-18 15:05:30', '2026-08-20 10:37:30'),
+(4, 1, 10, 'internet', '2026-10-09', 2000.00, 1500.00, '2026-10-09', 'uploads\\all\\1791543740012_capture_20260904_165019.png', '[\"uploads\\\\all\\\\1791543740012_capture_20260904_165019.png\",\"uploads\\\\all\\\\1791543740059_WhatsApp_Image_2026_08_25_at_18.30.24.jpeg\"]', 'Approved', NULL, 'this is for internet connection', 'we can approve this much only', 0, '2026-10-09 12:33:56', 'INR', '2026-10-09 11:02:20', '2026-10-09 12:33:56');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `claims_reimbursement_bills`
+--
+
+CREATE TABLE `claims_reimbursement_bills` (
+  `bill_id` int(11) NOT NULL,
+  `claim_id` int(11) NOT NULL,
+  `bill_title` varchar(255) DEFAULT NULL,
+  `bill_date` date DEFAULT NULL,
+  `bill_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `bill_file` varchar(500) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `claims_reimbursement_bills`
+--
+
+INSERT INTO `claims_reimbursement_bills` (`bill_id`, `claim_id`, `bill_title`, `bill_date`, `bill_amount`, `bill_file`, `created_at`) VALUES
+(1, 4, 'internet plan', '2026-10-09', 1000.00, 'uploads\\all\\1791543740012_capture_20260904_165019.png', '2026-10-09 11:02:20'),
+(2, 4, 'internet plan', '2026-09-01', 1000.00, 'uploads\\all\\1791543740059_WhatsApp_Image_2026_08_25_at_18.30.24.jpeg', '2026-10-09 11:02:20');
 
 -- --------------------------------------------------------
 
@@ -157403,9 +157433,9 @@ CREATE TABLE `md_client` (
 --
 
 INSERT INTO `md_client` (`client_id`, `client_code`, `client_name`, `client_type`, `industry_type`, `client_mobile`, `client_phone`, `client_email`, `client_website`, `client_address`, `city_id`, `state_id`, `country_id`, `pincode`, `client_gst_in`, `client_pan`, `client_tan`, `client_cin`, `msme_number`, `client_status`, `client_category`, `is_verified`, `remarks`, `created_by`, `updated_by`, `created_at`, `updated_at`) VALUES
-(3, NULL, 'ABC Technologies Pvt Ltd', '', 'Information Technology', '9876543210', '', 'info@abctech.com', 'https://www.abctech.com', '401, Sunrise Tower, MG Road', 131520, 4006, 1, '400001', '27AABCU9603R1ZX', 'AABCU9603R', 'MUMH12345A', 'U72200MH2010PTC123456', 'UDYAM-MH-01-0012345', 'Active', '', 1, 'High value client onboarded via referral', 1, NULL, '2026-03-04 11:02:56', '2026-06-01 12:53:57'),
+(3, NULL, 'ABC Technologies LTD', '', 'Information Technology', '9876543219', '', 'info@abctechnology.com', 'https://www.abctech.com', '401, Sunrise Tower, MG Road', 131520, 4006, 1, '400001', '27AABCU9603R1ZX', 'AABCU9603R', 'MUMH12345A', 'U72200MH2010PTC123456', 'UDYAM-MH-01-0012345', 'Active', '', 1, 'High value client onboarded via referral', 1, NULL, '2026-03-04 11:02:56', '2026-10-14 09:41:40'),
 (4, NULL, 'Akash das', 'Company', 'manufacturing', '7980888985', '033-124567789', 'admin@iotblitz.com', '', '290/3, GT road kolkata-700063', 0, 0, 0, '700084', 'R20ZXR56754', 'AAAEKK34M2', 'YY798065', 'UI60899', 'MSME39', 'Active', 'B', 0, 'this is for the testing purpose', NULL, NULL, '2026-03-04 12:45:30', '2026-03-04 12:46:32'),
-(5, NULL, 'new', 'Company', '', '7980888784', '', 'pkp@gmail.com', 'N/A', 'West Bengal', 0, 0, 0, '', '66AA5578QW78yht', '', '', '', '', 'Active', 'B', 0, 'hello', NULL, NULL, '2026-06-01 11:16:50', '2026-06-01 11:18:08');
+(5, NULL, 'new new', 'Company', '', '7980888784', '', 'pkp@gmail.com', 'https://www.google.com', 'West Bengal', 131520, 4006, 0, '', '07AACCB6672L1ZC', '', '', '', '', 'Active', 'B', 0, 'hello', NULL, NULL, '2026-06-01 11:16:50', '2026-10-15 11:02:08');
 
 -- --------------------------------------------------------
 
@@ -157509,6 +157539,43 @@ INSERT INTO `md_contact_person` (`contact_person_id`, `contact_person_name`, `co
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `md_contractor_company`
+--
+
+CREATE TABLE `md_contractor_company` (
+  `contractor_company_id` int(11) NOT NULL,
+  `company_name` varchar(200) NOT NULL,
+  `vendor_id` int(11) DEFAULT NULL COMMENT 'Linked vendor if existing in md_vendor',
+  `contact_person` varchar(150) DEFAULT NULL,
+  `mobile` varchar(20) NOT NULL,
+  `email` varchar(100) DEFAULT NULL,
+  `address` text DEFAULT NULL,
+  `city_id` int(11) DEFAULT NULL,
+  `gst_no` varchar(25) DEFAULT NULL,
+  `pan_no` varchar(20) DEFAULT NULL,
+  `bank_name` varchar(100) DEFAULT NULL,
+  `bank_account_no` varchar(50) DEFAULT NULL,
+  `bank_ifsc` varchar(20) DEFAULT NULL,
+  `default_tds_percent` decimal(5,2) NOT NULL DEFAULT 1.00 COMMENT 'Default TDS % e.g. 1% for individual, 2% for company under 194C',
+  `status` enum('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
+  `remarks` text DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `md_contractor_company`
+--
+
+INSERT INTO `md_contractor_company` (`contractor_company_id`, `company_name`, `vendor_id`, `contact_person`, `mobile`, `email`, `address`, `city_id`, `gst_no`, `pan_no`, `bank_name`, `bank_account_no`, `bank_ifsc`, `default_tds_percent`, `status`, `remarks`, `created_by`, `created_at`, `updated_at`) VALUES
+(1, 'IOT-Blitz', 11, 'IOT-Blitz', '909089765', 'iot@gmail.com', '290/1,JP road kol-999', 57614, '9876', NULL, NULL, NULL, NULL, 1.00, 'ACTIVE', NULL, 5, '2026-10-10 13:17:13', '2026-10-10 13:17:13'),
+(2, 'Arijit Pawer', 12, 'Arijit Pawer', '7980888700', 'pawercc@gmail.com', '290/3, GT road kolkata-700063', 141930, '22AAAAA0000A1Z4', NULL, NULL, NULL, NULL, 1.00, 'ACTIVE', NULL, 5, '2026-10-10 13:17:13', '2026-10-10 13:17:13'),
+(3, 'Ai companey', NULL, 'Raju', '8907645367', 'pkp@gmail.com', 'West Bengal', NULL, NULL, NULL, NULL, NULL, NULL, 1.00, 'ACTIVE', NULL, 5, '2026-10-12 14:12:30', '2026-10-12 14:12:30');
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `md_contractor_team`
 --
 
@@ -157516,6 +157583,7 @@ CREATE TABLE `md_contractor_team` (
   `contractor_team_id` int(11) NOT NULL,
   `team_name` varchar(150) NOT NULL,
   `vendor_id` int(11) DEFAULT NULL COMMENT 'Linked contractor agency from md_vendor',
+  `contractor_company_id` int(11) DEFAULT NULL,
   `project_id` int(11) DEFAULT NULL COMMENT 'Linked project from md_project',
   `site_id` int(11) DEFAULT NULL COMMENT 'Linked site from md_project_site',
   `team_lead_id` int(11) DEFAULT NULL COMMENT 'Contractual Employee ID designated as Team Lead',
@@ -157531,9 +157599,10 @@ CREATE TABLE `md_contractor_team` (
 -- Dumping data for table `md_contractor_team`
 --
 
-INSERT INTO `md_contractor_team` (`contractor_team_id`, `team_name`, `vendor_id`, `project_id`, `site_id`, `team_lead_id`, `date`, `remarks`, `status`, `created_by`, `created_at`, `updated_at`) VALUES
-(1, 'Team-A', 12, 61, 6, NULL, '2026-10-07', 'this is testing team from our side IOTBLITZ', 'ACTIVE', 5, '2026-10-07 16:50:30', '2026-10-08 19:54:33'),
-(2, 'Team-B', NULL, 61, 6, NULL, '2026-10-08', 'this is  just for demo', 'ACTIVE', 5, '2026-10-08 16:44:43', '2026-10-08 16:44:43');
+INSERT INTO `md_contractor_team` (`contractor_team_id`, `team_name`, `vendor_id`, `contractor_company_id`, `project_id`, `site_id`, `team_lead_id`, `date`, `remarks`, `status`, `created_by`, `created_at`, `updated_at`) VALUES
+(1, 'Team-A', 12, 2, 61, 6, NULL, '2026-10-07', 'this is testing team from our side IOTBLITZ', 'ACTIVE', 5, '2026-10-07 16:50:30', '2026-10-10 13:17:13'),
+(2, 'Team-B', NULL, NULL, 61, 6, NULL, '2026-10-08', 'this is  just for demo', 'ACTIVE', 5, '2026-10-08 16:44:43', '2026-10-08 16:44:43'),
+(3, 'ABC.KC', 10, 3, 62, 16, NULL, '2026-10-13', 'testing', 'ACTIVE', 5, '2026-10-12 18:07:00', '2026-10-13 16:48:06');
 
 -- --------------------------------------------------------
 
@@ -157555,6 +157624,7 @@ CREATE TABLE `md_contractual_employee` (
   `role_type` varchar(50) NOT NULL DEFAULT 'WORKER' COMMENT 'TEAM_LEAD, SUPERVISOR, TECHNICIAN, WORKER, HELPER, OPERATOR',
   `contractor_team_id` int(11) NOT NULL COMMENT 'FK to md_contractor_team (Mandatory)',
   `vendor_id` int(11) DEFAULT NULL COMMENT 'Linked contractor vendor from md_vendor',
+  `contractor_company_id` int(11) DEFAULT NULL,
   `daily_rate` decimal(10,2) NOT NULL DEFAULT 0.00,
   `date_of_joining` date DEFAULT NULL,
   `status` enum('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
@@ -157567,9 +157637,9 @@ CREATE TABLE `md_contractual_employee` (
 -- Dumping data for table `md_contractual_employee`
 --
 
-INSERT INTO `md_contractual_employee` (`contractual_employee_id`, `full_name`, `email`, `phone`, `aadhar_no`, `is_aadhar_verified`, `aadhar_verified_at`, `aadhar_photo`, `employee_photo`, `address`, `role_type`, `contractor_team_id`, `vendor_id`, `daily_rate`, `date_of_joining`, `status`, `created_by`, `created_at`, `updated_at`) VALUES
-(1, 'Rajesh', 'chatterjeesourishchatterjee@gmail.com', '7980888789', '123412341234', 1, '2026-10-08 07:02:49', 'uploads/contractual_employees/1791442969394_GeoNexa_Development_SRS_v1.2.pdf', 'uploads/contractual_employees/1791442969329_employee.png', 'this just testing purpose', 'WORKER', 1, 12, 0.00, '2026-10-08', 'ACTIVE', 5, '2026-10-08 12:32:49', '2026-10-08 19:54:33'),
-(2, 'Veni', 'chatterjeesourishchatterjee@gmail.com', '3426767898', '123412341234', 0, NULL, NULL, 'uploads/contractual_employees/1791460474999_capture_20260904_165019.png', 'this is  new employee signing', 'WORKER', 2, NULL, 500.00, '2026-10-08', 'ACTIVE', 5, '2026-10-08 17:24:35', '2026-10-08 17:24:35');
+INSERT INTO `md_contractual_employee` (`contractual_employee_id`, `full_name`, `email`, `phone`, `aadhar_no`, `is_aadhar_verified`, `aadhar_verified_at`, `aadhar_photo`, `employee_photo`, `address`, `role_type`, `contractor_team_id`, `vendor_id`, `contractor_company_id`, `daily_rate`, `date_of_joining`, `status`, `created_by`, `created_at`, `updated_at`) VALUES
+(1, 'Rajesh', 'chatterjeesourishchatterjee@gmail.com', '7980888789', '123412341234', 1, '2026-10-08 07:02:49', 'uploads/contractual_employees/1791442969394_GeoNexa_Development_SRS_v1.2.pdf', 'uploads/contractual_employees/1791442969329_employee.png', 'this just testing purpose', 'WORKER', 1, 12, 2, 0.00, '2026-10-08', 'ACTIVE', 5, '2026-10-08 12:32:49', '2026-10-10 13:17:13'),
+(2, 'Veni', 'chatterjeesourishchatterjee@gmail.com', '3426767898', '123412341234', 0, NULL, NULL, 'uploads/contractual_employees/1791460474999_capture_20260904_165019.png', 'this is  new employee signing', 'WORKER', 2, NULL, NULL, 500.00, '2026-10-08', 'ACTIVE', 5, '2026-10-08 17:24:35', '2026-10-08 17:24:35');
 
 -- --------------------------------------------------------
 
@@ -158466,6 +158536,152 @@ CREATE TABLE `td_billing` (
   `tx_no` int(11) NOT NULL,
   `invoice_no` int(11) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `td_contractor_advance_payment`
+--
+
+CREATE TABLE `td_contractor_advance_payment` (
+  `advance_id` int(11) NOT NULL,
+  `payment_voucher_no` varchar(50) NOT NULL,
+  `contractor_company_id` int(11) NOT NULL,
+  `contractor_team_id` int(11) NOT NULL,
+  `project_id` int(11) DEFAULT NULL,
+  `site_id` int(11) DEFAULT NULL,
+  `assignment_id` int(11) DEFAULT NULL COMMENT 'Optional link to specific BOM work order',
+  `payment_date` date NOT NULL,
+  `work_description` text DEFAULT NULL COMMENT 'Purpose or work description for advance',
+  `gross_amount` decimal(15,2) NOT NULL COMMENT 'Gross advance sanctioned amount',
+  `tds_section` varchar(30) DEFAULT '194C' COMMENT 'Tax section e.g. 194C for contractors',
+  `tds_percent` decimal(5,2) NOT NULL DEFAULT 0.00 COMMENT 'TDS tax percentage',
+  `tds_amount` decimal(15,2) NOT NULL DEFAULT 0.00 COMMENT 'TDS tax cut amount',
+  `other_deduction_amount` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `net_paid_amount` decimal(15,2) NOT NULL COMMENT 'gross_amount - tds_amount - other_deduction_amount',
+  `payment_mode` enum('BANK_TRANSFER','NEFT_RTGS','CHEQUE','UPI','CASH') NOT NULL DEFAULT 'BANK_TRANSFER',
+  `transaction_reference` varchar(100) DEFAULT NULL COMMENT 'UTR / Cheque number',
+  `bank_name` varchar(100) DEFAULT NULL,
+  `payment_status` enum('PAID','PENDING','CANCELLED') NOT NULL DEFAULT 'PAID',
+  `receipt_attachment` varchar(255) DEFAULT NULL,
+  `remarks` text DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `td_contractor_advance_payment`
+--
+
+INSERT INTO `td_contractor_advance_payment` (`advance_id`, `payment_voucher_no`, `contractor_company_id`, `contractor_team_id`, `project_id`, `site_id`, `assignment_id`, `payment_date`, `work_description`, `gross_amount`, `tds_section`, `tds_percent`, `tds_amount`, `other_deduction_amount`, `net_paid_amount`, `payment_mode`, `transaction_reference`, `bank_name`, `payment_status`, `receipt_attachment`, `remarks`, `created_by`, `created_at`, `updated_at`) VALUES
+(1, 'ADV-50868799', 2, 1, 61, 6, NULL, '2026-10-13', NULL, 4000.00, '194C', 1.00, 40.00, 0.00, 3960.00, 'CHEQUE', 'UTC/23HRITP', 'SBI', 'PAID', NULL, NULL, 5, '2026-10-13 11:04:25', '2026-10-13 11:04:25');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `td_contractor_damage_penalty`
+--
+
+CREATE TABLE `td_contractor_damage_penalty` (
+  `damage_id` int(11) NOT NULL,
+  `incident_code` varchar(50) NOT NULL,
+  `contractor_company_id` int(11) NOT NULL,
+  `contractor_team_id` int(11) NOT NULL,
+  `contractual_employee_id` int(11) DEFAULT NULL COMMENT 'Optional employee responsible',
+  `project_id` int(11) DEFAULT NULL,
+  `site_id` int(11) DEFAULT NULL,
+  `incident_date` date NOT NULL,
+  `item_type` enum('MACHINE','EQUIPMENT','TOOL','VEHICLE','MATERIAL','INFRASTRUCTURE','ASSET','OTHER') NOT NULL DEFAULT 'MACHINE',
+  `item_name` varchar(150) NOT NULL COMMENT 'Name/Model of damaged machine or tool',
+  `damage_severity` enum('LOW','MEDIUM','HIGH','CRITICAL') NOT NULL DEFAULT 'MEDIUM',
+  `damage_description` text NOT NULL COMMENT 'Circumstances and nature of damage caused',
+  `repair_estimated_cost` decimal(15,2) NOT NULL DEFAULT 0.00 COMMENT 'Estimated total damage/repair cost',
+  `deductible_penalty_amount` decimal(15,2) NOT NULL DEFAULT 0.00 COMMENT 'Amount to be charged/deducted from contractor',
+  `recovery_status` enum('PENDING','DEDUCTED_FROM_ADVANCE','DEDUCTED_FROM_BILL','RECOVERED','PARTIALLY_RECOVERED','REPAIRED_BY_CONTRACTOR','WAIVED','DISPUTED') NOT NULL DEFAULT 'PENDING',
+  `evidence_photo_1` varchar(255) DEFAULT NULL,
+  `evidence_photo_2` varchar(255) DEFAULT NULL,
+  `investigated_by` varchar(100) DEFAULT NULL,
+  `approval_status` enum('DRAFT','APPROVED','REJECTED') NOT NULL DEFAULT 'APPROVED',
+  `remarks` text DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `td_contractor_damage_penalty`
+--
+
+INSERT INTO `td_contractor_damage_penalty` (`damage_id`, `incident_code`, `contractor_company_id`, `contractor_team_id`, `contractual_employee_id`, `project_id`, `site_id`, `incident_date`, `item_type`, `item_name`, `damage_severity`, `damage_description`, `repair_estimated_cost`, `deductible_penalty_amount`, `recovery_status`, `evidence_photo_1`, `evidence_photo_2`, `investigated_by`, `approval_status`, `remarks`, `created_by`, `created_at`, `updated_at`) VALUES
+(1, 'DMG-23966299', 3, 3, NULL, 62, 16, '2026-10-14', 'EQUIPMENT', 'This is Power Equipment&Machines', 'MEDIUM', 'high Damage have been done here and problems are been done', 1200.00, 1290.00, 'PENDING', NULL, NULL, 'Virat', 'APPROVED', 'this is an saftey working issue happening ', 5, '2026-10-14 12:29:22', '2026-10-14 12:32:00');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `td_contractor_team_bom_assignment`
+--
+
+CREATE TABLE `td_contractor_team_bom_assignment` (
+  `assignment_id` int(11) NOT NULL,
+  `assignment_code` varchar(50) NOT NULL,
+  `contractor_company_id` int(11) NOT NULL,
+  `contractor_team_id` int(11) NOT NULL,
+  `project_id` int(11) DEFAULT NULL,
+  `site_id` int(11) DEFAULT NULL,
+  `assignment_date` date NOT NULL,
+  `target_completion_date` date DEFAULT NULL,
+  `total_work_descriptions` int(11) NOT NULL DEFAULT 0,
+  `total_boms` int(11) NOT NULL DEFAULT 0,
+  `total_assigned_qty` decimal(14,3) NOT NULL DEFAULT 0.000,
+  `grand_total_cost` decimal(15,2) NOT NULL DEFAULT 0.00 COMMENT 'Sum of all assigned BOM amounts',
+  `status` enum('ALLOCATED','IN_PROGRESS','COMPLETED','CANCELLED') NOT NULL DEFAULT 'ALLOCATED',
+  `remarks` text DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `td_contractor_team_bom_assignment`
+--
+
+INSERT INTO `td_contractor_team_bom_assignment` (`assignment_id`, `assignment_code`, `contractor_company_id`, `contractor_team_id`, `project_id`, `site_id`, `assignment_date`, `target_completion_date`, `total_work_descriptions`, `total_boms`, `total_assigned_qty`, `grand_total_cost`, `status`, `remarks`, `created_by`, `created_at`, `updated_at`) VALUES
+(11, 'WO-BOM-58059466', 3, 3, 62, 16, '2026-10-13', '2026-11-08', 3, 3, 179.000, 485000.00, 'ALLOCATED', '', 5, '2026-10-13 16:01:45', '2026-10-14 17:14:00'),
+(13, 'WO-WD-27857962', 3, 3, 62, 16, '2026-10-14', '2026-11-08', 1, 1, 400.000, 820000.00, 'ALLOCATED', '', 5, '2026-10-14 17:54:32', '2026-10-24 10:45:32'),
+(14, 'WO-WD-66557386', 2, 1, 61, 6, '2026-10-26', NULL, 1, 1, 20.000, 6000.00, 'ALLOCATED', '', 5, '2026-10-26 16:17:36', '2026-10-26 18:22:18');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `td_contractor_team_bom_items`
+--
+
+CREATE TABLE `td_contractor_team_bom_items` (
+  `assignment_item_id` int(11) NOT NULL,
+  `assignment_id` int(11) NOT NULL,
+  `project_work_description_id` int(11) DEFAULT NULL,
+  `bom_id` int(11) DEFAULT NULL,
+  `assigned_qty` decimal(12,3) NOT NULL,
+  `unit` varchar(50) DEFAULT NULL,
+  `unit_rate` decimal(15,2) NOT NULL COMMENT 'Amount / rate per unit for this BOM',
+  `total_cost` decimal(15,2) NOT NULL COMMENT 'assigned_qty * unit_rate',
+  `completed_qty` decimal(12,3) NOT NULL DEFAULT 0.000,
+  `remarks` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `td_contractor_team_bom_items`
+--
+
+INSERT INTO `td_contractor_team_bom_items` (`assignment_item_id`, `assignment_id`, `project_work_description_id`, `bom_id`, `assigned_qty`, `unit`, `unit_rate`, `total_cost`, `completed_qty`, `remarks`, `created_at`, `updated_at`) VALUES
+(14, 11, NULL, 3, 90.000, 'mm', 4000.00, 360000.00, 0.000, NULL, '2026-10-13 17:09:13', '2026-10-13 17:09:13'),
+(15, 11, NULL, 3, 70.000, 'mm', 700.00, 49000.00, 0.000, NULL, '2026-10-13 17:09:13', '2026-10-13 17:09:13'),
+(16, 11, NULL, 1, 19.000, 'cm', 4000.00, 76000.00, 0.000, NULL, '2026-10-13 17:09:13', '2026-10-13 17:09:13'),
+(20, 13, 430, NULL, 400.000, 'Nos', 2050.00, 820000.00, 0.000, 'well done ', '2026-10-24 10:45:32', '2026-10-24 10:45:32'),
+(22, 14, 419, 19, 20.000, 'KTM', 300.00, 6000.00, 0.000, 'Good', '2026-10-26 18:22:18', '2026-10-26 18:22:18');
 
 -- --------------------------------------------------------
 
@@ -160087,6 +160303,13 @@ ALTER TABLE `claims_reimbursements`
   ADD PRIMARY KEY (`claim_id`);
 
 --
+-- Indexes for table `claims_reimbursement_bills`
+--
+ALTER TABLE `claims_reimbursement_bills`
+  ADD PRIMARY KEY (`bill_id`),
+  ADD KEY `claim_id` (`claim_id`);
+
+--
 -- Indexes for table `em_annual_holiday`
 --
 ALTER TABLE `em_annual_holiday`
@@ -160266,13 +160489,22 @@ ALTER TABLE `md_contact_person`
   ADD PRIMARY KEY (`contact_person_id`);
 
 --
+-- Indexes for table `md_contractor_company`
+--
+ALTER TABLE `md_contractor_company`
+  ADD PRIMARY KEY (`contractor_company_id`),
+  ADD KEY `idx_cc_vendor` (`vendor_id`),
+  ADD KEY `idx_cc_status` (`status`);
+
+--
 -- Indexes for table `md_contractor_team`
 --
 ALTER TABLE `md_contractor_team`
   ADD PRIMARY KEY (`contractor_team_id`),
   ADD KEY `idx_vendor_id` (`vendor_id`),
   ADD KEY `idx_project_site` (`project_id`,`site_id`),
-  ADD KEY `idx_team_lead` (`team_lead_id`);
+  ADD KEY `idx_team_lead` (`team_lead_id`),
+  ADD KEY `idx_team_company` (`contractor_company_id`);
 
 --
 -- Indexes for table `md_contractual_employee`
@@ -160282,7 +160514,8 @@ ALTER TABLE `md_contractual_employee`
   ADD KEY `idx_contractor_team_id` (`contractor_team_id`),
   ADD KEY `idx_vendor_id` (`vendor_id`),
   ADD KEY `idx_role_type` (`role_type`),
-  ADD KEY `idx_phone` (`phone`);
+  ADD KEY `idx_phone` (`phone`),
+  ADD KEY `idx_emp_company` (`contractor_company_id`);
 
 --
 -- Indexes for table `md_damaged_product_claim`
@@ -160412,6 +160645,52 @@ ALTER TABLE `stock_matrial`
 --
 ALTER TABLE `td_billing`
   ADD PRIMARY KEY (`billing_id`);
+
+--
+-- Indexes for table `td_contractor_advance_payment`
+--
+ALTER TABLE `td_contractor_advance_payment`
+  ADD PRIMARY KEY (`advance_id`),
+  ADD UNIQUE KEY `payment_voucher_no` (`payment_voucher_no`),
+  ADD KEY `idx_adv_company` (`contractor_company_id`),
+  ADD KEY `idx_adv_team` (`contractor_team_id`),
+  ADD KEY `idx_adv_proj` (`project_id`),
+  ADD KEY `idx_adv_site` (`site_id`),
+  ADD KEY `idx_adv_assign` (`assignment_id`);
+
+--
+-- Indexes for table `td_contractor_damage_penalty`
+--
+ALTER TABLE `td_contractor_damage_penalty`
+  ADD PRIMARY KEY (`damage_id`),
+  ADD UNIQUE KEY `incident_code` (`incident_code`),
+  ADD KEY `idx_dmg_company` (`contractor_company_id`),
+  ADD KEY `idx_dmg_team` (`contractor_team_id`),
+  ADD KEY `idx_dmg_emp` (`contractual_employee_id`),
+  ADD KEY `idx_dmg_proj` (`project_id`),
+  ADD KEY `idx_dmg_site` (`site_id`),
+  ADD KEY `idx_dmg_status` (`recovery_status`);
+
+--
+-- Indexes for table `td_contractor_team_bom_assignment`
+--
+ALTER TABLE `td_contractor_team_bom_assignment`
+  ADD PRIMARY KEY (`assignment_id`),
+  ADD UNIQUE KEY `assignment_code` (`assignment_code`),
+  ADD KEY `idx_bom_assign_company` (`contractor_company_id`),
+  ADD KEY `idx_bom_assign_team` (`contractor_team_id`),
+  ADD KEY `idx_bom_assign_proj` (`project_id`),
+  ADD KEY `idx_bom_assign_site` (`site_id`),
+  ADD KEY `idx_bom_assign_status` (`status`);
+
+--
+-- Indexes for table `td_contractor_team_bom_items`
+--
+ALTER TABLE `td_contractor_team_bom_items`
+  ADD PRIMARY KEY (`assignment_item_id`),
+  ADD KEY `idx_bi_assignment` (`assignment_id`),
+  ADD KEY `idx_bi_bom` (`bom_id`),
+  ADD KEY `idx_bi_work_desc` (`project_work_description_id`);
 
 --
 -- Indexes for table `td_purchase`
@@ -160585,7 +160864,13 @@ ALTER TABLE `billing_material_detail`
 -- AUTO_INCREMENT for table `claims_reimbursements`
 --
 ALTER TABLE `claims_reimbursements`
-  MODIFY `claim_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `claim_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `claims_reimbursement_bills`
+--
+ALTER TABLE `claims_reimbursement_bills`
+  MODIFY `bill_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `em_annual_holiday`
@@ -160744,10 +161029,16 @@ ALTER TABLE `md_contact_person`
   MODIFY `contact_person_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
 
 --
+-- AUTO_INCREMENT for table `md_contractor_company`
+--
+ALTER TABLE `md_contractor_company`
+  MODIFY `contractor_company_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
 -- AUTO_INCREMENT for table `md_contractor_team`
 --
 ALTER TABLE `md_contractor_team`
-  MODIFY `contractor_team_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `contractor_team_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `md_contractual_employee`
@@ -160868,6 +161159,30 @@ ALTER TABLE `stock_matrial`
 --
 ALTER TABLE `td_billing`
   MODIFY `billing_id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `td_contractor_advance_payment`
+--
+ALTER TABLE `td_contractor_advance_payment`
+  MODIFY `advance_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `td_contractor_damage_penalty`
+--
+ALTER TABLE `td_contractor_damage_penalty`
+  MODIFY `damage_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `td_contractor_team_bom_assignment`
+--
+ALTER TABLE `td_contractor_team_bom_assignment`
+  MODIFY `assignment_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=15;
+
+--
+-- AUTO_INCREMENT for table `td_contractor_team_bom_items`
+--
+ALTER TABLE `td_contractor_team_bom_items`
+  MODIFY `assignment_item_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=23;
 
 --
 -- AUTO_INCREMENT for table `td_purchase`

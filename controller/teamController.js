@@ -203,9 +203,9 @@ class TeamController {
         // Join md_team with projects, project sites, and employees for operator, project in charge, and site in charge
         const table = `
         md_team AS t
-        JOIN md_project AS p ON t.project_id = p.project_id
-        JOIN md_project_site AS ps ON t.project_site_id = ps.project_site_id
-        JOIN em_employees AS o ON t.operator_id = o.employee_id
+        LEFT JOIN md_project AS p ON t.project_id = p.project_id
+        LEFT JOIN md_project_site AS ps ON t.project_site_id = ps.project_site_id
+        LEFT JOIN em_employees AS o ON t.operator_id = o.employee_id
         LEFT JOIN em_employees AS pic ON t.project_in_charge_id = pic.employee_id
         LEFT JOIN em_employees AS sic ON t.site_in_charge_id = sic.employee_id
         `; 
