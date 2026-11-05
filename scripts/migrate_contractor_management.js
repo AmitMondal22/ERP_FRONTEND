@@ -36,6 +36,19 @@ async function migrate() {
     await conn.execute(createContractorCompanySql);
     console.log("✓ Created/verified table: md_contractor_company");
 
+    // Check if GST columns exist in md_contractor_company
+    const [gstCols] = await conn.execute(`SHOW COLUMNS FROM md_contractor_company LIKE 'default_gst_type'`);
+    if (gstCols.length === 0) {
+      await conn.execute(`
+        ALTER TABLE md_contractor_company 
+        ADD COLUMN default_gst_type VARCHAR(30) DEFAULT 'none' AFTER default_tds_percent,
+        ADD COLUMN default_cgst_percent DECIMAL(5,2) DEFAULT 0.00 AFTER default_gst_type,
+        ADD COLUMN default_sgst_percent DECIMAL(5,2) DEFAULT 0.00 AFTER default_cgst_percent,
+        ADD COLUMN default_igst_percent DECIMAL(5,2) DEFAULT 0.00 AFTER default_sgst_percent;
+      `);
+      console.log("✓ Added default GST columns to md_contractor_company");
+    }
+
     // Check if contractor_company_id column exists in md_contractor_team
     const [teamCols] = await conn.execute(`SHOW COLUMNS FROM md_contractor_team LIKE 'contractor_company_id'`);
     if (teamCols.length === 0) {

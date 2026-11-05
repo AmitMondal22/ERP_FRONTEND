@@ -182,11 +182,7 @@ class TeamController {
 
             const teams = await selectData(table, select, null, "t.team_id ASC");
 
-            if (!teams || teams.length === 0) {
-            return res.status(404).json({ success: false, message: "No teams found" });
-            }
-
-            res.status(200).json({ success: true, data: teams });
+            res.status(200).json({ success: true, data: teams || [] });
 
         } catch (error) {
             console.error("Error in getAllTeam:", error.message);
