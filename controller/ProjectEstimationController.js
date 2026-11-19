@@ -542,9 +542,7 @@ class ProjectEstimationController {
       bom_value_unit 
     } = req.body;
 
-
-
-    //Validation
+    // Validation
     if (!project_id || !site_id || !bom_id || rep_task === undefined) {
       return res.status(400).json({
         success: false,
@@ -552,59 +550,62 @@ class ProjectEstimationController {
       });
     }
 
+    const pId = Number(project_id);
+    const sId = Number(site_id);
+    const bId = Number(bom_id);
+    const billId = billing_id !== undefined && billing_id !== null ? Number(billing_id) : null;
     const timestamp = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
-    //Check existing record
-    const checkSql = `
+    // Check existing record safely with parameterized query
+    let checkSql = `
       SELECT *
       FROM tx_project_details_with_estimation
-      WHERE project_id = ${project_id}
-      AND site_id = ${site_id}
-      AND bom_id = ${bom_id}
+      WHERE project_id = ?
+        AND site_id = ?
+        AND bom_id = ?
     `;
+    const checkParams = [pId, sId, bId];
 
-    const existingData = await customSelectSqlQuery(checkSql, false);
+    if (billId !== null) {
+      checkSql += ` AND billing_id = ?`;
+      checkParams.push(billId);
+    } else {
+      checkSql += ` AND (billing_id IS NULL OR billing_id = 0)`;
+    }
+
+    const existingData = await customSelectSqlQuery2(checkSql, checkParams, false);
     const existing = Array.isArray(existingData)
       ? existingData[0]
       : existingData;
 
     // =====================================================
-    //  UPDATE CASE (ACCUMULATE rep_task)
+    // UPDATE CASE (ACCUMULATE rep_task)
     // =====================================================
     if (existing) {
       const previousRepTask = Number(existing.rep_task) || 0;
       const newRepTask = Number(rep_task) || 0;
-
       const updatedRepTask = previousRepTask + newRepTask;
 
       const setValues = {
         bom_name,
-        rep_task: updatedRepTask, //accumulated value
+        rep_task: updatedRepTask,
         updated_at: timestamp,
-        bom_price: Number(bom_price),   // ✅ ADD THIS
-    bom_unit,                        // ✅ ADD THIS
-    bom_value_unit,  
+        bom_price: Number(bom_price) || 0,
+        bom_unit: bom_unit || null,
+        bom_value_unit: bom_value_unit || null,
       };
 
-      if (billing_id !== undefined && billing_id !== null) {
-        setValues.billing_id = billing_id;
+      if (billId !== null) {
+        setValues.billing_id = billId;
       }
 
-      const condition = `
-        project_id = ${project_id}
-        AND site_id = ${site_id}
-        AND bom_id = ${bom_id}
-      `;
+      const condition = `project_estimation_id = ${Number(existing.project_estimation_id)}`;
 
       await updateData(
         "tx_project_details_with_estimation",
         setValues,
         condition
       );
-
-        // console.log("Updating with:", setValues);
-       // console.log("Condition:", condition);
-           console.log(">>>>>>>>>>",res)
 
       return res.status(200).json({
         success: true,
@@ -618,23 +619,23 @@ class ProjectEstimationController {
     }
 
     // =====================================================
-    // ✅ INSERT CASE
+    // INSERT CASE
     // =====================================================
     const insertValues = {
-      project_id,
-      site_id,
-      bom_id,
+      project_id: pId,
+      site_id: sId,
+      bom_id: bId,
       bom_name,
       rep_task: Number(rep_task) || 0,
-      bom_price: Number(bom_price),
-      bom_unit,
-      bom_value_unit,
-      created_by: req.user.id,
+      bom_price: Number(bom_price) || 0,
+      bom_unit: bom_unit || null,
+      bom_value_unit: bom_value_unit || null,
+      created_by: req.user?.id || null,
       created_at: timestamp
     };
 
-    if (billing_id !== undefined && billing_id !== null) {
-      insertValues.billing_id = billing_id;
+    if (billId !== null) {
+      insertValues.billing_id = billId;
     }
 
     await insertData(
@@ -642,8 +643,6 @@ class ProjectEstimationController {
       insertValues
     );
 
-
-    console.log(">>>>>>>>>>",res)
     return res.status(201).json({
       success: true,
       message: "Estimation created successfully",
@@ -793,29 +792,32 @@ updateEstimationDirect = async (req, res) => {
 
 decreaseRepTask = async (req, res) => {
   try {
-    const { project_id, site_id, bom_id } = req.body;
+    const { project_id, site_id, bom_id, project_estimation_id } = req.body;
 
-    //  Validation
-    if (!project_id || !site_id || !bom_id) {
-      return res.status(400).json({
-        success: false,
-        message: "project_id, site_id, bom_id are required"
-      });
+    let existing = null;
+
+    if (project_estimation_id) {
+      existing = await customSelectSqlQuery2(
+        `SELECT * FROM tx_project_details_with_estimation WHERE project_estimation_id = ?`,
+        [Number(project_estimation_id)],
+        false
+      );
+    } else {
+      // Validation
+      if (!project_id || !site_id || !bom_id) {
+        return res.status(400).json({
+          success: false,
+          message: "project_id, site_id, bom_id are required"
+        });
+      }
+
+      const existingData = await customSelectSqlQuery2(
+        `SELECT * FROM tx_project_details_with_estimation WHERE project_id = ? AND site_id = ? AND bom_id = ?`,
+        [Number(project_id), Number(site_id), Number(bom_id)],
+        false
+      );
+      existing = Array.isArray(existingData) ? existingData[0] : existingData;
     }
-
-    //  Check existing record
-    const checkSql = `
-      SELECT *
-      FROM tx_project_details_with_estimation
-      WHERE project_id = ${project_id}
-      AND site_id = ${site_id}
-      AND bom_id = ${bom_id}
-    `;
-
-    const existingData = await customSelectSqlQuery(checkSql, false);
-    const existing = Array.isArray(existingData)
-      ? existingData[0]
-      : existingData;
 
     if (!existing) {
       return res.status(404).json({
@@ -826,7 +828,7 @@ decreaseRepTask = async (req, res) => {
 
     const currentRepTask = Number(existing.rep_task) || 0;
 
-    //  Prevent negative values
+    // Prevent negative values
     if (currentRepTask <= 0) {
       return res.status(400).json({
         success: false,
@@ -835,20 +837,15 @@ decreaseRepTask = async (req, res) => {
     }
 
     const updatedRepTask = currentRepTask - 1;
-
     const timestamp = dayjs().utc().format("YYYY-MM-DD HH:mm:ss");
 
-    //  Update DB
+    // Update DB
     const setValues = {
       rep_task: updatedRepTask,
       updated_at: timestamp
     };
 
-    const condition = `
-      project_id = ${project_id}
-      AND site_id = ${site_id}
-      AND bom_id = ${bom_id}
-    `;
+    const condition = `project_estimation_id = ${Number(existing.project_estimation_id)}`;
 
     await updateData(
       "tx_project_details_with_estimation",
@@ -1242,13 +1239,13 @@ getBomFullDetailsByProjectAndSite = async (req, res) => {
       LEFT JOIN md_product pr ON bi.product_id = pr.product_id
       LEFT JOIN md_unit uom ON pr.unit_id = uom.unit_id
 
-      WHERE t.project_id = ${project_id}
-        AND t.site_id = ${project_site_id}
+      WHERE t.project_id = ?
+        AND t.site_id = ?
 
       ORDER BY t.billing_id, t.bom_id, bp.sl_number, bi.bom_item_id
     `;
 
-    const rows = await customSelectSqlQuery(sql);
+    const rows = await customSelectSqlQuery2(sql, [Number(project_id), Number(project_site_id)]);
 
     if (!rows || rows.length === 0) {
       return res.status(200).json({

@@ -1288,6 +1288,12 @@ class WorkProgressAsPerProjectSiteController {
       const rows = await customSelectSqlQuery2(sql, [
         project_id,
         project_site_id,
+        project_id,
+        project_site_id,
+        project_id,
+        project_site_id,
+        project_id,
+        project_site_id,
       ]);
 
       return res.status(200).json({
@@ -1442,21 +1448,21 @@ class WorkProgressAsPerProjectSiteController {
 
       const sql = `
       SELECT 
-        sui.product_id,
+        bi.product_id,
         pr.product_name,
         u.unit_name,
 
-        wp.bom_id,
+        bi.bom_id,
         b.bom_name,
 
-        wp.bom_progress_id,
+        bi.bom_progress_id,
         bp.bom_progress_name,
 
-        -- Actual Used Qty
-        SUM(sui.Act_Qty) AS total_used_qty,
+        -- Actual Used Qty — 0 when no DPR entry exists yet for this product/step
+        COALESCE(SUM(sui.Act_Qty), 0) AS total_used_qty,
 
-        -- BOM Qty consumed
-        SUM(sui.bom_product_qty) AS total_bom_product_qty,
+        -- BOM Qty consumed — 0 when no entry yet
+        COALESCE(SUM(sui.bom_product_qty), 0) AS total_bom_product_qty,
 
         -- Estimated Qty from Project Estimation
         MAX(
@@ -1466,52 +1472,60 @@ class WorkProgressAsPerProjectSiteController {
 
         COUNT(DISTINCT wp.work_progress_site_id) AS entry_count
 
-      FROM tx_site_used_items sui
+      -- Anchor on BOM items so rows with zero usage are NOT filtered out
+      FROM md_bom_item bi
 
-      INNER JOIN tx_work_progress wp
+      -- Only include BOM items that belong to this project/site via estimations
+      INNER JOIN tx_project_details_with_estimation pde
+        ON pde.bom_id = bi.bom_id
+        AND pde.project_id = ?
+        AND pde.site_id = ?
+
+      -- LEFT JOIN usage so steps with no entries still appear (instead of INNER JOIN)
+      LEFT JOIN tx_work_progress wp
+        ON wp.bom_id = bi.bom_id
+        AND wp.bom_progress_id = bi.bom_progress_id
+        AND wp.project_id = ?
+        AND wp.project_site_id = ?
+
+      LEFT JOIN tx_site_used_items sui
         ON sui.work_progress_site_id = wp.work_progress_site_id
+        AND sui.product_id = bi.product_id
 
       LEFT JOIN md_product pr
-        ON sui.product_id = pr.product_id
+        ON bi.product_id = pr.product_id
 
       LEFT JOIN md_unit u
         ON pr.unit_id = u.unit_id
 
       LEFT JOIN md_bom_progress bp
-        ON wp.bom_progress_id = bp.bom_progress_id
+        ON bi.bom_progress_id = bp.bom_progress_id
 
       LEFT JOIN md_bom b
-        ON wp.bom_id = b.bom_id
-
-      LEFT JOIN md_bom_item bi
-        ON bi.bom_id = wp.bom_id
-        AND bi.product_id = sui.product_id
-        AND bi.bom_progress_id = wp.bom_progress_id
-
-      LEFT JOIN tx_project_details_with_estimation pde
-        ON pde.project_id = wp.project_id
-        AND pde.site_id = wp.project_site_id
-        AND pde.bom_id = wp.bom_id
-
-      WHERE wp.project_id = ?
-        AND wp.project_site_id = ?
+        ON bi.bom_id = b.bom_id
 
       GROUP BY
-        sui.product_id,
+        bi.product_id,
         pr.product_name,
         u.unit_name,
-        wp.bom_id,
+        bi.bom_id,
         b.bom_name,
-        wp.bom_progress_id,
+        bi.bom_progress_id,
         bp.bom_progress_name
 
       ORDER BY
-        wp.bom_id,
-        wp.bom_progress_id,
-        sui.product_id
+        bi.bom_id,
+        bi.bom_progress_id,
+        bi.product_id
     `;
 
       const rows = await customSelectSqlQuery2(sql, [
+        project_id,
+        project_site_id,
+        project_id,
+        project_site_id,
+        project_id,
+        project_site_id,
         project_id,
         project_site_id,
       ]);

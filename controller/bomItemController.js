@@ -137,8 +137,9 @@ async getBomItemByProgress(req, res) {
 
     const item = await customSelectSqlQuery(sql, true); // fetchAll = true
 
+    // Return empty array (not 404) when a step simply has no items yet
     if (!item || item.length === 0) {
-      return res.status(404).json({ success: false, message: "No BOM items found" });
+      return res.status(200).json({ success: true, data: [] });
     }
 
     res.json({ success: true, data: item });
@@ -184,8 +185,12 @@ async getBomItemByProgress(req, res) {
 
 async updateBomItem(req, res) {
   try {
-    const { id } = req.body;
-    const { bom_id, bom_progress_id, product_id, qty, created_by } = req.body;
+    const { id } = req.params; // ← id comes from the URL param (:id), not from req.body
+    const { bom_id, bom_progress_id, product_id, qty, total_qty, created_by } = req.body;
+
+    if (!id || isNaN(Number(id))) {
+      return res.status(400).json({ success: false, message: "Valid BOM item ID is required" });
+    }
 
     // helper to replace undefined with null
     const safe = (val) => (val === undefined ? null : val);
@@ -195,6 +200,7 @@ async updateBomItem(req, res) {
       bom_progress_id: safe(bom_progress_id),
       product_id: safe(product_id),
       qty: safe(qty),
+      total_qty: safe(total_qty),
       created_by: safe(created_by),
       updated_at: dayjs.utc().format("YYYY-MM-DD HH:mm:ss"),
     };

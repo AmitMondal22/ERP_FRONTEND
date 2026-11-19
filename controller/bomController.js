@@ -231,7 +231,7 @@ createOrUpdateBom = async (req, res) => {
         progress.items.push({
           bom_item_id: row.bom_item_id,
           product_id: row.product_id,
-          qty: row.qty,
+          qty: row.unit_quantity,   // ← matches the alias "i.qty AS unit_quantity" in SELECT
           total_qty: row.total_qty,
           created_by: row.item_created_by,
           created_at: row.item_created_at,
@@ -289,17 +289,51 @@ createOrUpdateBom = async (req, res) => {
 
   // Delete project by ID
   deleteBom = async (req, res) => {
+    const conn = await require("../DBConfig/db").promise().getConnection();
     try {
       const { id } = req.params;
-      const condition = `bom_id = ${Number(id)}`;
-      const deletedRows = await deleteData("md_bom", condition);
-      if (!deletedRows) {
-        return res.status(404).json({ success: false, message: "Bom not found or already deleted" });
+      const bomId = Number(id);
+
+      await conn.beginTransaction();
+
+      // 1. Delete all BOM items belonging to this BOM's progress steps
+      await conn.query(
+        `DELETE FROM md_bom_item WHERE bom_id = ?`,
+        [bomId]
+      );
+
+      // 2. Delete all BOM progress (steps) for this BOM
+      await conn.query(
+        `DELETE FROM md_bom_progress WHERE bom_id = ?`,
+        [bomId]
+      );
+
+      // 3. Null-out or delete references in project estimation table if present
+      //    (using UPDATE to avoid removing estimation records themselves)
+      await conn.query(
+        `UPDATE tx_project_details_with_estimation SET bom_id = NULL WHERE bom_id = ?`,
+        [bomId]
+      );
+
+      // 4. Delete the BOM itself
+      const [result] = await conn.query(
+        `DELETE FROM md_bom WHERE bom_id = ?`,
+        [bomId]
+      );
+
+      if (!result.affectedRows) {
+        await conn.rollback();
+        return res.status(404).json({ success: false, message: "BOM not found or already deleted" });
       }
-      res.status(200).json({ success: true, message: "Bom deleted successfully" });
+
+      await conn.commit();
+      res.status(200).json({ success: true, message: "BOM deleted successfully" });
     } catch (error) {
+      await conn.rollback();
       console.error(error);
-      res.status(500).json({ success: false, message: "Unable to delete Bom" });
+      res.status(500).json({ success: false, message: "Unable to delete BOM" });
+    } finally {
+      conn.release();
     }
   };
 

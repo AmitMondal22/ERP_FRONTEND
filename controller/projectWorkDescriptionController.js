@@ -10,6 +10,12 @@ const {
   deleteData,
 } = require("../models/MasterModel");
 
+// Safely escape single quotes and backslashes for raw SQL conditions
+const escapeSql = (str) => {
+  if (typeof str !== "string") return str;
+  return str.replace(/\\/g, "\\\\").replace(/'/g, "''");
+};
+
 class ProjectWorkDescription {
 
   // ================= CREATE =================
@@ -27,11 +33,14 @@ addProjectWorkDescription = async (req, res) => {
       });
     }
 
+    const trimmed = work_description.trim();
+    const escaped = escapeSql(trimmed);
+
     // Check duplicate
     const existing = await selectOneData(
       "md_project_work_description",
       "*",
-      `work_description='${work_description.trim()}'`
+      `work_description='${escaped}'`
     );
 
     if (existing) {
@@ -42,7 +51,7 @@ addProjectWorkDescription = async (req, res) => {
     }
 
     const id = await insertData("md_project_work_description", {
-      work_description: work_description.trim(),
+      work_description: trimmed,
       created_by,
       created_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
       updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
@@ -139,10 +148,13 @@ addProjectWorkDescription = async (req, res) => {
         });
       }
 
+      const trimmed = work_description.trim();
+      const escaped = escapeSql(trimmed);
+
       const duplicate = await selectOneData(
         "md_project_work_description",
         "*",
-        `work_description='${work_description.trim()}' AND project_work_description_id!=${id}`
+        `work_description='${escaped}' AND project_work_description_id!=${Number(id)}`
       );
 
       if (duplicate) {
@@ -155,10 +167,10 @@ addProjectWorkDescription = async (req, res) => {
       const updated = await updateData(
         "md_project_work_description",
         {
-          work_description: work_description.trim(),
+          work_description: trimmed,
           updated_at: dayjs().utc().format("YYYY-MM-DD HH:mm:ss"),
         },
-        `project_work_description_id=${id}`
+        `project_work_description_id=${Number(id)}`
       );
 
       if (!updated) {
