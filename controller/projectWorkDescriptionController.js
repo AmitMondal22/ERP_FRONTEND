@@ -6,15 +6,10 @@ const {
   insertData,
   selectData,
   selectOneData,
+  selectOneData2,
   updateData,
   deleteData,
 } = require("../models/MasterModel");
-
-// Safely escape single quotes and backslashes for raw SQL conditions
-const escapeSql = (str) => {
-  if (typeof str !== "string") return str;
-  return str.replace(/\\/g, "\\\\").replace(/'/g, "''");
-};
 
 class ProjectWorkDescription {
 
@@ -34,13 +29,13 @@ addProjectWorkDescription = async (req, res) => {
     }
 
     const trimmed = work_description.trim();
-    const escaped = escapeSql(trimmed);
 
     // Check duplicate
-    const existing = await selectOneData(
+    const existing = await selectOneData2(
       "md_project_work_description",
       "*",
-      `work_description='${escaped}'`
+      "work_description = ?",
+      [trimmed]
     );
 
     if (existing) {
@@ -149,12 +144,12 @@ addProjectWorkDescription = async (req, res) => {
       }
 
       const trimmed = work_description.trim();
-      const escaped = escapeSql(trimmed);
 
-      const duplicate = await selectOneData(
+      const duplicate = await selectOneData2(
         "md_project_work_description",
         "*",
-        `work_description='${escaped}' AND project_work_description_id!=${Number(id)}`
+        "work_description = ? AND project_work_description_id != ?",
+        [trimmed, Number(id)]
       );
 
       if (duplicate) {

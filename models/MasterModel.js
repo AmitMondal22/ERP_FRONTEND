@@ -55,6 +55,26 @@ async function selectOneData(table, select = "*", condition = null, orderBy = nu
   }
 } 
 
+async function selectOneData2(table, select = "*", condition = null, params = [], orderBy = null) {
+  let conn;
+  try {
+    let query = `SELECT ${select} FROM ${table}`;
+
+    if (condition) query += ` WHERE ${condition}`;
+    if (orderBy) query += ` ORDER BY ${orderBy}`;
+    query += ` LIMIT 1`;
+    conn = await connect();
+
+    const [rows] = await conn.execute(query, params); 
+    return rows[0] || null;
+  } catch (err) {
+    console.error(err); 
+    throw err;
+  } finally {
+    if (conn) await conn.end();
+  }
+} 
+
 
 
 async function selectLastData(table, select = "*", condition = null, orderBy = null) {
@@ -461,6 +481,7 @@ async function updateStockQuantities(productUpdates, projectId, siteId) {
 module.exports = {
   selectData,
   selectOneData,
+  selectOneData2,
   selectLastData,
   insertData,
   batchInsertData,
