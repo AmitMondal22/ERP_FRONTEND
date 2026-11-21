@@ -83,6 +83,11 @@ app.use(express.raw({ type: 'application/octet-stream', limit: '15mb' }));
 
 // app.use(express.raw({ type: 'application/octet-stream', limit: '200kb' }));
 
+// ---- API LOGGER (inspection only — remove after testing) ----
+const apiLogger = require('./middleware/apiLogger');
+app.use(apiLogger);
+// -------------------------------------------------------------
+
 app.use('/', router)
 app.use('/', assesrouter)
 app.use('/', vendorrouter)
