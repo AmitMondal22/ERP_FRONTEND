@@ -54,11 +54,11 @@ function trackAndWarnLoop(key) {
 
 function apiLogger(req, res, next) {
   const start = Date.now();
-  const time  = formatTime(new Date());
+  const time = formatTime(new Date());
   const method = req.method.padEnd(6);
-  const url    = req.originalUrl;
-  const ip     = req.ip || req.socket?.remoteAddress || 'unknown';
-  const key    = `${req.method} ${url.split('?')[0]}`; // path only, no query string
+  const url = req.originalUrl;
+  const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+  const key = `${req.method} ${url.split('?')[0]}`; // path only, no query string
 
   // Log the incoming request
   console.log(`[API] ${time} | --> ${method} ${url.padEnd(55)} | IP: ${ip}`);
@@ -69,9 +69,9 @@ function apiLogger(req, res, next) {
   // Intercept the response to log the result
   const originalSend = res.send.bind(res);
   res.send = function (body) {
-    const ms     = Date.now() - start;
+    const ms = Date.now() - start;
     const status = res.statusCode;
-    const icon   = status >= 500 ? '💥' : status >= 400 ? '⚠️ ' : '✅';
+    const icon = status >= 500 ? '💥' : status >= 400 ? '⚠️ ' : '✅';
 
     console.log(`[API] ${time} | <-- ${method} ${url.padEnd(55)} | ${icon} ${status} | ${ms}ms`);
 
